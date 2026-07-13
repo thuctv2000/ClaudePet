@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Pet macos}",
+            "name": "Debug PetMacOS",
+            "target": "PetMacOS",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug PetMacOS"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Pet macos}",
+            "name": "Release PetMacOS",
+            "target": "PetMacOS",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release PetMacOS"
+        }
+    ]
+}

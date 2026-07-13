@@ -1,0 +1,388 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32008F7B35E7946ACD461B43 /* HookModels.swift */; };
+		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
+		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
+		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
+		878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DE56CC509FC11874D00027 /* SettingsStore.swift */; };
+		8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */; };
+		96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12CA287C7CACA340ABD108C /* SpriteImporter.swift */; };
+		995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */; };
+		9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6295BC37E9B655A219CE95D /* PetView.swift */; };
+		AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */; };
+		B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A49E4A442ADFD5CD45C9582 /* PetState.swift */; };
+		BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF97BEB4B89A535444ADD4A /* PetConfig.swift */; };
+		D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD6C1596A1C653DA132297A /* TaskStackView.swift */; };
+		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
+		F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
+		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
+		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
+		78DE56CC509FC11874D00027 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		7A49E4A442ADFD5CD45C9582 /* PetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetState.swift; sourceTree = "<group>"; };
+		858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedSpriteView.swift; sourceTree = "<group>"; };
+		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
+		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
+		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
+		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBubbleView.swift; sourceTree = "<group>"; };
+		C6295BC37E9B655A219CE95D /* PetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetView.swift; sourceTree = "<group>"; };
+		DAD6C1596A1C653DA132297A /* TaskStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStackView.swift; sourceTree = "<group>"; };
+		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
+		EBF97BEB4B89A535444ADD4A /* PetConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetConfig.swift; sourceTree = "<group>"; };
+		F00DFE8DF50364DE0240C86F /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		2AD5AD954394A47B008E8B62 /* Sprites */ = {
+			isa = PBXGroup;
+			children = (
+				B12CA287C7CACA340ABD108C /* SpriteImporter.swift */,
+				BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */,
+			);
+			path = Sprites;
+			sourceTree = "<group>";
+		};
+		4756521A0DCCC4E29BF9949C /* Install */ = {
+			isa = PBXGroup;
+			children = (
+				4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */,
+			);
+			path = Install;
+			sourceTree = "<group>";
+		};
+		50553F73690BD2BA508734AC /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */,
+				DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */,
+				72959DA64EAE01980687BA1C /* SettingsWindowView.swift */,
+				BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */,
+				DAD6C1596A1C653DA132297A /* TaskStackView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		59DD222D736A3B7BCA601D8F /* PetMacOS */ = {
+			isa = PBXGroup;
+			children = (
+				93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */,
+				C6295BC37E9B655A219CE95D /* PetView.swift */,
+				60DBE02103BE5B9DEE670B5C /* Hooks */,
+				4756521A0DCCC4E29BF9949C /* Install */,
+				2AD5AD954394A47B008E8B62 /* Sprites */,
+				932F9248A5EB563281B49789 /* State */,
+				50553F73690BD2BA508734AC /* Views */,
+			);
+			name = PetMacOS;
+			path = Sources/PetMacOS;
+			sourceTree = "<group>";
+		};
+		60DBE02103BE5B9DEE670B5C /* Hooks */ = {
+			isa = PBXGroup;
+			children = (
+				32008F7B35E7946ACD461B43 /* HookModels.swift */,
+				F00DFE8DF50364DE0240C86F /* HookServer.swift */,
+				EBF97BEB4B89A535444ADD4A /* PetConfig.swift */,
+			);
+			path = Hooks;
+			sourceTree = "<group>";
+		};
+		81291BD9D5096951F5A3326D = {
+			isa = PBXGroup;
+			children = (
+				59DD222D736A3B7BCA601D8F /* PetMacOS */,
+				D2ABD055CCD03283D0A941A9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		932F9248A5EB563281B49789 /* State */ = {
+			isa = PBXGroup;
+			children = (
+				7A49E4A442ADFD5CD45C9582 /* PetState.swift */,
+				78DE56CC509FC11874D00027 /* SettingsStore.swift */,
+			);
+			path = State;
+			sourceTree = "<group>";
+		};
+		D2ABD055CCD03283D0A941A9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		56030E08A2872C68F902BB27 /* PetMacOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 95C0163E9608698CDD8C3964 /* Build configuration list for PBXNativeTarget "PetMacOS" */;
+			buildPhases = (
+				AF764BEC39E891952C51A960 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PetMacOS;
+			packageProductDependencies = (
+			);
+			productName = PetMacOS;
+			productReference = BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		ABDF8C2B893D12F01DF93439 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					56030E08A2872C68F902BB27 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 45AB284CC2B19F2CE5D817EE /* Build configuration list for PBXProject "PetMacOS" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 81291BD9D5096951F5A3326D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D2ABD055CCD03283D0A941A9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				56030E08A2872C68F902BB27 /* PetMacOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AF764BEC39E891952C51A960 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */,
+				2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */,
+				1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */,
+				2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */,
+				AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */,
+				BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */,
+				995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */,
+				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
+				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
+				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
+				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
+				F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */,
+				96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */,
+				8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */,
+				D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		2B00DC2805A6D9F982EC2FB5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		9AA19F7EA4798BBC72CDEC51 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
+				PRODUCT_NAME = PetMacOS;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Debug;
+		};
+		D01B57DFFB1FCBA02074F2E6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
+				PRODUCT_NAME = PetMacOS;
+				SDKROOT = macosx;
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Release;
+		};
+		FA564D06E147D69AA0DB2F83 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		45AB284CC2B19F2CE5D817EE /* Build configuration list for PBXProject "PetMacOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2B00DC2805A6D9F982EC2FB5 /* Debug */,
+				FA564D06E147D69AA0DB2F83 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		95C0163E9608698CDD8C3964 /* Build configuration list for PBXNativeTarget "PetMacOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9AA19F7EA4798BBC72CDEC51 /* Debug */,
+				D01B57DFFB1FCBA02074F2E6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = ABDF8C2B893D12F01DF93439 /* Project object */;
+}
