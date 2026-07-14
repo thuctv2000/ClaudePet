@@ -4,12 +4,20 @@ struct PetView: View {
     var state: PetState
     var sprites: SpriteLibrary
     var settings: SettingsStore
+    var usage: UsageMonitor
 
     @State private var isWagging = false
     @State private var isBouncing = false
     @State private var eyesClosed = false
     @State private var isHappy = false
     @State private var reacting = false   // playing the one-shot click clip
+
+    /// A blocking dialog is on screen; shrink the pet to give it room.
+    private var dialogActive: Bool {
+        state.pendingQuestion != nil || state.pendingAsk != nil
+    }
+
+    private var petSide: CGFloat { dialogActive ? 150 : 280 }
 
     var body: some View {
         // Dog pinned to the bottom; the bubble / dialog sits right above its
@@ -23,7 +31,12 @@ struct PetView: View {
                 .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.runningTasks)
                 .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.completedNotices)
                 .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
+                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
             dog
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: dialogActive)
+            // Usage badge stays visible under the pet at all times.
+            UsageBadgeView(usage: usage)
+                .padding(.top, 2)
         }
         .frame(width: 320, height: 500)
         .background(Color.clear)
@@ -34,7 +47,14 @@ struct PetView: View {
 
     @ViewBuilder
     private var topContent: some View {
-        if let ask = state.pendingAsk {
+        if let question = state.pendingQuestion {
+            QuestionDialogView(
+                question: question,
+                accent: settings.notification,
+                onSubmit: { answers in state.resolveQuestion(answers) },
+                onSkip: { state.skipQuestion() }
+            )
+        } else if let ask = state.pendingAsk {
             PermissionDialogView(
                 ask: ask,
                 onAllow: { note in state.resolve("allow", text: note) },
@@ -60,7 +80,7 @@ struct PetView: View {
                     .shadow(color: .black.opacity(0.16), radius: 12, y: 9)
                 hearts
             }
-            .frame(width: 280, height: 280)
+            .frame(width: petSide, height: petSide)
             .contentShape(Rectangle())
             .onTapGesture { celebrate() }
         } else {
@@ -101,7 +121,7 @@ struct PetView: View {
                     .shadow(color: .black.opacity(0.16), radius: 12, y: 9)
                 hearts
             }
-            .frame(width: 280, height: 280)
+            .frame(width: petSide, height: petSide)
             .contentShape(Rectangle())
             .onTapGesture { celebrate() }
             .onAppear { animate() }

@@ -14,19 +14,24 @@ enum HookInstaller {
             .appendingPathComponent(".claude/settings.json")
     }
 
-    /// Event → mode. `ask` blocks for a decision; `event` is fire-and-forget.
-    /// `matcher` is only meaningful for tool events.
-    private static func plan(writeToolsOnly: Bool) -> [(event: String, mode: String, matcher: String?)] {
+    /// Event → mode. `ask` blocks for a decision; `question` blocks for an
+    /// `AskUserQuestion` answer; `event` is fire-and-forget. `matcher` is only
+    /// meaningful for tool events; `timeout` (seconds) is written per-hook when set.
+    private static func plan(writeToolsOnly: Bool)
+        -> [(event: String, mode: String, matcher: String?, timeout: Int?)] {
         let toolMatcher = writeToolsOnly ? "Bash|Write|Edit|MultiEdit|NotebookEdit" : "*"
         return [
-            ("UserPromptSubmit", "event", nil),
-            ("PreToolUse", "ask", toolMatcher),
-            ("PostToolUse", "event", toolMatcher),
-            ("Notification", "event", nil),
-            ("Stop", "event", nil),
-            ("SubagentStop", "event", nil),
-            ("SessionStart", "event", nil),
-            ("SessionEnd", "event", nil),
+            ("UserPromptSubmit", "event", nil, nil),
+            // Interactive questions first, so they own the AskUserQuestion tool.
+            // The `ask` hook below also matches it under "*" but exits early.
+            ("PreToolUse", "question", "AskUserQuestion", 600),
+            ("PreToolUse", "ask", toolMatcher, nil),
+            ("PostToolUse", "event", toolMatcher, nil),
+            ("Notification", "event", nil, nil),
+            ("Stop", "event", nil, nil),
+            ("SubagentStop", "event", nil, nil),
+            ("SessionStart", "event", nil, nil),
+            ("SessionEnd", "event", nil, nil),
         ]
     }
 
@@ -37,16 +42,24 @@ enum HookInstaller {
         var settings = try loadSettings()
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
 
-        for entry in plan(writeToolsOnly: writeToolsOnly) {
-            var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
+        // Strip every existing entry of ours first, so re-adding multiple groups
+        // for the same event (PreToolUse has two) doesn't clobber siblings.
+        for event in hooks.keys {
+            guard var groups = hooks[event] as? [[String: Any]] else { continue }
             groups.removeAll { group in
                 guard let inner = group["hooks"] as? [[String: Any]] else { return false }
                 return inner.contains { ($0["command"] as? String)?.contains(marker) == true }
             }
+            hooks[event] = groups
+        }
 
-            var group: [String: Any] = [
-                "hooks": [["type": "command", "command": "sh \(scriptURL.path) \(entry.mode)"]]
+        for entry in plan(writeToolsOnly: writeToolsOnly) {
+            var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
+            var hook: [String: Any] = [
+                "type": "command", "command": "sh \(scriptURL.path) \(entry.mode)",
             ]
+            if let timeout = entry.timeout { hook["timeout"] = timeout }
+            var group: [String: Any] = ["hooks": [hook]]
             if let matcher = entry.matcher { group["matcher"] = matcher }
             groups.append(group)
             hooks[entry.event] = groups
@@ -128,7 +141,19 @@ enum HookInstaller {
     TOKEN=$(sed -n 's/.*"token":"\\([^"]*\\)".*/\\1/p' "$CONFIG")
     [ -n "$PORT" ] || exit 0
     PAYLOAD=$(cat)
+    if [ "$MODE" = "question" ]; then
+        # AskUserQuestion: block for the user's answer regardless of permission
+        # mode. Server returns the full hookSpecificOutput JSON; print verbatim.
+        RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \\
+            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            --data-binary "$PAYLOAD" 2>/dev/null)
+        [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
+        exit 0
+    fi
     if [ "$MODE" = "ask" ]; then
+        # AskUserQuestion is handled by the `question` hook; stay out of the way.
+        TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name":"\\([^"]*\\)".*/\\1/p')
+        [ "$TOOL" = "AskUserQuestion" ] && exit 0
         PMODE=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"permission_mode":"\\([^"]*\\)".*/\\1/p')
         if [ -n "$PMODE" ] && [ "$PMODE" != "default" ]; then
             curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \\

@@ -1,9 +1,14 @@
 import Foundation
 import Observation
 
-/// Something that can resolve a blocking `/ask` request (implemented by `HookServer`).
+/// Something that can resolve a blocking `/ask` or `/question` request
+/// (implemented by `HookServer`).
 protocol AskResolver: AnyObject, Sendable {
     func resolveAsk(id: String, decision: PetDecision)
+    /// Resolves an `AskUserQuestion` request. `answers` is keyed by question
+    /// text; `nil` means the user skipped, so the server returns an empty body
+    /// and Claude Code asks in the terminal instead.
+    func resolveQuestion(id: String, answers: [String: PetAnswer]?)
 }
 
 /// A pending permission request awaiting the user's Allow/Deny on the pet.
@@ -13,6 +18,12 @@ struct PendingAsk: Identifiable, Equatable {
     let summary: String?
 }
 
+/// A pending `AskUserQuestion` awaiting the user's answers on the pet.
+struct PendingQuestion: Identifiable, Equatable {
+    let id: String
+    let questions: [PetQuestion]
+}
+
 /// Category of a task card, used to pick its border colour.
 enum TaskKind: Equatable {
     case thinking       // Claude is reasoning (UserPromptSubmit)
@@ -20,6 +31,7 @@ enum TaskKind: Equatable {
     case notification   // Claude needs attention (Notification)
     case session        // session lifecycle / app notices
     case done           // a completed result (gradient border)
+    case subagent       // a running subagent (Task/Agent tool)
 }
 
 /// One card in the task stack.
@@ -28,12 +40,17 @@ struct TaskItem: Identifiable, Equatable {
     let title: String       // no emoji / icons
     let detail: String?     // e.g. tool input summary, already truncated
     let kind: TaskKind
+    /// Groups notices that should replace one another (e.g. the "Hoàn thành"
+    /// result of a session). A new notice removes any existing one sharing key.
+    let dedupeKey: String?
 
-    init(id: UUID = UUID(), title: String, detail: String? = nil, kind: TaskKind) {
+    init(id: UUID = UUID(), title: String, detail: String? = nil, kind: TaskKind,
+         dedupeKey: String? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
         self.kind = kind
+        self.dedupeKey = dedupeKey
     }
 }
 
@@ -66,6 +83,7 @@ final class PetState {
 
     private(set) var mood: Mood = .idle
     private(set) var pendingAsk: PendingAsk?
+    private(set) var pendingQuestion: PendingQuestion?
 
     /// Running tasks, newest first, capped at 3. Each auto-expires after a while.
     private(set) var runningTasks: [TaskItem] = []
@@ -94,15 +112,23 @@ final class PetState {
     /// when the task finishes early or is pushed out of the stack.
     private var expiryTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// FIFO list of running subagent card ids, so a Post/SubagentStop can drop
+    /// the oldest one (PreToolUse for Task carries no `agent_id` to match on).
+    private var subagentCards: [UUID] = []
+
     // MARK: - Task stack
 
-    /// Inserts a running task at the top, trims to 3, and schedules its expiry.
-    func pushRunning(_ item: TaskItem) {
+    /// Inserts a running task at the top, trims to 3, and schedules its expiry
+    /// (subagent cards persist until their subagent stops, so pass `expires:
+    /// false` for them).
+    func pushRunning(_ item: TaskItem, expires: Bool = true) {
         runningTasks.insert(item, at: 0)
         while runningTasks.count > maxRunning {
             let dropped = runningTasks.removeLast()
             expiryTasks.removeValue(forKey: dropped.id)?.cancel()
+            subagentCards.removeAll { $0 == dropped.id }
         }
+        guard expires else { return }
         expiryTasks[item.id] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(self?.runningTTL ?? 8))
             guard !Task.isCancelled else { return }
@@ -114,28 +140,31 @@ final class PetState {
     private func removeRunning(id: UUID) {
         runningTasks.removeAll { $0.id == id }
         expiryTasks.removeValue(forKey: id)?.cancel()
+        subagentCards.removeAll { $0 == id }
     }
 
-    /// Removes the newest running tool card, matching `toolName` when given.
-    private func finishTool(named toolName: String?) {
-        let index = runningTasks.firstIndex { item in
-            item.kind == .tool && (toolName == nil || item.title == toolName)
-        }
-        if let index {
-            let removed = runningTasks.remove(at: index)
-            expiryTasks.removeValue(forKey: removed.id)?.cancel()
-        }
+    /// Removes the oldest still-running subagent card (FIFO). Used when a
+    /// subagent finishes (SubagentStop) or its Task tool returns.
+    private func finishOldestSubagent() {
+        guard let id = subagentCards.first else { return }
+        removeRunning(id: id)
     }
 
     /// Clears every running task (e.g. when Claude stops or the session ends).
     private func clearRunning() {
         for task in expiryTasks.values { task.cancel() }
         expiryTasks.removeAll()
+        subagentCards.removeAll()
         runningTasks.removeAll()
     }
 
-    /// Adds a persistent completed notice and enables mouse passthrough.
+    /// Adds a persistent completed notice and enables mouse passthrough. A new
+    /// notice replaces any existing notice sharing its `dedupeKey`, so only the
+    /// latest result of a group stays on screen.
     func pushCompleted(_ item: TaskItem) {
+        if let key = item.dedupeKey {
+            completedNotices.removeAll { $0.dedupeKey == key }
+        }
         completedNotices.insert(item, at: 0)
         updatePassthrough()
     }
@@ -168,29 +197,64 @@ final class PetState {
         case "PreToolUse":
             // Reached here only in auto mode (manual mode blocks via /ask).
             mood = .working
-            pushRunning(TaskItem(
-                title: event.toolName ?? "Tool",
-                detail: event.toolInputSummary.map { truncate($0) },
-                kind: .tool
-            ))
+            // Tools running inside a subagent are internal noise; the parent
+            // subagent card already represents the work.
+            if event.isFromSubagent { return }
+            if event.toolName == "Task" || event.toolName == "Agent" {
+                // A subagent is starting: keep its card until SubagentStop.
+                let card = TaskItem(
+                    title: event.intentTitle,
+                    detail: event.intentDetail.map { truncate($0) },
+                    kind: .subagent
+                )
+                subagentCards.append(card.id)
+                pushRunning(card, expires: false)
+            } else {
+                pushRunning(TaskItem(
+                    title: event.intentTitle,
+                    detail: event.intentDetail.map { truncate($0) },
+                    kind: .tool
+                ))
+            }
         case "PostToolUse":
-            // A tool finished: drop its running card, no separate notice.
+            // A tool finished. Cards live out their TTL; we only refresh mood.
             mood = .working
-            finishTool(named: event.toolName)
+            if event.isFromSubagent { return }
+            // If SubagentStop didn't already drop the card, retire it now.
+            if event.toolName == "Task" || event.toolName == "Agent" {
+                finishOldestSubagent()
+            }
         case "Notification":
             mood = .asking
             pushRunning(TaskItem(title: event.message ?? "Claude cần chú ý", kind: .notification))
         case "Stop":
             mood = .talking
             clearRunning()
-            if let path = event.transcriptPath {
+            if let text = event.lastAssistantMessage, !text.isEmpty {
+                pushCompleted(TaskItem(
+                    title: "Hoàn thành",
+                    detail: truncate(text, limit: 800),
+                    kind: .done,
+                    dedupeKey: "stop"
+                ))
+            } else if let path = event.transcriptPath {
                 Task { await showLastAssistant(path: path) }
             } else {
-                pushCompleted(TaskItem(title: "Hoàn thành", detail: "Claude đã trả lời", kind: .done))
+                pushCompleted(TaskItem(
+                    title: "Hoàn thành", detail: "Claude đã trả lời",
+                    kind: .done, dedupeKey: "stop"))
             }
         case "SubagentStop":
             mood = .talking
-            pushCompleted(TaskItem(title: "Subagent hoàn thành", kind: .done))
+            finishOldestSubagent()
+            let title = event.agentType.map { "Subagent \($0) hoàn thành" }
+                ?? "Subagent hoàn thành"
+            pushCompleted(TaskItem(
+                title: title,
+                detail: event.lastAssistantMessage.map { truncate($0, limit: 800) },
+                kind: .done,
+                dedupeKey: "subagent-\(event.agentId ?? UUID().uuidString)"
+            ))
         case "SessionStart":
             mood = .idle
             pushRunning(TaskItem(title: "Bắt đầu phiên mới", kind: .session))
@@ -242,6 +306,48 @@ final class PetState {
         updatePassthrough()
     }
 
+    // MARK: - Interactive questions (AskUserQuestion, blocking)
+
+    /// Presents an `AskUserQuestion` request. Unlike `/ask`, questions are shown
+    /// even when approvals are paused — they genuinely need a human answer.
+    func presentQuestion(id: String, event: HookEvent) {
+        let questions = event.askQuestions
+        guard !questions.isEmpty else {
+            // Nothing parseable to ask; let the terminal handle it.
+            resolver?.resolveQuestion(id: id, answers: nil)
+            return
+        }
+        mood = .asking
+        pendingQuestion = PendingQuestion(id: id, questions: questions)
+        onInteractiveNeeded?(true)
+    }
+
+    /// Sends the user's answers back to the waiting hook and clears the dialog.
+    func resolveQuestion(_ answers: [String: PetAnswer]) {
+        guard let question = pendingQuestion else { return }
+        resolver?.resolveQuestion(id: question.id, answers: answers)
+        pendingQuestion = nil
+        mood = .idle
+        onInteractiveNeeded?(false)
+        updatePassthrough()
+    }
+
+    /// User chose to answer in the terminal instead: return an empty body.
+    func skipQuestion() {
+        guard let question = pendingQuestion else { return }
+        cancelQuestion(id: question.id)
+    }
+
+    /// Called by the server on timeout, or internally when the user skips.
+    func cancelQuestion(id: String) {
+        guard pendingQuestion?.id == id else { return }
+        resolver?.resolveQuestion(id: id, answers: nil)
+        pendingQuestion = nil
+        mood = .idle
+        onInteractiveNeeded?(false)
+        updatePassthrough()
+    }
+
     private func truncate(_ text: String, limit: Int = 200) -> String {
         text.count > limit ? String(text.prefix(limit)) + "…" : text
     }
@@ -252,8 +358,9 @@ final class PetState {
         let text = await Task.detached { Self.lastAssistantText(path: path) }.value
         pushCompleted(TaskItem(
             title: "Hoàn thành",
-            detail: truncate(text ?? "Claude đã trả lời", limit: 300),
-            kind: .done
+            detail: truncate(text ?? "Claude đã trả lời", limit: 800),
+            kind: .done,
+            dedupeKey: "stop"
         ))
     }
 

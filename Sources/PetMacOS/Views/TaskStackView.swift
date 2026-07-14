@@ -83,10 +83,16 @@ private struct RunningCard: View {
 }
 
 /// A persistent completed notice with a gradient border and a close button.
+/// Tapping the card toggles between a truncated and a full, scrollable detail.
 private struct CompletedCard: View {
     let item: TaskItem
     let gradient: LinearGradient
     let onDismiss: () -> Void
+
+    @State private var isExpanded = false
+
+    /// Roughly the point past which the collapsed 4-line limit starts hiding text.
+    private var isLong: Bool { (item.detail?.count ?? 0) > 160 }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -96,10 +102,25 @@ private struct CompletedCard: View {
                     .bold()
                     .foregroundStyle(.primary)
                 if let detail = item.detail {
-                    Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(4)
+                    if isExpanded {
+                        ScrollView {
+                            Text(detail)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 220)
+                    } else {
+                        Text(detail)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(4)
+                    }
+                    if isLong {
+                        Text(isExpanded ? "thu gọn" : "bấm để xem thêm")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -123,5 +144,9 @@ private struct CompletedCard: View {
                 .stroke(gradient, lineWidth: 2)
         )
         .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isLong { withAnimation { isExpanded.toggle() } }
+        }
     }
 }

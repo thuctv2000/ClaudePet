@@ -11,6 +11,7 @@
 		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
 		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
+		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
 		878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DE56CC509FC11874D00027 /* SettingsStore.swift */; };
 		8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */; };
 		96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12CA287C7CACA340ABD108C /* SpriteImporter.swift */; };
@@ -19,17 +20,21 @@
 		AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */; };
 		B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A49E4A442ADFD5CD45C9582 /* PetState.swift */; };
 		BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF97BEB4B89A535444ADD4A /* PetConfig.swift */; };
+		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
+		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD6C1596A1C653DA132297A /* TaskStackView.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
 		F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		121562265EDE7612187515DD /* QuestionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDialogView.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
 		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
 		78DE56CC509FC11874D00027 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		7A49E4A442ADFD5CD45C9582 /* PetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetState.swift; sourceTree = "<group>"; };
+		7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageBadgeView.swift; sourceTree = "<group>"; };
 		858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedSpriteView.swift; sourceTree = "<group>"; };
 		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
@@ -39,6 +44,7 @@
 		C6295BC37E9B655A219CE95D /* PetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetView.swift; sourceTree = "<group>"; };
 		DAD6C1596A1C653DA132297A /* TaskStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStackView.swift; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
+		E46998C00ABB596885D703B7 /* UsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageMonitor.swift; sourceTree = "<group>"; };
 		EBF97BEB4B89A535444ADD4A /* PetConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetConfig.swift; sourceTree = "<group>"; };
 		F00DFE8DF50364DE0240C86F /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -66,9 +72,11 @@
 			children = (
 				858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */,
 				DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */,
+				121562265EDE7612187515DD /* QuestionDialogView.swift */,
 				72959DA64EAE01980687BA1C /* SettingsWindowView.swift */,
 				BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */,
 				DAD6C1596A1C653DA132297A /* TaskStackView.swift */,
+				7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -111,6 +119,7 @@
 			children = (
 				7A49E4A442ADFD5CD45C9582 /* PetState.swift */,
 				78DE56CC509FC11874D00027 /* SettingsStore.swift */,
+				E46998C00ABB596885D703B7 /* UsageMonitor.swift */,
 			);
 			path = State;
 			sourceTree = "<group>";
@@ -190,12 +199,15 @@
 				995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */,
 				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
+				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
 				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
 				F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */,
 				96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */,
 				8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */,
 				D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */,
+				3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */,
+				C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

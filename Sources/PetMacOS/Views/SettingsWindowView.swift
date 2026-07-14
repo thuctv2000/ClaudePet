@@ -7,6 +7,7 @@ struct SettingsWindowView: View {
     var state: PetState
     var sprites: SpriteLibrary
     @Bindable var settings: SettingsStore
+    var usage: UsageMonitor
 
     @State private var importMessage: String?
 
@@ -62,8 +63,44 @@ struct SettingsWindowView: View {
                     Button("Kiểm tra lại") { delegate.refreshConnectionStatus() }
                 }
             }
+
+            Section("Mức sử dụng Claude") {
+                usageRow("Cửa sổ 5 giờ", usage.fiveHour)
+                usageRow("Tuần", usage.sevenDay)
+                if let error = usage.lastError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                HStack {
+                    Button("Làm mới") { Task { await usage.refresh() } }
+                    if let updated = usage.lastUpdated {
+                        Text("Cập nhật \(updated.formatted(date: .omitted, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func usageRow(_ title: String, _ window: UsageMonitor.Window?) -> some View {
+        LabeledContent(title) {
+            if let window {
+                HStack(spacing: 6) {
+                    Text("\(Int(window.utilization.rounded()))%").bold().monospacedDigit()
+                    if let resets = window.resetsAt {
+                        Text("reset \(resets.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text("chưa có dữ liệu").foregroundStyle(.tertiary)
+            }
+        }
     }
 
     // MARK: - Pet & sprites
@@ -202,6 +239,7 @@ struct SettingsWindowView: View {
                 colorRow("Chạy tool", $settings.tool)
                 colorRow("Chú ý", $settings.notification)
                 colorRow("Phiên", $settings.session)
+                colorRow("Subagent", $settings.subagent)
             }
 
             Section("Gradient tác vụ hoàn thành") {

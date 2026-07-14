@@ -87,6 +87,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     let petState = PetState()
     let sprites = SpriteLibrary()
     let settings = SettingsStore()
+    let usage = UsageMonitor()
     private var hookServer: HookServer?
 
     private(set) var writeToolsOnly = false
@@ -100,6 +101,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         sprites.reload()
         showPet()
         startHookServer()
+        usage.start()
     }
 
     /// Re-reads hook installation state from disk. Call before showing any UI
@@ -206,7 +208,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             )
             let newPanel = PetPanel(contentRect: frame)
             newPanel.contentView = NSHostingView(
-                rootView: PetView(state: petState, sprites: sprites, settings: settings))
+                rootView: PetView(state: petState, sprites: sprites, settings: settings, usage: usage))
             panel = newPanel
         }
 
@@ -237,7 +239,8 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: SettingsWindowView(
-                    delegate: self, state: petState, sprites: sprites, settings: settings))
+                    delegate: self, state: petState, sprites: sprites, settings: settings,
+                    usage: usage))
             window.center()
             settingsWindow = window
         }

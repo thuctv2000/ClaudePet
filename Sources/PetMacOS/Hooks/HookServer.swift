@@ -14,8 +14,21 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// Only touched on `queue`, so access is serialized.
     private var pending: [String: CheckedContinuation<PetDecision, Never>] = [:]
 
+    /// Continuations for in-flight `/question` requests. The response is the
+    /// full JSON body to send back (empty `Data` means "let the terminal ask").
+    /// Only touched on `queue`.
+    private var pendingQuestions: [String: CheckedContinuation<Data, Never>] = [:]
+
+    /// Raw `tool_input.questions` JSON per pending question id, kept so the
+    /// answer response can echo the questions back verbatim. Touched on `queue`.
+    private var pendingQuestionPayloads: [String: Data] = [:]
+
     /// How long to wait for the user before defaulting to deny.
     private let askTimeout: TimeInterval = 300
+
+    /// How long to hold a question open before returning empty (below the
+    /// hook's own 600s timeout, so the script still exits cleanly).
+    private let questionTimeout: TimeInterval = 570
 
     init(petState: PetState, token: String) {
         self.petState = petState
@@ -82,6 +95,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             respond(connection)
         case "/ask":
             handleAsk(request, on: connection)
+        case "/question":
+            handleQuestion(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -115,12 +130,85 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in petState.presentAsk(id: id, event: event) }
     }
 
+    /// Holds the connection open until the user answers the `AskUserQuestion`
+    /// (or a timeout returns an empty body), then responds with the full
+    /// `hookSpecificOutput` JSON the script prints verbatim.
+    private func handleQuestion(_ request: HTTPRequest, on connection: NWConnection) {
+        let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
+        let id = UUID().uuidString
+
+        // Keep the questions exactly as sent so the answer can echo them back.
+        let rawQuestions: Data? = {
+            guard let object = try? JSONSerialization.jsonObject(with: request.body) as? [String: Any],
+                  let toolInput = object["tool_input"] as? [String: Any],
+                  let questions = toolInput["questions"]
+            else { return nil }
+            return try? JSONSerialization.data(withJSONObject: questions)
+        }()
+
+        Task {
+            let body = await withCheckedContinuation { (continuation: CheckedContinuation<Data, Never>) in
+                self.queue.async {
+                    self.pendingQuestions[id] = continuation
+                    self.pendingQuestionPayloads[id] = rawQuestions
+                }
+            }
+            self.respond(connection, body: body)
+        }
+
+        // Safety timeout → empty body (script exits silently, terminal asks).
+        queue.asyncAfter(deadline: .now() + questionTimeout) { [weak self] in
+            guard let self, let continuation = self.pendingQuestions.removeValue(forKey: id) else { return }
+            self.pendingQuestionPayloads.removeValue(forKey: id)
+            let petState = self.petState
+            Task { @MainActor in petState.cancelQuestion(id: id) }
+            continuation.resume(returning: Data())
+        }
+
+        let petState = self.petState
+        Task { @MainActor in petState.presentQuestion(id: id, event: event) }
+    }
+
     // MARK: - AskResolver
 
     func resolveAsk(id: String, decision: PetDecision) {
         queue.async { [weak self] in
             guard let self, let continuation = self.pending.removeValue(forKey: id) else { return }
             continuation.resume(returning: decision)
+        }
+    }
+
+    func resolveQuestion(id: String, answers: [String: PetAnswer]?) {
+        queue.async { [weak self] in
+            guard let self, let continuation = self.pendingQuestions.removeValue(forKey: id) else { return }
+            let raw = self.pendingQuestionPayloads.removeValue(forKey: id)
+
+            // No answers (skipped) or missing payload → empty body.
+            guard let answers,
+                  let raw,
+                  let questions = try? JSONSerialization.jsonObject(with: raw)
+            else {
+                continuation.resume(returning: Data())
+                return
+            }
+
+            var answerObject: [String: Any] = [:]
+            for (key, value) in answers {
+                switch value {
+                case let .single(text): answerObject[key] = text
+                case let .multi(items): answerObject[key] = items
+                }
+            }
+
+            let output: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "allow",
+                    "updatedInput": ["questions": questions, "answers": answerObject],
+                ]
+            ]
+            let body = (try? JSONSerialization.data(withJSONObject: output)) ?? Data()
+            continuation.resume(returning: body)
         }
     }
 

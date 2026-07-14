@@ -4,6 +4,7 @@
 # Usage (from a Claude Code hook `command`):
 #   pet-hook.sh event      # fire-and-forget notification (Stop, PostToolUse, …)
 #   pet-hook.sh ask        # blocking permission request (PreToolUse) — Phase 2
+#   pet-hook.sh question   # blocking AskUserQuestion answer (PreToolUse)
 #
 # Reads the hook JSON from stdin and forwards it to the pet's loopback server,
 # whose port + token are published in ~/.petmacos/config.json on app launch.
@@ -21,7 +22,26 @@ TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$CONFIG")
 
 PAYLOAD=$(cat)
 
+if [ "$MODE" = "question" ]; then
+    # AskUserQuestion: block for the user's answer regardless of permission mode
+    # (a real question needs a human, even in auto modes). The server returns the
+    # complete hookSpecificOutput JSON — print it verbatim so Claude Code applies
+    # the chosen answers. Empty response (app off / timeout) → exit 0 silently so
+    # Claude Code falls back to asking in the terminal. curl -m below the 600s
+    # hook timeout.
+    RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "$PAYLOAD" 2>/dev/null)
+    [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
+    exit 0
+fi
+
 if [ "$MODE" = "ask" ]; then
+    # AskUserQuestion is owned by the `question` hook; if it also reaches here
+    # (matcher "*"), stay out of the way.
+    TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name":"\([^"]*\)".*/\1/p')
+    [ "$TOOL" = "AskUserQuestion" ] && exit 0
+
     # Only block for a decision in manual ("default") mode. In any auto mode
     # (acceptEdits / auto / dontAsk / bypassPermissions / plan) just notify the
     # pet and let Claude Code proceed under its own permission behaviour.
