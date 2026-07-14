@@ -240,6 +240,7 @@ struct SettingsWindowView: View {
                 colorRow("Chú ý", $settings.notification)
                 colorRow("Phiên", $settings.session)
                 colorRow("Subagent", $settings.subagent)
+                colorRow("Chạy nền", $settings.background)
             }
 
             Section("Gradient tác vụ hoàn thành") {

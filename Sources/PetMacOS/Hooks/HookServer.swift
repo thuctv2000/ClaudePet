@@ -97,6 +97,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleAsk(request, on: connection)
         case "/question":
             handleQuestion(request, on: connection)
+        case "/debug/state":
+            handleDebugState(on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -167,6 +169,18 @@ final class HookServer: AskResolver, @unchecked Sendable {
 
         let petState = self.petState
         Task { @MainActor in petState.presentQuestion(id: id, event: event) }
+    }
+
+    /// Read-only introspection used by automated tests (no computer-use access
+    /// to this accessory app's borderless panel is possible, so tests assert
+    /// on exact state here instead of screenshots). Same token gate as every
+    /// other route; never mutates anything.
+    private func handleDebugState(on connection: NWConnection) {
+        let petState = self.petState
+        Task { @MainActor in
+            let body = (try? JSONEncoder().encode(petState.debugSnapshot())) ?? Data()
+            self.respond(connection, body: body)
+        }
     }
 
     // MARK: - AskResolver

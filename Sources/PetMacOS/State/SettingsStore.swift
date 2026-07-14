@@ -16,6 +16,7 @@ final class SettingsStore {
         Keys.session: .gray.opacity(0.9),
         Keys.done: .pink.opacity(0.9),
         Keys.subagent: .teal.opacity(0.9),
+        Keys.background: .indigo.opacity(0.9),
         Keys.gradient1: .purple,
         Keys.gradient2: .pink,
         Keys.gradient3: .orange,
@@ -28,6 +29,7 @@ final class SettingsStore {
         static let session = "color.session"
         static let done = "color.done"
         static let subagent = "color.subagent"
+        static let background = "color.background"
         static let gradient1 = "color.gradient1"
         static let gradient2 = "color.gradient2"
         static let gradient3 = "color.gradient3"
@@ -41,6 +43,7 @@ final class SettingsStore {
     var session: Color { didSet { save(Keys.session, session) } }
     var done: Color { didSet { save(Keys.done, done) } }
     var subagent: Color { didSet { save(Keys.subagent, subagent) } }
+    var background: Color { didSet { save(Keys.background, background) } }
     var gradient1: Color { didSet { save(Keys.gradient1, gradient1) } }
     var gradient2: Color { didSet { save(Keys.gradient2, gradient2) } }
     var gradient3: Color { didSet { save(Keys.gradient3, gradient3) } }
@@ -52,6 +55,7 @@ final class SettingsStore {
         session = Self.load(Keys.session)
         done = Self.load(Keys.done)
         subagent = Self.load(Keys.subagent)
+        background = Self.load(Keys.background)
         gradient1 = Self.load(Keys.gradient1)
         gradient2 = Self.load(Keys.gradient2)
         gradient3 = Self.load(Keys.gradient3)
@@ -68,6 +72,7 @@ final class SettingsStore {
         case .session: return session
         case .done: return done
         case .subagent: return subagent
+        case .background: return background
         }
     }
 
@@ -87,6 +92,7 @@ final class SettingsStore {
         session = Self.defaultColors[Keys.session]!
         done = Self.defaultColors[Keys.done]!
         subagent = Self.defaultColors[Keys.subagent]!
+        background = Self.defaultColors[Keys.background]!
         gradient1 = Self.defaultColors[Keys.gradient1]!
         gradient2 = Self.defaultColors[Keys.gradient2]!
         gradient3 = Self.defaultColors[Keys.gradient3]!

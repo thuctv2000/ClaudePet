@@ -4,9 +4,13 @@ import SwiftUI
 /// notices on top, transient running tasks below (closest to the pet's head).
 struct TaskStackView: View {
     let running: [TaskItem]
+    let subagents: [TaskItem]
+    let backgroundTasks: [TaskItem]
     let completed: [TaskItem]
     let settings: SettingsStore
     let onDismiss: (UUID) -> Void
+    let onDismissSubagent: (UUID) -> Void
+    let onDismissBackground: (UUID) -> Void
 
     var body: some View {
         VStack(spacing: 8) {
@@ -14,6 +18,27 @@ struct TaskStackView: View {
             ForEach(completed) { item in
                 CompletedCard(item: item, gradient: settings.completedGradient,
                               onDismiss: { onDismiss(item.id) })
+                    .transition(.scale(scale: 0.85, anchor: .bottom).combined(with: .opacity))
+            }
+
+            // Running subagents: persistent until SubagentStop, with a live
+            // elapsed-time readout so it's obvious they are still working.
+            ForEach(subagents) { item in
+                RunningCard(item: item,
+                            borderColor: settings.borderColor(for: item.kind),
+                            showsElapsed: true,
+                            onDismiss: { onDismissSubagent(item.id) })
+                    .transition(.scale(scale: 0.85, anchor: .bottom).combined(with: .opacity))
+            }
+
+            // Running background Bash commands: no hook reports completion, so
+            // these persist (with the same live elapsed readout) until a
+            // transcript poll confirms the command is done.
+            ForEach(backgroundTasks) { item in
+                RunningCard(item: item,
+                            borderColor: settings.borderColor(for: item.kind),
+                            showsElapsed: true,
+                            onDismiss: { onDismissBackground(item.id) })
                     .transition(.scale(scale: 0.85, anchor: .bottom).combined(with: .opacity))
             }
 
@@ -49,22 +74,56 @@ struct TaskStackView: View {
 }
 
 /// A transient running-task card with a solid, kind-coloured border.
+/// With `showsElapsed` it also ticks a live "đang chạy · m:ss" line (used for
+/// persistent subagent cards).
 private struct RunningCard: View {
     let item: TaskItem
     let borderColor: Color
+    var showsElapsed = false
+    var onDismiss: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(item.title)
-                .font(.caption)
-                .bold()
-                .foregroundStyle(.primary)
-                .lineLimit(2)
+            if let context = item.context {
+                Text(context)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Text(item.title)
+                    .font(.caption)
+                    .bold()
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let onDismiss {
+                    Button(action: onDismiss) {
+                        Text("✕")
+                            .font(.caption)
+                            .bold()
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             if let detail = item.detail {
                 Text(detail)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
+            }
+            if showsElapsed {
+                TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            .controlSize(.mini)
+                        Text("đang chạy · \(elapsed(at: timeline.date))")
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -79,6 +138,11 @@ private struct RunningCard: View {
                 .stroke(borderColor, lineWidth: 2)
         )
         .shadow(color: .black.opacity(0.14), radius: 6, y: 3)
+    }
+
+    private func elapsed(at date: Date) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(item.startedAt)))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 }
 
@@ -97,6 +161,12 @@ private struct CompletedCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
+                if let context = item.context {
+                    Text(context)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
                 Text(item.title)
                     .font(.caption)
                     .bold()

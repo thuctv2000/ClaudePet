@@ -25,13 +25,22 @@ struct PetView: View {
         // upward instead of pushing the dog out of the panel.
         VStack(spacing: 4) {
             Spacer(minLength: 0)
-            topContent
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, alignment: .bottom)
-                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.runningTasks)
-                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.completedNotices)
-                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
-                .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+            // Scrollable so a long list of subagent/background/completed cards
+            // never gets clipped by or overlaps the panel — it scrolls inside
+            // its own bounds instead, anchored to the newest (bottom) card.
+            ScrollView(.vertical, showsIndicators: false) {
+                topContent
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.runningTasks)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.subagentTasks)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.backgroundTasks)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.completedNotices)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+            }
+            .defaultScrollAnchor(.bottom)
+            .frame(maxHeight: dialogActive ? 420 : 340)
             dog
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: dialogActive)
             // Usage badge stays visible under the pet at all times.
@@ -63,9 +72,13 @@ struct PetView: View {
         } else {
             TaskStackView(
                 running: state.runningTasks,
+                subagents: state.subagentTasks,
+                backgroundTasks: state.backgroundTasks,
                 completed: state.completedNotices,
                 settings: settings,
-                onDismiss: { id in state.dismissNotice(id: id) }
+                onDismiss: { id in state.dismissNotice(id: id) },
+                onDismissSubagent: { id in state.dismissSubagent(id: id) },
+                onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
             )
         }
     }

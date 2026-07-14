@@ -99,6 +99,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         SpriteLibrary.ensureScaffold()
         sprites.reload()
+        petState.recoverInFlightSubagents()
         showPet()
         startHookServer()
         usage.start()

@@ -90,6 +90,38 @@ struct HookEvent: Decodable {
         toolName: nil, toolInput: nil, toolResponse: nil, message: nil, prompt: nil,
         agentId: nil, agentType: nil, lastAssistantMessage: nil)
 
+    /// Last path component of `cwd` — the project folder the session runs in.
+    var projectName: String? {
+        guard let cwd, !cwd.isEmpty else { return nil }
+        return URL(fileURLWithPath: cwd).lastPathComponent
+    }
+
+    /// Short, stable tag identifying which Claude Code tab/session this event
+    /// came from (first 6 chars of the session id). Distinguishes cards from
+    /// different sessions even when they share the same project folder.
+    var sessionTag: String? {
+        guard let sessionId, sessionId.count >= 6 else { return sessionId }
+        return String(sessionId.prefix(6))
+    }
+
+    /// Parses a `PostToolUse` response for a `Bash` call launched with
+    /// `run_in_background: true`. Claude Code's `tool_response` for that case
+    /// is a fixed-format string: "Command running in background with ID:
+    /// <id>. Output is being written to: <path>. ...". Returns nil otherwise.
+    var backgroundLaunch: (taskId: String, outputFile: String)? {
+        guard toolName == "Bash", let toolResponse else { return nil }
+        let text = toolResponse.display
+        guard let idMarker = text.range(of: "background with ID: "),
+              let idEnd = text.range(of: ". Output", range: idMarker.upperBound..<text.endIndex)
+        else { return nil }
+        let taskId = String(text[idMarker.upperBound..<idEnd.lowerBound])
+
+        guard let pathMarker = text.range(of: "written to: ") else { return (taskId, "") }
+        let rest = text[pathMarker.upperBound...]
+        let outputFile = rest.range(of: ". ").map { String(rest[..<$0.lowerBound]) } ?? String(rest)
+        return (taskId, outputFile.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
     /// True when a Pre/PostToolUse event is for a tool running *inside* a
     /// subagent (identified by `agent_id`), as opposed to the main agent.
     var isFromSubagent: Bool {
@@ -142,7 +174,15 @@ struct HookEvent: Decodable {
             let purpose = inputString("description") ?? inputString("subagent_type") ?? "đang chạy"
             return "Subagent: \(purpose)"
         default:
-            return toolName ?? "Tool"
+            // MCP tools are named "mcp__<server>__<tool>" (e.g.
+            // "mcp__computer-use__request_access") — that raw string is noisy
+            // on a small card, so show just the tool's own name.
+            guard let toolName else { return "Tool" }
+            if toolName.hasPrefix("mcp__") {
+                let parts = toolName.components(separatedBy: "__")
+                if let last = parts.last, !last.isEmpty { return last }
+            }
+            return toolName
         }
     }
 
