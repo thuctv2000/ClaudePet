@@ -19,6 +19,7 @@
 		96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12CA287C7CACA340ABD108C /* SpriteImporter.swift */; };
 		995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */; };
 		9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6295BC37E9B655A219CE95D /* PetView.swift */; };
+		AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46A5EB32015467C559F4AC3 /* SessionNames.swift */; };
 		AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */; };
 		B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A49E4A442ADFD5CD45C9582 /* PetState.swift */; };
 		BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF97BEB4B89A535444ADD4A /* PetConfig.swift */; };
@@ -50,6 +51,7 @@
 		DAD6C1596A1C653DA132297A /* TaskStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStackView.swift; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
 		E46998C00ABB596885D703B7 /* UsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageMonitor.swift; sourceTree = "<group>"; };
+		E46A5EB32015467C559F4AC3 /* SessionNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNames.swift; sourceTree = "<group>"; };
 		EBF97BEB4B89A535444ADD4A /* PetConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetConfig.swift; sourceTree = "<group>"; };
 		F00DFE8DF50364DE0240C86F /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
 		F83020535917ED3CD4C35874 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 			isa = PBXGroup;
 			children = (
 				7A49E4A442ADFD5CD45C9582 /* PetState.swift */,
+				E46A5EB32015467C559F4AC3 /* SessionNames.swift */,
 				78DE56CC509FC11874D00027 /* SettingsStore.swift */,
 				E46998C00ABB596885D703B7 /* UsageMonitor.swift */,
 			);
@@ -239,6 +242,7 @@
 				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
 				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
+				AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
 				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
 				F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */,
