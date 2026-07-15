@@ -20,6 +20,13 @@ struct PermissionDialogView: View {
             Text(ask.toolName)
                 .font(.system(size: 14, weight: .bold))
 
+            if let conversationName = ask.conversationName {
+                Text(conversationName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
             if let summary = ask.summary {
                 ScrollView {
                     Text(summary)

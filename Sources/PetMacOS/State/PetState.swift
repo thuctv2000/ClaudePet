@@ -20,12 +20,22 @@ struct PendingAsk: Identifiable, Equatable {
     /// When the request is for launching a subagent (Task/Agent tool), the card
     /// to show as a running subagent once the user allows it.
     let subagentCard: TaskItem?
+    /// The `session_id` this ask came from, used to route its mood back to the
+    /// right per-session bucket on resolve/cancel (see `PetState.sessions`).
+    let sessionId: String?
+    /// The conversation's resolved name (via `SessionNameResolver`, falling
+    /// back to `#tag`), shown in the dialog so the user knows *which*
+    /// conversation they're approving when several are running at once.
+    let conversationName: String?
 
-    init(id: String, toolName: String, summary: String?, subagentCard: TaskItem? = nil) {
+    init(id: String, toolName: String, summary: String?, subagentCard: TaskItem? = nil,
+         sessionId: String? = nil, conversationName: String? = nil) {
         self.id = id
         self.toolName = toolName
         self.summary = summary
         self.subagentCard = subagentCard
+        self.sessionId = sessionId
+        self.conversationName = conversationName
     }
 }
 
@@ -33,6 +43,15 @@ struct PendingAsk: Identifiable, Equatable {
 struct PendingQuestion: Identifiable, Equatable {
     let id: String
     let questions: [PetQuestion]
+    /// The `session_id` this question came from, so resolving/cancelling it
+    /// can route its mood back to the right per-session bucket.
+    let sessionId: String?
+
+    init(id: String, questions: [PetQuestion], sessionId: String? = nil) {
+        self.id = id
+        self.questions = questions
+        self.sessionId = sessionId
+    }
 }
 
 /// Category of a task card, used to pick its border colour.
@@ -128,8 +147,17 @@ final class PetState {
         }
     }
 
+    /// The pet's single displayed mood -- the highest-priority mood among all
+    /// currently-live sessions (see `sessions`/`recomputeAggregateMood`).
     private(set) var mood: Mood = .idle
-    private(set) var pendingAsk: PendingAsk?
+    /// FIFO queue of asks awaiting the user's Allow/Deny. Only the first item
+    /// is ever shown as a dialog; see `presentAsk`/`resolve`/`cancelAsk`.
+    private var askQueue: [PendingAsk] = []
+    /// The ask currently shown as a dialog (the head of `askQueue`), if any.
+    var pendingAsk: PendingAsk? { askQueue.first }
+    /// Number of asks waiting (including the one currently shown). Exposed in
+    /// `/debug/state` as `pendingAskCount`.
+    var pendingAskCount: Int { askQueue.count }
     private(set) var pendingQuestion: PendingQuestion?
 
     /// Bumped to a fresh id whenever the "happy" one-shot sprite should play
@@ -197,18 +225,47 @@ final class PetState {
     /// when the task finishes early or is pushed out of the stack.
     private var expiryTasks: [UUID: Task<Void, Never>] = [:]
 
-    /// Pending decay for a transient mood (`.talking`, `.error`). Cancelled and
-    /// replaced every time `setMood` runs, so a stale timer from an earlier
-    /// mood can never fire after a newer event has already moved on.
-    private var moodDecayTask: Task<Void, Never>?
+    // MARK: - Mood (per-session, aggregated)
 
-    // MARK: - Mood
+    /// One live session's own mood, tracked independently so that several
+    /// concurrent Claude Code tabs/sessions never stomp on each other's mood
+    /// (the old bug: last-writer-wins across sessions). The pet's single
+    /// displayed `mood` is the highest-priority mood among all entries here
+    /// (see `moodPriority`/`recomputeAggregateMood`).
+    private struct SessionActivity {
+        var mood: Mood
+        var lastEventAt: Date
+        /// Pending decay for this session's own transient mood (`.talking`,
+        /// `.error`). Cancelled and replaced every time this session's mood is
+        /// set, so a stale timer can never fire after a newer event already
+        /// moved this session on.
+        var decayTask: Task<Void, Never>?
+    }
+
+    /// sessionId -> that session's own activity. Events with no `session_id`
+    /// (malformed payloads; shouldn't happen in practice) are bucketed under
+    /// a synthetic key so they don't get merged with an unrelated real
+    /// session. Entries expire (see `sessionTTLSeconds`) or are removed
+    /// outright on `SessionEnd`.
+    private var sessions: [String: SessionActivity] = [:]
+    private static let noSessionKey = "_no-session_"
+
+    /// asking > error > working > thinking > talking > sleep > idle, per spec.
+    /// Lower index = higher priority.
+    private static let moodPriority: [Mood] = [.asking, .error, .working, .thinking, .talking, .sleep, .idle]
+
+    /// Recurring sweep that drops sessions which haven't had an event in
+    /// `sessionTTLSeconds`. Started lazily on the first session, stopped once
+    /// the map is empty (mirrors `backgroundSafetyPollTask`'s lifecycle).
+    private var sessionExpiryTask: Task<Void, Never>?
 
     /// Default decay for `.talking` set by `Stop`/`notify` with no override
     /// (see `talkingDecaySeconds`).
     private static let defaultTalkingDecaySeconds: TimeInterval = 20
     /// Default decay for `.error` (see `errorDecaySeconds`).
     private static let defaultErrorDecaySeconds: TimeInterval = 6
+    /// Default session expiry (see `sessionTTLSeconds`).
+    private static let defaultSessionTTLMinutes: Double = 30
 
     /// How long `.talking` lingers before falling back to `.idle`. Read fresh
     /// from the optional `talkingDecaySeconds` field in `~/.petmacos/config.json`
@@ -225,6 +282,13 @@ final class PetState {
         Self.configOverride(key: "errorDecaySeconds") ?? Self.defaultErrorDecaySeconds
     }
 
+    /// How long a session may go without an event before it's dropped from
+    /// `sessions` (and therefore stops contributing to the mood aggregate).
+    /// Same override mechanism, in minutes (`sessionTTLMinutes` in config.json).
+    var sessionTTLSeconds: TimeInterval {
+        (Self.configOverride(key: "sessionTTLMinutes") ?? Self.defaultSessionTTLMinutes) * 60
+    }
+
     private static func configOverride(key: String) -> TimeInterval? {
         guard let data = try? Data(contentsOf: PetConfig.fileURL),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -234,37 +298,99 @@ final class PetState {
     }
 
     /// True while a subagent or background task is still known to be running
-    /// — used by the `.error` decay fallback to pick `.working` over `.idle`.
+    /// (globally, across every session) — used by the `.error` decay fallback
+    /// to pick `.working` over `.idle`, and by `Stop` to decide the "happy"
+    /// one-shot. Deliberately global, not per-session: a session whose own
+    /// work already finished can still correctly decay to "working" if some
+    /// *other* session's subagent/background task is still going, matching
+    /// the pre-existing single-mood behaviour this replaces (task spec: "xét
+    /// theo trạng thái TOÀN CỤC còn lại").
     private var hasActiveWork: Bool { !subagentTasks.isEmpty || !backgroundTasks.isEmpty }
 
-    /// The single place `mood` is ever written. Cancels any decay timer left
-    /// over from a previous mood, then — for the transient moods `.talking`
-    /// and `.error` — schedules a fresh one so a card-less "just finished" or
-    /// "just failed" expression doesn't linger forever. `.idle`, `.thinking`,
-    /// `.working`, `.asking` and `.sleep` are stable states set explicitly by
-    /// their own events and are never auto-decayed.
-    private func setMood(_ newMood: Mood) {
-        moodDecayTask?.cancel()
-        moodDecayTask = nil
-        mood = newMood
+    /// The single place a *session's* mood is ever written. `sessionId` nil is
+    /// bucketed under `noSessionKey` (app-level notices via `notify`, or a
+    /// malformed event). Cancels any decay timer left over from this session's
+    /// previous mood, then — for the transient moods `.talking` and `.error` —
+    /// schedules a fresh one scoped to this session, and finally recomputes
+    /// the pet's aggregate `mood`.
+    private func setMood(_ newMood: Mood, for sessionId: String?) {
+        let key = sessionId ?? Self.noSessionKey
+        var activity = sessions[key] ?? SessionActivity(mood: .idle, lastEventAt: Date(), decayTask: nil)
+        activity.decayTask?.cancel()
+        activity.decayTask = nil
+        activity.mood = newMood
+        activity.lastEventAt = Date()
         switch newMood {
         case .talking:
-            scheduleMoodDecay(after: talkingDecaySeconds) { .idle }
+            activity.decayTask = scheduleSessionDecay(key: key, after: talkingDecaySeconds) { .idle }
         case .error:
-            scheduleMoodDecay(after: errorDecaySeconds) { [weak self] in
+            activity.decayTask = scheduleSessionDecay(key: key, after: errorDecaySeconds) { [weak self] in
                 (self?.hasActiveWork ?? false) ? .working : .idle
             }
         default:
             break
         }
+        sessions[key] = activity
+        recomputeAggregateMood()
+        ensureSessionExpirySweep()
     }
 
-    private func scheduleMoodDecay(after seconds: TimeInterval, fallback: @escaping () -> Mood) {
-        moodDecayTask = Task { [weak self] in
+    private func scheduleSessionDecay(
+        key: String, after seconds: TimeInterval, fallback: @escaping () -> Mood
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled, let self else { return }
-            self.mood = fallback()
-            self.moodDecayTask = nil
+            guard var activity = self.sessions[key] else { return }
+            activity.mood = fallback()
+            activity.decayTask = nil
+            self.sessions[key] = activity
+            self.recomputeAggregateMood()
+        }
+    }
+
+    /// Recomputes the pet's single displayed `mood` as the highest-priority
+    /// mood among all live sessions (asking > error > working > thinking >
+    /// talking > sleep > idle), or `.idle` when no session is tracked.
+    private func recomputeAggregateMood() {
+        var best: Mood?
+        for activity in sessions.values {
+            guard let currentBestRank = best.flatMap({ Self.moodPriority.firstIndex(of: $0) }) else {
+                best = activity.mood
+                continue
+            }
+            if let rank = Self.moodPriority.firstIndex(of: activity.mood), rank < currentBestRank {
+                best = activity.mood
+            }
+        }
+        mood = best ?? .idle
+    }
+
+    /// Starts (if not already running) a recurring sweep that drops sessions
+    /// idle past `sessionTTLSeconds`. The poll interval adapts to the current
+    /// TTL (down to 1s) so tests can override `sessionTTLMinutes` to a small
+    /// value and see expiry within a reasonable wait, instead of being stuck
+    /// with a fixed slow cadence tuned only for the real 30-minute default.
+    private func ensureSessionExpirySweep() {
+        guard sessionExpiryTask == nil else { return }
+        sessionExpiryTask = Task { [weak self] in
+            while true {
+                guard let self else { return }
+                let ttl = self.sessionTTLSeconds
+                let interval = max(1.0, min(60.0, ttl / 5))
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled else { return }
+                let now = Date()
+                let before = self.sessions.count
+                self.sessions = self.sessions.filter {
+                    now.timeIntervalSince($0.value.lastEventAt) < self.sessionTTLSeconds
+                }
+                if self.sessions.count != before { self.recomputeAggregateMood() }
+                if self.sessions.isEmpty {
+                    self.sessionExpiryTask = nil
+                    return
+                }
+            }
         }
     }
 
@@ -443,12 +569,27 @@ final class PetState {
         persistInFlightSubagents() // drop any expired entries from the file too
     }
 
-    /// Clears the transient running tasks (e.g. when Claude stops). Running
-    /// subagents are left alone — they may still be working in the background.
-    private func clearRunning() {
-        for task in expiryTasks.values { task.cancel() }
-        expiryTasks.removeAll()
-        runningTasks.removeAll()
+    /// Clears the transient running tasks belonging to one session (e.g. when
+    /// that session's Claude stops). Running subagents are left alone — they
+    /// may still be working in the background, regardless of session.
+    ///
+    /// Scoped to `sessionId` so a `Stop`/`SessionEnd` from session X can never
+    /// wipe cards belonging to a *different* still-active session Y (the bug
+    /// this replaces: the old global `clearRunning()` nuked every running card
+    /// regardless of which session's hook fired). A card with no `sessionId`
+    /// at all (e.g. an app-level `notify()` notice) is deliberately left
+    /// alone here too — trade-off: such a card can only be tied to *a*
+    /// session by guessing, so instead it's left to expire via its own TTL
+    /// (`runningTTL`) rather than risk clearing an unrelated card.
+    private func clearRunning(sessionId: String?) {
+        // No session id on the triggering event at all -- nothing to scope
+        // the clear to; leave every card alone rather than guess.
+        guard let sessionId else { return }
+        let idsToRemove = runningTasks.filter { $0.sessionId == sessionId }.map(\.id)
+        for id in idsToRemove {
+            expiryTasks.removeValue(forKey: id)?.cancel()
+        }
+        runningTasks.removeAll { $0.sessionId == sessionId }
     }
 
     // MARK: - Background Bash tasks (run_in_background)
@@ -483,7 +624,7 @@ final class PetState {
     /// done (see `TranscriptWatcher`), backed by a slow safety-net poll, and a
     /// safety timeout is armed in case no signal ever arrives at all.
     private func startBackgroundTask(taskId: String, title: String, detail: String?,
-                                      context: String?, transcriptPath: String) {
+                                      context: String?, transcriptPath: String, sessionId: String?) {
         guard !backgroundTasks.contains(where: { $0.taskId == taskId }) else { return }
         if backgroundOffsets[transcriptPath] == nil {
             // Skip everything already in the transcript; only new writes matter.
@@ -491,7 +632,7 @@ final class PetState {
         }
         let item = TaskItem(
             title: title, detail: detail, kind: .background, context: context,
-            taskId: taskId, transcriptPath: transcriptPath
+            taskId: taskId, transcriptPath: transcriptPath, sessionId: sessionId
         )
         backgroundTasks.append(item)
         scheduleBackgroundTimeout(id: item.id, taskId: taskId)
@@ -600,7 +741,8 @@ final class PetState {
             detail: item.title,
             kind: .failed,
             dedupeKey: "bg-\(taskId)",
-            context: item.context
+            context: item.context,
+            sessionId: item.sessionId
         ))
     }
 
@@ -624,7 +766,8 @@ final class PetState {
             detail: item.title,
             kind: kind,
             dedupeKey: "bg-\(taskId)",
-            context: item.context
+            context: item.context,
+            sessionId: item.sessionId
         ))
     }
 
@@ -654,8 +797,10 @@ final class PetState {
     }
 
     /// Shows a short-lived app notice (connection, sprites) as a session card.
+    /// Not tied to any Claude Code session, so its mood is bucketed under the
+    /// synthetic "no session" key (see `setMood(_:for:)`).
     func notify(_ title: String, mood: Mood = .idle) {
-        setMood(mood)
+        setMood(mood, for: nil)
         pushRunning(TaskItem(title: title, kind: .session))
     }
 
@@ -696,7 +841,7 @@ final class PetState {
     /// Code tabs sharing one project folder even in the fallback case.
     private func contextLabel(for event: HookEvent) -> String? {
         let tab: String?
-        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId) {
+        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId, cwd: event.cwd) {
             tab = name
         } else {
             tab = event.sessionTag.map { "#\($0)" }
@@ -709,13 +854,14 @@ final class PetState {
     func apply(_ event: HookEvent) {
         logEvent(event, route: "event")
         let context = contextLabel(for: event)
+        let sid = event.sessionId
         switch event.hookEventName ?? "" {
         case "UserPromptSubmit":
-            setMood(.thinking)
-            pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context))
+            setMood(.thinking, for: sid)
+            pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context, sessionId: sid))
         case "PreToolUse":
             // Reached here only in auto mode (manual mode blocks via /ask).
-            setMood(.working)
+            setMood(.working, for: sid)
             // Tools running inside a subagent are internal noise; the parent
             // subagent card already represents the work.
             if event.isFromSubagent { return }
@@ -727,7 +873,8 @@ final class PetState {
                     title: event.intentTitle,
                     detail: event.intentDetail.map { truncate($0) },
                     kind: .tool,
-                    context: context
+                    context: context,
+                    sessionId: sid
                 ))
             }
         case "PostToolUse":
@@ -737,9 +884,9 @@ final class PetState {
             // A failed tool briefly shows "error" instead, decaying back to
             // "working"/"idle" on its own (see `setMood`).
             if event.isToolError {
-                setMood(.error)
+                setMood(.error, for: sid)
             } else {
-                setMood(.working)
+                setMood(.working, for: sid)
             }
             if event.isFromSubagent { return }
             // A Bash call launched with run_in_background: true has no hook
@@ -751,36 +898,40 @@ final class PetState {
                     title: "Chạy nền: \(event.intentTitle)",
                     detail: event.intentDetail.map { truncate($0) },
                     context: context,
-                    transcriptPath: path
+                    transcriptPath: path,
+                    sessionId: sid
                 )
             }
         case "Notification":
-            setMood(.asking)
+            setMood(.asking, for: sid)
             pushRunning(TaskItem(title: event.message ?? "Claude cần chú ý",
-                                 kind: .notification, context: context))
+                                 kind: .notification, context: context, sessionId: sid))
         case "Stop":
-            // Subagents/background tasks may still be working; keep their
-            // cards and stay in "working" mood while any remain. A fully clean
-            // stop plays the "happy" one-shot once (falls back to just
-            // "talking" if the user has no "happy" frames — see PetView) and
-            // then decays back to idle after a while (see `setMood`).
+            // Subagents/background tasks may still be working (globally,
+            // across every session -- see `hasActiveWork`'s doc comment);
+            // keep their cards and stay in "working" mood while any remain. A
+            // fully clean stop plays the "happy" one-shot once (falls back to
+            // just "talking" if the user has no "happy" frames — see
+            // PetView) and then decays back to idle after a while (see
+            // `setMood`). Only THIS session's running cards are cleared —
+            // other sessions' cards are untouched (see `clearRunning`).
             if subagentTasks.isEmpty && backgroundTasks.isEmpty {
                 happyID = UUID()
-                setMood(.talking)
+                setMood(.talking, for: sid)
             } else {
-                setMood(.working)
+                setMood(.working, for: sid)
             }
-            clearRunning()
+            clearRunning(sessionId: sid)
             pushStopNotice(for: event)
         case "SubagentStart":
             // New in Claude Code v2.1.177+: carries the real agent_id/agent_type
             // for a subagent that's about to start. See `handleSubagentStart` for
             // how this reconciles with the card `PreToolUse`/allowed-`/ask`
             // already created (title, but no id).
-            setMood(.working)
+            setMood(.working, for: sid)
             handleSubagentStart(event)
         case "SubagentStop":
-            setMood(subagentTasks.count > 1 ? .working : .talking)
+            setMood(subagentTasks.count > 1 ? .working : .talking, for: sid)
             let card = finishSubagent(agentId: event.agentId)
             let title = event.agentType.map { "Subagent \($0) hoàn thành" }
                 ?? "Subagent hoàn thành"
@@ -793,27 +944,31 @@ final class PetState {
                 detail: detail,
                 kind: .done,
                 dedupeKey: "subagent-\(event.agentId ?? UUID().uuidString)",
-                context: context
+                context: context,
+                sessionId: sid
             ))
         case "SessionStart":
             // No card: with hooks installed globally, this fires for every
             // Claude Code session on the machine (other projects, automated
             // routines...), not just the one the user is watching — a card
             // here reads as noise. Only the mood/sprite reacts.
-            setMood(.idle)
+            setMood(.idle, for: sid)
         case "SessionEnd":
             // Hooks are installed globally, so this fires for every Claude
             // Code session on the machine — NOT just the one the pet is
-            // watching. Only the transient running-task stack is cleared;
+            // watching. Only THIS session's transient running-task stack is
+            // cleared and THIS session's own mood/activity entry is dropped;
             // subagents belonging to other still-active sessions must not be
             // wiped just because an unrelated session ended. Each subagent
             // card is only removed by its own SubagentStop, a manual dismiss,
             // or expiring after a restart (see recoverInFlightSubagents).
-            setMood(.sleep)
-            clearRunning()
+            setMood(.sleep, for: sid)
+            if let sid { sessions.removeValue(forKey: sid) } else { sessions.removeValue(forKey: Self.noSessionKey) }
+            recomputeAggregateMood()
+            clearRunning(sessionId: sid)
         default:
             if let message = event.message {
-                pushRunning(TaskItem(title: message, kind: .session, context: context))
+                pushRunning(TaskItem(title: message, kind: .session, context: context, sessionId: sid))
             }
         }
     }
@@ -839,6 +994,7 @@ final class PetState {
         let key = "stop-\(event.sessionId ?? "s")"
         let baseContext = contextLabel(for: event)
         let path = event.transcriptPath
+        let sid = event.sessionId
 
         func push(_ text: String?, context: String?) {
             pushCompleted(TaskItem(
@@ -846,7 +1002,8 @@ final class PetState {
                 detail: truncate(text ?? "Claude đã trả lời", limit: 800),
                 kind: .done,
                 dedupeKey: key,
-                context: context
+                context: context,
+                sessionId: sid
             ))
         }
 
@@ -867,9 +1024,16 @@ final class PetState {
         }
     }
 
-    // MARK: - Permission requests (blocking)
+    // MARK: - Permission requests (blocking, FIFO queue)
 
-    /// Presents a permission request, or auto-approves it when paused.
+    /// Presents a permission request, or auto-approves it when paused. When an
+    /// ask is already being shown, the new one is appended to `askQueue`
+    /// instead of replacing it -- the old single-slot behaviour silently
+    /// dropped/overwrote an earlier ask, leaving its hook blocked until the
+    /// script's own timeout denied it. Every incoming ask still immediately
+    /// marks its *session* as `.asking` in the mood aggregate (that session
+    /// genuinely is waiting on a human), even while its dialog itself waits
+    /// in line to be shown.
     func presentAsk(id: String, event: HookEvent) {
         logEvent(event, route: "ask")
         // Launching a subagent? Remember its card so an "allow" can start
@@ -881,43 +1045,85 @@ final class PetState {
             resolver?.resolveAsk(id: id, decision: PetDecision(decision: "allow", text: nil))
             return
         }
-        setMood(.asking)
-        pendingAsk = PendingAsk(
+        setMood(.asking, for: event.sessionId)
+        let ask = PendingAsk(
             id: id,
             toolName: event.toolName ?? "Tool",
             summary: event.toolInputSummary.map { truncate($0) },
-            subagentCard: card
+            subagentCard: card,
+            sessionId: event.sessionId,
+            conversationName: conversationLabel(for: event)
         )
-        onInteractiveNeeded?(true)
+        let wasEmpty = askQueue.isEmpty
+        askQueue.append(ask)
+        // Only the head of the queue gets a dialog; a queued-behind ask stays
+        // invisible until its turn (see `presentNextAskIfNeeded`). The hook
+        // for a queued ask can still be waiting a long time -- if the
+        // script's own `/ask` timeout (default 300s/600s, see HookServer)
+        // fires first, that request is simply denied without ever being
+        // shown; this is documented, accepted behaviour (see TASK 4 note in
+        // CLAUDE.md / the project brief), not a bug to fix here.
+        if wasEmpty {
+            onInteractiveNeeded?(true)
+        }
     }
 
-    /// Sends the user's decision back to the waiting hook and clears the dialog.
+    /// Resolves the human-readable conversation label for an ask's dialog:
+    /// the resolved session name if available, else the "#tag" fallback --
+    /// same source as `contextLabel(for:)`'s tab portion, without the project
+    /// name prefix (the dialog already shows the tool name).
+    private func conversationLabel(for event: HookEvent) -> String? {
+        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId, cwd: event.cwd) {
+            return name
+        }
+        return event.sessionTag.map { "#\($0)" }
+    }
+
+    /// Sends the user's decision back to the waiting hook and clears the
+    /// dialog, then shows the next queued ask (if any).
     func resolve(_ decision: String, text: String? = nil) {
-        guard let ask = pendingAsk else { return }
+        guard let ask = askQueue.first else { return }
+        askQueue.removeFirst()
         resolver?.resolveAsk(id: ask.id, decision: PetDecision(decision: decision, text: text))
         if decision == "allow", let card = ask.subagentCard {
             startSubagent(card)
         }
-        pendingAsk = nil
-        setMood(.idle)
-        onInteractiveNeeded?(false)
-        // Keep passthrough on if notices are still visible.
-        updatePassthrough()
+        setMood(.idle, for: ask.sessionId)
+        presentNextAskOrDismiss()
     }
 
     /// Called by the server if a request times out or the connection drops.
+    /// Removes the ask wherever it sits in the queue -- not just when it's
+    /// the one currently shown -- since a queued-but-not-yet-displayed ask
+    /// can also hit its own timeout while waiting in line.
     func cancelAsk(id: String) {
-        guard pendingAsk?.id == id else { return }
-        pendingAsk = nil
-        setMood(.idle)
-        onInteractiveNeeded?(false)
-        updatePassthrough()
+        guard let index = askQueue.firstIndex(where: { $0.id == id }) else { return }
+        let wasCurrent = index == 0
+        let ask = askQueue.remove(at: index)
+        setMood(.idle, for: ask.sessionId)
+        if wasCurrent {
+            presentNextAskOrDismiss()
+        }
+    }
+
+    /// After the currently-shown ask is removed (resolved or cancelled), show
+    /// the next queued ask if there is one, or drop out of interactive mode.
+    private func presentNextAskOrDismiss() {
+        if askQueue.isEmpty {
+            onInteractiveNeeded?(false)
+            updatePassthrough() // keep passthrough on if notices are still visible
+        }
+        // else: `pendingAsk` (computed from `askQueue.first`) now reflects the
+        // next ask automatically; the dialog stays up (still interactive), no
+        // separate "present" call needed.
     }
 
     // MARK: - Interactive questions (AskUserQuestion, blocking)
 
     /// Presents an `AskUserQuestion` request. Unlike `/ask`, questions are shown
     /// even when approvals are paused — they genuinely need a human answer.
+    /// Unlike asks, questions are not queued (out of scope for this pass —
+    /// the pre-existing single-slot behaviour is unchanged).
     func presentQuestion(id: String, event: HookEvent) {
         logEvent(event, route: "question")
         let questions = event.askQuestions
@@ -926,8 +1132,8 @@ final class PetState {
             resolver?.resolveQuestion(id: id, answers: nil)
             return
         }
-        setMood(.asking)
-        pendingQuestion = PendingQuestion(id: id, questions: questions)
+        setMood(.asking, for: event.sessionId)
+        pendingQuestion = PendingQuestion(id: id, questions: questions, sessionId: event.sessionId)
         onInteractiveNeeded?(true)
     }
 
@@ -936,7 +1142,7 @@ final class PetState {
         guard let question = pendingQuestion else { return }
         resolver?.resolveQuestion(id: question.id, answers: answers)
         pendingQuestion = nil
-        setMood(.idle)
+        setMood(.idle, for: question.sessionId)
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
@@ -949,10 +1155,10 @@ final class PetState {
 
     /// Called by the server on timeout, or internally when the user skips.
     func cancelQuestion(id: String) {
-        guard pendingQuestion?.id == id else { return }
+        guard let question = pendingQuestion, question.id == id else { return }
         resolver?.resolveQuestion(id: id, answers: nil)
         pendingQuestion = nil
-        setMood(.idle)
+        setMood(.idle, for: question.sessionId)
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
@@ -981,9 +1187,17 @@ final class PetState {
         let detail: String?
         let kind: String
         let context: String?
+        let sessionId: String?
+    }
+
+    struct DebugSessionActivity: Codable {
+        let id: String
+        let mood: String
+        let lastEventAt: Date
     }
 
     struct DebugSnapshot: Codable {
+        /// Aggregate mood (highest-priority mood among all live sessions).
         let mood: String
         let runningTasks: [DebugCard]
         let subagentTasks: [DebugCard]
@@ -991,6 +1205,14 @@ final class PetState {
         let completedNotices: [DebugCard]
         let hasPendingAsk: Bool
         let hasPendingQuestion: Bool
+        /// Number of asks waiting in the FIFO queue (including the one shown).
+        let pendingAskCount: Int
+        /// The `session_id` of the ask currently shown as a dialog (the head
+        /// of the FIFO queue), or nil if none. Lets automated tests verify
+        /// queue ordering without needing computer-use on the dialog itself.
+        let pendingAskSessionId: String?
+        /// Every currently-live session's own mood + last-event timestamp.
+        let sessions: [DebugSessionActivity]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -998,7 +1220,15 @@ final class PetState {
     func debugSnapshot() -> DebugSnapshot {
         func card(_ item: TaskItem) -> DebugCard {
             DebugCard(title: item.title, detail: item.detail,
-                      kind: String(describing: item.kind), context: item.context)
+                      kind: String(describing: item.kind), context: item.context,
+                      sessionId: item.sessionId)
+        }
+        let sessionSnapshots = sessions.map { key, activity in
+            DebugSessionActivity(
+                id: key == Self.noSessionKey ? "" : key,
+                mood: String(describing: activity.mood),
+                lastEventAt: activity.lastEventAt
+            )
         }
         return DebugSnapshot(
             mood: String(describing: mood),
@@ -1007,7 +1237,10 @@ final class PetState {
             backgroundTasks: backgroundTasks.map(card),
             completedNotices: completedNotices.map(card),
             hasPendingAsk: pendingAsk != nil,
-            hasPendingQuestion: pendingQuestion != nil
+            hasPendingQuestion: pendingQuestion != nil,
+            pendingAskCount: pendingAskCount,
+            pendingAskSessionId: pendingAsk?.sessionId,
+            sessions: sessionSnapshots
         )
     }
 

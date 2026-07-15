@@ -10,8 +10,18 @@
 #
 # which returns the exact in-memory pet state as JSON:
 #   { mood, runningTasks[], subagentTasks[], backgroundTasks[],
-#     completedNotices[], hasPendingAsk, hasPendingQuestion }
-# Each card is { title, detail, kind, context }.
+#     completedNotices[], hasPendingAsk, hasPendingQuestion, pendingAskCount,
+#     pendingAskSessionId, sessions[] }
+# Each card is { title, detail, kind, context, sessionId }.
+# Each sessions[] entry is { id, mood, lastEventAt } -- one per currently-live
+# Claude Code session, tracked independently (see PetState.SessionActivity).
+# "mood" at the top level is the AGGREGATE across all live sessions (priority:
+# asking > error > working > thinking > talking > sleep > idle) -- since
+# several sessions can be live at once (including this very dev machine's own
+# real Claude Code sessions, running concurrently with this suite), tests
+# below assert on a *specific* session's entry in sessions[] wherever possible
+# rather than the aggregate, so they aren't fragile to unrelated concurrent
+# activity.
 #
 # Port + token are read fresh from ~/.petmacos/config.json every run (the port
 # is OS-assigned on each app launch, so it is never hardcoded).
@@ -95,6 +105,23 @@ get_state() {
     curl -s -m 5 -H "X-Pet-Token: $TOKEN" "$BASE/debug/state" 2>/dev/null
 }
 
+# drain_all_asks -> resolves (denies) every ask currently in the FIFO queue,
+# via the test-only /debug/resolveAsk route, so a leftover ask from an earlier
+# test/run can never sit at the head of the queue and swallow/misorder the
+# asks a later test posts. Capped at 10 iterations as a safety net against an
+# infinite loop if something is continuously re-queuing asks.
+drain_all_asks() {
+    local n i=0
+    n=$(get_state | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pendingAskCount",0))' 2>/dev/null)
+    while [ "${n:-0}" -gt 0 ] && [ "$i" -lt 10 ]; do
+        curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+            --data-binary '{"decision":"deny"}' >/dev/null 2>&1
+        sleep 0.2
+        n=$(get_state | python3 -c 'import json,sys;print(json.load(sys.stdin).get("pendingAskCount",0))' 2>/dev/null)
+        i=$((i+1))
+    done
+}
+
 # post_event <json> -> fire-and-forget POST to /event.
 post_event() {
     curl -s -m 5 -X POST "$BASE/event" \
@@ -113,6 +140,31 @@ wait_for_mood() {
         sleep 0.2
     done
     return 0
+}
+
+# wait_for_session_mood <sessionId> <mood> <max-seconds> -> like wait_for_mood,
+# but polls a specific session's own entry in sessions[] instead of the
+# top-level aggregate (robust to unrelated concurrent sessions changing the
+# aggregate mood while this suite runs).
+wait_for_session_mood() {
+    local sid="$1" want="$2" deadline_s="$3" waited=0
+    while true; do
+        local got
+        got=$(get_state | python3 -c '
+import json,sys
+s=json.load(sys.stdin)
+for sess in s.get("sessions", []):
+    if sess.get("id") == "'"$sid"'":
+        print(sess.get("mood"))
+        break
+else:
+    print("")
+' 2>/dev/null)
+        [ "$got" = "$want" ] && return 0
+        waited=$((waited + 1))
+        [ "$waited" -ge $((deadline_s * 5)) ] && return 1
+        sleep 0.2
+    done
 }
 
 # wait_bg_retired <desc-substring> <timeout-seconds> -> polls /debug/state
@@ -173,6 +225,11 @@ def ctx_has(cards, needle):
     return [c for c in cards if c.get("context") and needle in c["context"]]
 def title_has(cards, needle):
     return [c for c in cards if c.get("title") and needle in c["title"]]
+def session_mood(sid):
+    for sess in s.get("sessions", []):
+        if sess.get("id") == sid:
+            return sess.get("mood")
+    return None
 '"$body"'
 ' 2>&1)
     report "$name" "$out"
@@ -194,7 +251,7 @@ post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Agent\",\"sessio
 sleep 0.6
 
 STATE=$(get_state)
-assert "1. Two subagents from distinct sessions coexist with distinct tabs" '
+assert "1. Two subagents from distinct sessions coexist with distinct tabs, each stamped with its own sessionId" '
 subs=s["subagentTasks"]
 a=ctx_has(subs, "#'"$TAGA"'")
 b=ctx_has(subs, "#'"$TAGB"'")
@@ -204,6 +261,10 @@ elif not b:
     print("FAIL: no subagent card with context tag #'"$TAGB"' (got contexts: %s)" % [c.get("context") for c in subs])
 elif a[0]["context"] == b[0]["context"]:
     print("FAIL: both subagents share the same context %s" % a[0]["context"])
+elif a[0].get("sessionId") != "'"$SIDA"'":
+    print("FAIL: subagent A card sessionId is %r, expected '"$SIDA"'" % a[0].get("sessionId"))
+elif b[0].get("sessionId") != "'"$SIDB"'":
+    print("FAIL: subagent B card sessionId is %r, expected '"$SIDB"'" % b[0].get("sessionId"))
 else:
     print("PASS")
 ' "$STATE"
@@ -246,6 +307,12 @@ else:
     print("PASS")
 ' "$STATE"
 
+# Hygiene: retire sessions A/B's mood entries so they don'"'"'t linger in
+# sessions[] (with mood "working"/"talking") and pollute later tests that
+# still check the top-level aggregate mood.
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SIDA\",\"cwd\":\"$CWD_SUB\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SIDB\",\"cwd\":\"$CWD_SUB\"}"
+
 # ============================================================================
 # TEST 3 — Background Bash task: a PostToolUse for a run_in_background Bash call
 # shows a background card; appending a <task-notification>completed block to the
@@ -266,13 +333,15 @@ post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"sessio
 sleep 0.6
 
 STATE=$(get_state)
-assert "3a. Background Bash task creates a background card" '
+assert "3a. Background Bash task creates a background card (stamped with sessionId)" '
 bg=s["backgroundTasks"]
 mine=[c for c in bg if c.get("detail")=="'"$BG_DESC"'" or (c.get("title") and "'"$BG_DESC"'" in c["title"])]
 if not mine:
     print("FAIL: no background card for '"$BG_DESC"' (got: %s)" % [(c.get("title"),c.get("context")) for c in bg])
 elif "#'"$BG_TAG"'" not in (mine[0].get("context") or ""):
     print("FAIL: background card missing expected context tag #'"$BG_TAG"' (got %s)" % mine[0].get("context"))
+elif mine[0].get("sessionId") != "'"$BG_SID"'":
+    print("FAIL: background card sessionId is %r, expected '"$BG_SID"'" % mine[0].get("sessionId"))
 else:
     print("PASS")
 ' "$STATE"
@@ -299,6 +368,7 @@ elif not done:
 else:
     print("PASS")
 ' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$BG_SID\",\"cwd\":\"$BG_CWD\"}"
 
 # ============================================================================
 # TEST 3c/3d — Background Bash task status handling: "failed" and "killed"
@@ -335,6 +405,7 @@ else:
     print("PASS")
 ' "$STATE"
     rm -f "$transcript"
+    post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$bg_sid\",\"cwd\":\"$BG_CWD\"}"
 }
 
 run_bg_status_case "3c. Background task status=failed retires card as 'Chạy nền lỗi' (kind failed)" "failed" "Chạy nền lỗi"
@@ -387,6 +458,7 @@ elif not done:
 else:
     print("PASS")
 ' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$TIMEOUT_SID\",\"cwd\":\"$BG_CWD\"}"
 
 # ============================================================================
 # TEST 3f — Background task whose transcript file does NOT exist yet at task
@@ -440,6 +512,7 @@ else:
 ' "$STATE"
 
 rm -rf "$NEW_DIR"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$NEW_SID\",\"cwd\":\"$BG_CWD\"}"
 
 # ============================================================================
 # TEST 4 — SessionStart/SessionEnd never surface a card. Hooks are installed
@@ -483,13 +556,17 @@ STATE=$(get_state)
 assert "4b. Lone SessionStart surfaces no card (mood-only reaction)" '
 run=s["runningTasks"]
 mine=ctx_has(run, "#'"$START_TAG"'")
+mood = session_mood("'"$START_SID"'")
 if mine:
     print("FAIL: SessionStart unexpectedly created a card: %s" % [(c.get("title"),c.get("context")) for c in mine])
-elif s["mood"] != "idle":
-    print("FAIL: expected mood \"idle\" after SessionStart, got %r" % s["mood"])
+elif mood != "idle":
+    print("FAIL: expected session '"$START_SID"' mood \"idle\" after SessionStart, got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$START_SID\",\"cwd\":\"$SESS_CWD\"}"
+sleep 0.3
 
 # ============================================================================
 # TEST 5 — Permission-mode gating via the REAL installed hook script.
@@ -534,36 +611,36 @@ run_nonblocking_mode "acceptEdits" "pmacc2"
 run_nonblocking_mode "dontAsk"     "pmdna3"
 
 # permission_mode "default" -> the script blocks on /ask. Run it in the
-# background, confirm pendingAsk goes true, then kill it (there is no HTTP way
-# to resolve an ask; only the pet UI can). See the KNOWN LIMITATION note below.
-PRE_PENDING=$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;print(json.load(sys.stdin)["hasPendingAsk"])')
+# background and confirm pendingAsk goes true, then explicitly resolve it via
+# the test-only /debug/resolveAsk route (see HookServer.handleDebugResolveAsk)
+# instead of just killing the hook and leaving the ask stuck open on the
+# server for its ~300s timeout. Before this pass'"'"'s FIFO queue (TASK 4), a
+# stray unresolved ask here was only a cosmetic annoyance (the single pendingAsk
+# slot would just show a stale dialog); now that asks QUEUE, an unresolved ask
+# left behind by this test would sit at the head of the queue and silently
+# swallow/misorder every ask TEST 18/19 posts afterwards -- so cleaning it up
+# here is required for correctness, not just hygiene.
 DEF_PAYLOAD="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"permission_mode\":\"default\",\"session_id\":\"pmdef40000000000000000000000000pm\",\"cwd\":\"$PERM_CWD\",\"tool_input\":{\"description\":\"perm-default\",\"command\":\"echo hi\"}}"
 
-if [ "$PRE_PENDING" = "True" ]; then
-    # An ask is already pending from an earlier run that couldn't be cleared
-    # (see KNOWN LIMITATION); we cannot assert a fresh false->true transition.
-    # Skip rather than fail — this is expected on any re-run without a restart.
-    report "5. permission_mode=default BLOCKS (pendingAsk=true)" "SKIP: a prior pendingAsk is still set (KNOWN LIMITATION); restart the app to re-test this case"
-else
-    printf '%s' "$DEF_PAYLOAD" | "$HOOK" ask >/dev/null 2>&1 &
-    HOOKPID=$!
-    sleep 1.5
-    STATE=$(get_state)
-    assert "5. permission_mode=default BLOCKS (pendingAsk=true)" '
+drain_all_asks # make sure nothing stray is already queued (see drain_all_asks doc)
+printf '%s' "$DEF_PAYLOAD" | "$HOOK" ask >/dev/null 2>&1 &
+HOOKPID=$!
+sleep 1.5
+STATE=$(get_state)
+assert "5. permission_mode=default BLOCKS (pendingAsk=true)" '
 if s["hasPendingAsk"]:
     print("PASS")
 else:
     print("FAIL: hasPendingAsk did not become true for default mode")
 ' "$STATE"
-    # Kill the blocking hook + its child curl. This does NOT clear pendingAsk on
-    # the app (the server keeps the ask open until its 300s timeout).
-    pkill -P "$HOOKPID" 2>/dev/null
-    kill "$HOOKPID" 2>/dev/null
-    wait "$HOOKPID" 2>/dev/null
-    echo "      KNOWN LIMITATION: the 'default' ask stays pending on the pet"
-    echo "      (~300s server timeout) — there is no HTTP way to resolve it; only"
-    echo "      the pet UI can. Restart the app for a fully clean state."
-fi
+# Resolve it (deny) via the debug route so it does not linger in the FIFO
+# queue for later tests, then let the hook script'"'"'s own curl return and reap
+# the background job cleanly.
+drain_all_asks
+wait "$HOOKPID" 2>/dev/null
+pkill -P "$HOOKPID" 2>/dev/null
+kill "$HOOKPID" 2>/dev/null
+wait "$HOOKPID" 2>/dev/null
 
 # ============================================================================
 # TEST 7/8/9 — Mood decay (error, talking, and decay-cancellation-by-new-event).
@@ -590,26 +667,39 @@ with open(path, "w") as f:
     json.dump(cfg, f)
 PYEOF
 
+# NOTE ON MOOD ASSERTIONS BELOW: since PetState v2 (session-tabs prep), `mood`
+# is an AGGREGATE across every live session (see PetState.recomputeAggregateMood),
+# and this dev machine's own real Claude Code sessions may be generating hook
+# events concurrently with this suite. So these tests assert on *this test's
+# own session's* entry in `sessions[]` (via `session_mood`/`wait_for_session_mood`)
+# instead of the top-level aggregate `s["mood"]` -- robust to unrelated
+# concurrent activity, and also the more semantically correct check now that
+# mood is tracked per-session.
+
 # --- 7. PostToolUse tool_response.is_error -> mood "error", then decays. ---
 ERR_SID="errtest10000000000000000000000006"
 post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$ERR_SID\",\"cwd\":\"/tmp/e2eerr\",\"tool_input\":{\"description\":\"e2e failing tool\",\"command\":\"false\"},\"tool_response\":{\"is_error\":true,\"stderr\":\"boom\"}}"
-wait_for_mood "error" 2 || true
+wait_for_session_mood "$ERR_SID" "error" 2 || true
 
 STATE=$(get_state)
 assert "7a. PostToolUse with tool_response.is_error sets mood \"error\"" '
-if s["mood"] != "error":
-    print("FAIL: expected mood \"error\", got %r" % s["mood"])
+mood = session_mood("'"$ERR_SID"'")
+if mood != "error":
+    print("FAIL: expected session mood \"error\", got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
 
 sleep 4.5 # past the overridden 3s errorDecaySeconds
 STATE=$(get_state)
-assert "7b. \"error\" mood decays back (working if work active, else idle)" '
+assert "7b. \"error\" mood decays back (working if work active GLOBALLY, else idle)" '
+# hasActiveWork is deliberately global (any session'"'"'s subagent/background
+# task), not scoped to this one session -- see PetState.hasActiveWork.
 active = bool(s["subagentTasks"]) or bool(s["backgroundTasks"])
 expected = "working" if active else "idle"
-if s["mood"] != expected:
-    print("FAIL: expected mood %r after error decay, got %r" % (expected, s["mood"]))
+mood = session_mood("'"$ERR_SID"'")
+if mood != expected:
+    print("FAIL: expected session mood %r after error decay, got %r" % (expected, mood))
 else:
     print("PASS")
 ' "$STATE"
@@ -621,24 +711,28 @@ post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"sessio
 sleep 0.5
 STATE=$(get_state)
 assert "7c. PostToolUse with plain-string tool_response (no is_error flag) does not set mood \"error\"" '
-if s["mood"] == "error":
-    print("FAIL: mood incorrectly became \"error\" from response text alone")
+mood = session_mood("'"$OK_SID"'")
+if mood == "error":
+    print("FAIL: session mood incorrectly became \"error\" from response text alone")
 else:
     print("PASS")
 ' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$ERR_SID\",\"cwd\":\"/tmp/e2eerr\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$OK_SID\",\"cwd\":\"/tmp/e2eerr\"}"
 
 # --- 8. Clean Stop -> mood "talking", then decays to "idle". ---
 STOP_SID="stoptest2000000000000000000000007"
 post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$STOP_SID\",\"cwd\":\"/tmp/e2estop\",\"last_assistant_message\":\"e2e stop reply\"}"
-wait_for_mood "talking" 2 || true
+wait_for_session_mood "$STOP_SID" "talking" 2 || true
 
 STATE=$(get_state)
 assert "8a. Clean Stop sets mood \"talking\" (no active subagent/background work)" '
 active = bool(s["subagentTasks"]) or bool(s["backgroundTasks"])
+mood = session_mood("'"$STOP_SID"'")
 if active:
     print("SKIP: subagent/background tasks still active from another test; cannot assert talking cleanly")
-elif s["mood"] != "talking":
-    print("FAIL: expected mood \"talking\", got %r" % s["mood"])
+elif mood != "talking":
+    print("FAIL: expected session mood \"talking\", got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
@@ -646,11 +740,13 @@ else:
 sleep 4.5 # past the overridden 3s talkingDecaySeconds
 STATE=$(get_state)
 assert "8b. \"talking\" mood decays to \"idle\" after talkingDecaySeconds" '
-if s["mood"] != "idle":
-    print("FAIL: expected mood \"idle\" after talking decay, got %r" % s["mood"])
+mood = session_mood("'"$STOP_SID"'")
+if mood != "idle":
+    print("FAIL: expected session mood \"idle\" after talking decay, got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$STOP_SID\",\"cwd\":\"/tmp/e2estop\"}"
 
 # --- 9. A newer event mid-decay must win; the stale timer must not fire later. ---
 CANCEL_SID="canceltest00000000000000000000010"
@@ -661,8 +757,9 @@ sleep 0.3
 
 STATE=$(get_state)
 assert "9a. A new event mid-decay immediately overrides mood" '
-if s["mood"] != "thinking":
-    print("FAIL: expected mood \"thinking\" right after UserPromptSubmit, got %r" % s["mood"])
+mood = session_mood("'"$CANCEL_SID"'")
+if mood != "thinking":
+    print("FAIL: expected session mood \"thinking\" right after UserPromptSubmit, got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
@@ -670,11 +767,13 @@ else:
 sleep 3   # past the original ("talking") decay deadline, which must be cancelled
 STATE=$(get_state)
 assert "9b. Stale decay timer does not fire after mood already moved on" '
-if s["mood"] != "thinking":
-    print("FAIL: expected mood still \"thinking\" (stale decay must have been cancelled), got %r" % s["mood"])
+mood = session_mood("'"$CANCEL_SID"'")
+if mood != "thinking":
+    print("FAIL: expected session mood still \"thinking\" (stale decay must have been cancelled), got %r" % mood)
 else:
     print("PASS")
 ' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$CANCEL_SID\",\"cwd\":\"/tmp/e2ecancel\"}"
 
 # Restore the real config.json now (rather than only at exit) so TEST 6 below
 # measures the log the app actually wrote to under normal settings.
@@ -953,6 +1052,255 @@ else:
 post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentlate16b\",\"last_assistant_message\":\"done\"}"
 sleep 0.3
 
+restore_config
+
+# ============================================================================
+# TEST 17 — Stop/SessionEnd clear cards PER SESSION, not globally (the core
+# fix in this pass: the old `clearRunning()` wiped EVERY running card
+# regardless of which session's hook fired it).
+# ============================================================================
+SESS17_A="stopscopeA00000000000000000000018"
+SESS17_B="stopscopeB00000000000000000000019"
+CWD17="/tmp/e2estopscope"
+
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$SESS17_A\",\"cwd\":\"$CWD17\",\"tool_input\":{\"description\":\"e2e-17-cardA\",\"command\":\"echo a\"}}"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$SESS17_B\",\"cwd\":\"$CWD17\",\"tool_input\":{\"description\":\"e2e-17-cardB\",\"command\":\"echo b\"}}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "17a. Both sessions' cards exist before Stop, each stamped with its own sessionId" '
+run=s["runningTasks"]
+a=title_has(run, "e2e-17-cardA")
+b=title_has(run, "e2e-17-cardB")
+if not a or not b:
+    print("FAIL: expected both cards present before Stop (got titles: %s)" % [c.get("title") for c in run])
+elif a[0].get("sessionId") != "'"$SESS17_A"'" or b[0].get("sessionId") != "'"$SESS17_B"'":
+    print("FAIL: cards not stamped with the right sessionId (a=%r b=%r)" % (a[0].get("sessionId"), b[0].get("sessionId")))
+else:
+    print("PASS")
+' "$STATE"
+
+# Stop session A only. Session B'"'"'s card must survive untouched.
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$SESS17_A\",\"cwd\":\"$CWD17\",\"last_assistant_message\":\"a done\"}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "17b. Stop(session A) clears A's card but leaves B's card untouched" '
+run=s["runningTasks"]
+a=title_has(run, "e2e-17-cardA")
+b=title_has(run, "e2e-17-cardB")
+if a:
+    print("FAIL: session A'"'"'s card is still present after its own Stop: %s" % [c.get("title") for c in a])
+elif not b:
+    print("FAIL: session B'"'"'s card was wrongly removed by session A'"'"'s Stop (got titles: %s)" % [c.get("title") for c in run])
+else:
+    print("PASS")
+' "$STATE"
+
+# SessionEnd session B: its own card (a fresh one, then a rebuild) must clear;
+# a sibling session C'"'"'s card must again survive.
+SESS17_C="stopscopeC00000000000000000000020"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$SESS17_B\",\"cwd\":\"$CWD17\",\"tool_input\":{\"description\":\"e2e-17-cardB2\",\"command\":\"echo b2\"}}"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$SESS17_C\",\"cwd\":\"$CWD17\",\"tool_input\":{\"description\":\"e2e-17-cardC\",\"command\":\"echo c\"}}"
+sleep 0.4
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SESS17_B\",\"cwd\":\"$CWD17\"}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "17c. SessionEnd(session B) clears B's card but leaves sibling session C's card untouched" '
+run=s["runningTasks"]
+b=title_has(run, "e2e-17-cardB2")
+c=title_has(run, "e2e-17-cardC")
+if b:
+    print("FAIL: session B'"'"'s card is still present after its own SessionEnd: %s" % [c.get("title") for c in b])
+elif not c:
+    print("FAIL: session C'"'"'s card was wrongly removed by session B'"'"'s SessionEnd (got titles: %s)" % [c.get("title") for c in run])
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SESS17_C\",\"cwd\":\"$CWD17\"}"
+
+# ============================================================================
+# TEST 18 — Mood aggregate priority (asking > working): session A working +
+# session B asking (a real blocking /ask, not just a Notification) must
+# aggregate to "asking" -- the single highest-priority mood wins over
+# last-writer-wins. Resolving B'"'"'s ask (via the test-only /debug/resolveAsk
+# route -- there is no other HTTP way to drive a real Allow/Deny, see
+# HookServer.handleDebugResolveAsk) drops it back to "working" (session A'"'"'s
+# mood), proving the aggregate recomputes on resolve too.
+#
+# "asking" is the TOP priority in `moodPriority`, so asserting the aggregate
+# equals "asking" the moment B'"'"'s ask is posted is robust even if this dev
+# machine has other real Claude Code sessions active concurrently -- any
+# session asking forces the aggregate to "asking" regardless of what else is
+# going on. The post-resolve "working" assertion is skipped (not failed) if
+# some OTHER ask is still pending at that point, since that's a real
+# concurrent asker this test can't control for.
+# ============================================================================
+drain_all_asks # ensure the queue starts empty so B's ask is the only/head one
+MOOD_A_SID="moodaggA0000000000000000000000021"
+MOOD_B_SID="moodaggB0000000000000000000000022"
+CWD18="/tmp/e2emoodagg"
+
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$MOOD_A_SID\",\"cwd\":\"$CWD18\",\"tool_input\":{\"description\":\"e2e-18-A\",\"command\":\"echo a\"}}"
+sleep 0.3
+
+ASK18_PAYLOAD="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$MOOD_B_SID\",\"cwd\":\"$CWD18\",\"tool_input\":{\"description\":\"e2e-18-B\",\"command\":\"echo b\"}}"
+curl -s -m 15 -X POST "$BASE/ask" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "$ASK18_PAYLOAD" >/tmp/e2e_ask18_$$.out 2>&1 &
+ASK18_PID=$!
+sleep 0.6
+
+STATE=$(get_state)
+assert "18a. Session A working + session B asking (real /ask) aggregates to \"asking\"" '
+if s["mood"] != "asking":
+    print("FAIL: expected aggregate mood \"asking\" while an ask is pending, got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary '"'"'{"decision":"allow"}'"'"' >/dev/null 2>&1
+wait "$ASK18_PID" 2>/dev/null
+sleep 0.4
+
+STATE=$(get_state)
+assert "18b. Resolving B's ask drops aggregate back to \"working\" (session A's mood)" '
+if s["pendingAskCount"] > 0:
+    print("SKIP: another ask is pending concurrently (KNOWN LIMITATION on a shared dev machine); cannot assert cleanly")
+elif s["mood"] != "working":
+    print("FAIL: expected aggregate mood \"working\" after B'"'"'s ask resolved, got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$MOOD_A_SID\",\"cwd\":\"$CWD18\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$MOOD_B_SID\",\"cwd\":\"$CWD18\"}"
+rm -f /tmp/e2e_ask18_$$.out
+
+# ============================================================================
+# TEST 19 — pendingAsk is now a FIFO QUEUE: a second ask arriving while one is
+# already shown must queue behind it, not replace it (the old single-slot bug:
+# ask #2 silently overwrote ask #1, leaving its hook blocked until its own
+# script-side timeout denied it). Verified end-to-end via the real /ask route
+# plus the test-only /debug/resolveAsk route (see TEST 18'"'"'s doc comment for
+# why that route exists).
+# ============================================================================
+drain_all_asks # ensure the queue starts empty so ordering below is unambiguous
+Q_SID_1="queueask100000000000000000000023"
+Q_SID_2="queueask200000000000000000000024"
+CWD19="/tmp/e2easkqueue"
+
+ASK19_1="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"session_id\":\"$Q_SID_1\",\"cwd\":\"$CWD19\",\"tool_input\":{\"file_path\":\"/tmp/e2e-queue-1.txt\"}}"
+ASK19_2="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"session_id\":\"$Q_SID_2\",\"cwd\":\"$CWD19\",\"tool_input\":{\"file_path\":\"/tmp/e2e-queue-2.txt\"}}"
+
+curl -s -m 15 -X POST "$BASE/ask" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "$ASK19_1" >/tmp/e2e_ask19_1_$$.out 2>&1 &
+ASK19_PID1=$!
+sleep 0.5
+curl -s -m 15 -X POST "$BASE/ask" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "$ASK19_2" >/tmp/e2e_ask19_2_$$.out 2>&1 &
+ASK19_PID2=$!
+sleep 0.5
+
+STATE=$(get_state)
+assert "19a. Second ask queues behind the first instead of replacing it (pendingAskCount==2, first shown)" '
+if s["pendingAskCount"] < 2:
+    print("FAIL: expected pendingAskCount >= 2 with two asks pending, got %d" % s["pendingAskCount"])
+elif s.get("pendingAskSessionId") != "'"$Q_SID_1"'":
+    print("FAIL: expected the FIRST ask (session '"$Q_SID_1"') to be the one currently shown, got %r" % s.get("pendingAskSessionId"))
+else:
+    print("PASS")
+' "$STATE"
+
+# Resolve the first (currently shown) ask -> the second must become current.
+curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary '"'"'{"decision":"allow"}'"'"' >/dev/null 2>&1
+wait "$ASK19_PID1" 2>/dev/null
+sleep 0.4
+
+STATE=$(get_state)
+assert "19b. Resolving the shown ask presents the queued one next, in FIFO order" '
+if s.get("pendingAskSessionId") != "'"$Q_SID_2"'":
+    print("FAIL: expected the SECOND ask (session '"$Q_SID_2"') to now be shown, got %r" % s.get("pendingAskSessionId"))
+else:
+    print("PASS")
+' "$STATE"
+
+curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary '"'"'{"decision":"allow"}'"'"' >/dev/null 2>&1
+wait "$ASK19_PID2" 2>/dev/null
+sleep 0.3
+
+STATE=$(get_state)
+assert "19c. Queue drains completely once both asks are resolved" '
+mine = s.get("pendingAskSessionId") in ("'"$Q_SID_1"'", "'"$Q_SID_2"'")
+if mine:
+    print("FAIL: expected neither test ask to still be pending, got pendingAskSessionId=%r" % s.get("pendingAskSessionId"))
+else:
+    print("PASS")
+' "$STATE"
+rm -f /tmp/e2e_ask19_1_$$.out /tmp/e2e_ask19_2_$$.out
+
+# ============================================================================
+# TEST 20 — Session-name resolution FALLS BACK to reading the session's own
+# transcript JSONL when the session is absent from history.jsonl entirely --
+# the Claude Code DESKTOP APP's actual behaviour (verified: desktop sessions
+# never get appended to history.jsonl, only CLI ones do). Root directory is
+# injected via the optional `projectsRoot` config.json field (same mechanism
+# as `historyPath`) so this never touches the real ~/.claude/projects.
+# ============================================================================
+TMP_PROJECTS_ROOT="/tmp/petmacos_e2e_projects_$$"
+DESKTOP_SID="desktopsess0000000000000000000025"
+DESKTOP_CWD="/tmp/e2edesktopapp$$"
+# Slug rule verified against real folder names on this machine (see
+# SessionNameResolver.slug'"'"'s doc comment): every non-alphanumeric char -> "-".
+DESKTOP_SLUG=$(printf '%s' "$DESKTOP_CWD" | sed -E 's/[^A-Za-z0-9]/-/g')
+mkdir -p "$TMP_PROJECTS_ROOT/$DESKTOP_SLUG"
+DESKTOP_TRANSCRIPT="$TMP_PROJECTS_ROOT/$DESKTOP_SLUG/$DESKTOP_SID.jsonl"
+# First line is noise (a task-notification injection), which must be SKIPPED;
+# the second is the real first user prompt, wrapped in queue-operation/enqueue
+# the way the desktop app'"'"'s transcripts actually look.
+python3 - "$DESKTOP_TRANSCRIPT" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+lines = [
+    {"type": "queue-operation", "operation": "dequeue"},
+    {"type": "task-notification", "content": "<task-notification>noise</task-notification>"},
+    {"type": "queue-operation", "operation": "enqueue", "content": "Fix the flaky desktop upload retry bug"},
+    {"type": "user", "message": {"role": "user", "content": "Fix the flaky desktop upload retry bug"}},
+]
+with open(path, "w") as f:
+    for l in lines:
+        f.write(json.dumps(l) + "\n")
+PYEOF
+
+python3 - "$CONFIG" "$TMP_PROJECTS_ROOT" <<'PYEOF'
+import json, sys
+path, root = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["projectsRoot"] = root
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+# historyPath is still pointed at TEST 14-16's fixture (which has no entry for
+# DESKTOP_SID), simulating a session history.jsonl genuinely doesn'"'"'t know about.
+
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$DESKTOP_SID\",\"cwd\":\"$DESKTOP_CWD\",\"tool_input\":{\"description\":\"e2e desktop-app subagent\",\"subagent_type\":\"general-purpose\"}}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "20. Session absent from history.jsonl resolves its name from the transcript fallback instead" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "Fix the flaky desktop" in c["context"]]
+if not c:
+    print("FAIL: expected transcript-resolved name not found (contexts: %s)" % [x.get("context") for x in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$DESKTOP_SID\",\"cwd\":\"$DESKTOP_CWD\",\"last_assistant_message\":\"done\"}"
+rm -rf "$TMP_PROJECTS_ROOT"
 restore_config
 
 # ============================================================================

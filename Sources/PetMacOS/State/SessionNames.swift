@@ -47,9 +47,21 @@ final class SessionNameResolver {
     /// mix names from two different files.
     private var scannedPath: String?
 
+    /// Names resolved via the transcript fallback (see `transcriptName`),
+    /// keyed by sessionId. Only successful resolutions are cached here --
+    /// misses are cheap to recheck (the read is capped at ~100 lines) so they
+    /// are simply retried on the next lookup rather than tracked, matching
+    /// the "miss-retry until the file shows up" spirit of the history cache
+    /// above without needing a second offset/size bookkeeping scheme.
+    private var transcriptNames: [String: String] = [:]
+
     static let defaultPath = FileManager.default
         .homeDirectoryForCurrentUser
         .appendingPathComponent(".claude/history.jsonl", isDirectory: false).path
+
+    static let defaultProjectsRoot = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects", isDirectory: true).path
 
     /// Reads the optional `historyPath` override from `~/.petmacos/config.json`
     /// (same override mechanism as `PetState.talkingDecaySeconds`) fresh on
@@ -64,13 +76,37 @@ final class SessionNameResolver {
         return value
     }
 
+    /// Reads the optional `projectsRoot` override from `~/.petmacos/config.json`,
+    /// falling back to the real `~/.claude/projects`. Same rationale as
+    /// `configuredPath()`: only tests set this, to point a running instance at
+    /// a fixture directory tree instead of the user's real transcripts.
+    static func configuredProjectsRoot() -> String {
+        guard let data = try? Data(contentsOf: PetConfig.fileURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = object["projectsRoot"] as? String, !value.isEmpty
+        else { return defaultProjectsRoot }
+        return value
+    }
+
     /// Returns the resolved conversation name for `sessionId`, or `nil` if it
-    /// can't be resolved yet (unknown session, or a session whose only
-    /// prompt so far has no usable display text). Synchronous file I/O, but
-    /// bounded by the "only re-scan on file growth" rule above -- matches the
-    /// existing synchronous-on-main-actor pattern used elsewhere in
-    /// `PetState` (e.g. `configOverride`, `logEvent`).
-    func name(for sessionId: String) -> String? {
+    /// can't be resolved yet. Tries `history.jsonl` first (the same file
+    /// `claude --resume` lists sessions under -- covers the terminal CLI), and
+    /// when that has nothing falls back to reading the session's own
+    /// transcript JSONL directly (covers the Claude Code **desktop app**,
+    /// whose sessions are verified to never get appended to `history.jsonl`).
+    /// The transcript fallback needs `cwd` to locate the right project folder
+    /// under `~/.claude/projects` -- callers that can't supply it (none
+    /// currently) simply don't get the fallback.
+    func name(for sessionId: String, cwd: String? = nil) -> String? {
+        if let historyName = historyName(for: sessionId) { return historyName }
+        guard let cwd, !cwd.isEmpty else { return nil }
+        return transcriptName(for: sessionId, cwd: cwd)
+    }
+
+    /// The original `~/.claude/history.jsonl`-only lookup, unchanged. Returns
+    /// `nil` both for "not seen yet" and "seen but unusable" -- callers that
+    /// want the transcript fallback for either case use `name(for:cwd:)`.
+    private func historyName(for sessionId: String) -> String? {
         let path = Self.configuredPath()
         if path != scannedPath {
             scannedPath = path
@@ -83,6 +119,83 @@ final class SessionNameResolver {
         guard currentSize > scannedOffset else { return nil } // nothing new; known miss stays a miss
         scan(path: path)
         return names[sessionId] ?? nil
+    }
+
+    /// Resolves a name by reading the session's own transcript file directly:
+    /// `<projectsRoot>/<slug(cwd)>/<sessionId>.jsonl`. Only the first ~100
+    /// lines are read (the first user prompt is always at the very top of the
+    /// file), looking for the first `queue-operation`/`enqueue` line's
+    /// `content`, or failing that the first `user` message with extractable
+    /// text -- skipping lines whose text is a system/tool injection rather
+    /// than something the user actually typed (see `isNoise`).
+    private func transcriptName(for sessionId: String, cwd: String) -> String? {
+        if let cached = transcriptNames[sessionId] { return cached }
+        let path = "\(Self.configuredProjectsRoot())/\(Self.slug(cwd))/\(sessionId).jsonl"
+        guard FileManager.default.fileExists(atPath: path) else { return nil } // may not be written yet; retry next time
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        // Read a generous chunk (a few hundred short lines is a few KB) rather
+        // than the whole file, then only look at the first ~100 *lines* of it.
+        guard let data = try? handle.read(upToCount: 64 * 1024), !data.isEmpty,
+              let text = String(data: data, encoding: .utf8)
+        else { return nil }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(100) {
+            guard let lineData = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+            else { continue }
+            guard let candidate = Self.extractCandidateText(from: object) else { continue }
+            guard !Self.isNoise(candidate) else { continue }
+            guard let cleaned = Self.cleanedName(from: candidate) else { continue }
+            transcriptNames[sessionId] = cleaned
+            return cleaned
+        }
+        return nil // nothing usable in the window yet; cheap to retry next lookup
+    }
+
+    /// Pulls out the raw candidate text from one transcript line: a
+    /// `queue-operation`/`enqueue` line's `content`, or a `user` line's
+    /// message text (string, or the first `text` block of an array).
+    private static func extractCandidateText(from object: [String: Any]) -> String? {
+        let type = object["type"] as? String
+        if type == "queue-operation", object["operation"] as? String == "enqueue" {
+            return object["content"] as? String
+        }
+        guard type == "user", let message = object["message"] as? [String: Any] else { return nil }
+        if let text = message["content"] as? String { return text }
+        if let parts = message["content"] as? [[String: Any]] {
+            for part in parts {
+                if part["type"] as? String == "text", let text = part["text"] as? String {
+                    return text
+                }
+            }
+        }
+        return nil
+    }
+
+    /// True for candidate text that is a system/tool injection rather than
+    /// something the user actually typed, per the caller's spec: task
+    /// notifications (`<...>`), the CLI's pasted-caveat banner, and the
+    /// "request interrupted" marker Claude Code inserts on ESC-cancel.
+    private static func isNoise(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("<")
+            || trimmed.hasPrefix("Caveat:")
+            || trimmed.hasPrefix("[Request interrupted")
+    }
+
+    /// Builds the `~/.claude/projects` folder-name slug Claude Code derives
+    /// from a working directory: every character that isn't an ASCII letter
+    /// or digit becomes `-` (verified against real folder names on this
+    /// machine, e.g. `/Users/a/Flutter web` -> `-Users-a-Flutter-web` and
+    /// `/Users/a/Downloads/remix_-voice-library` ->
+    /// `-Users-a-Downloads-remix--voice-library`, the double dash coming from
+    /// "_" and "-" each independently mapping to "-").
+    static func slug(_ cwd: String) -> String {
+        String(cwd.map { char -> Character in
+            let isAlphanumericASCII = char.isASCII && (char.isLetter || char.isNumber)
+            return isAlphanumericASCII ? char : "-"
+        })
     }
 
     /// Parses whatever complete lines were appended since `scannedOffset`,

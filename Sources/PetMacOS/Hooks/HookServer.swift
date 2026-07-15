@@ -99,6 +99,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleQuestion(request, on: connection)
         case "/debug/state":
             handleDebugState(on: connection)
+        case "/debug/resolveAsk":
+            handleDebugResolveAsk(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -180,6 +182,22 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in
             let body = (try? JSONEncoder().encode(petState.debugSnapshot())) ?? Data()
             self.respond(connection, body: body)
+        }
+    }
+
+    /// Test-only route that drives the *currently shown* ask's Allow/Deny
+    /// decision the same way a click in the pet's dialog would, without
+    /// needing computer-use on this accessory app's borderless panel (same
+    /// rationale as `/debug/state`). Body: `{"decision":"allow"|"deny"}`.
+    /// A no-op (200, no effect) if no ask is currently pending -- callers
+    /// should check `hasPendingAsk`/`pendingAskCount` via `/debug/state` first.
+    private func handleDebugResolveAsk(_ request: HTTPRequest, on connection: NWConnection) {
+        let decision = (try? JSONSerialization.jsonObject(with: request.body) as? [String: Any])?["decision"] as? String
+            ?? "deny"
+        let petState = self.petState
+        Task { @MainActor in
+            petState.resolve(decision)
+            self.respond(connection)
         }
     }
 
