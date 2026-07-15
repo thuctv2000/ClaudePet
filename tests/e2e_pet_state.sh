@@ -28,7 +28,7 @@ set -u
 
 CONFIG="$HOME/.petmacos/config.json"
 HOOK="$HOME/.petmacos/pet-hook.sh"
-PROJECT_DIR="/Users/REDACTED/Documents/Pet macos"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PASS=0
 FAIL=0
