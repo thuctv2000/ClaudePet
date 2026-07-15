@@ -7,7 +7,9 @@ enum HookInstaller {
     /// Marker that identifies our hook entries so uninstall can remove them.
     private static let marker = "pet-hook.sh"
 
-    private static let scriptURL = PetConfig.directory.appendingPathComponent("pet-hook.sh")
+    /// Path of the installed script. Also used by the Diagnostics tab to run
+    /// a real connectivity test through the actual installed script.
+    static let scriptURL = PetConfig.directory.appendingPathComponent("pet-hook.sh")
 
     private static var settingsURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -137,8 +139,10 @@ enum HookInstaller {
     MODE="${1:-event}"
     CONFIG="$HOME/.petmacos/config.json"
     [ -f "$CONFIG" ] || exit 0
-    PORT=$(sed -n 's/.*"port":\\([0-9]*\\).*/\\1/p' "$CONFIG")
-    TOKEN=$(sed -n 's/.*"token":"\\([^"]*\\)".*/\\1/p' "$CONFIG")
+    # Whitespace-tolerant: config.json may be compact ("port":58318) or
+    # pretty-printed ("port": 58318) depending on how it was written.
+    PORT=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\\([0-9]*\\).*/\\1/p' "$CONFIG")
+    TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$CONFIG")
     [ -n "$PORT" ] || exit 0
     PAYLOAD=$(cat)
     if [ "$MODE" = "question" ]; then
@@ -152,9 +156,9 @@ enum HookInstaller {
     fi
     if [ "$MODE" = "ask" ]; then
         # AskUserQuestion is handled by the `question` hook; stay out of the way.
-        TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name":"\\([^"]*\\)".*/\\1/p')
+        TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
         [ "$TOOL" = "AskUserQuestion" ] && exit 0
-        PMODE=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"permission_mode":"\\([^"]*\\)".*/\\1/p')
+        PMODE=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"permission_mode"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
         if [ -n "$PMODE" ] && [ "$PMODE" != "default" ]; then
             curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \\
                 -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
@@ -164,7 +168,7 @@ enum HookInstaller {
         RESPONSE=$(curl -s -m 300 -X POST "http://127.0.0.1:$PORT/ask" \\
             -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
-        NOTE=$(printf '%s' "$RESPONSE" | sed -n 's/.*"text":"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\')
+        NOTE=$(printf '%s' "$RESPONSE" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\')
         case "$RESPONSE" in
             *'"decision":"deny"'*)
                 REASON="Từ chối trên Pet"; [ -n "$NOTE" ] && REASON="$REASON: $NOTE"

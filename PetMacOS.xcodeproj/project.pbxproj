@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DC9F1D0615DCC29AAFDA479 /* ClaudeCodeAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */; };
 		1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32008F7B35E7946ACD461B43 /* HookModels.swift */; };
+		16910DCDF23C4D0B37308E0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F83020535917ED3CD4C35874 /* Assets.xcassets */; };
 		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
 		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
@@ -22,6 +24,7 @@
 		BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF97BEB4B89A535444ADD4A /* PetConfig.swift */; };
 		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
+		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
 		D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD6C1596A1C653DA132297A /* TaskStackView.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
 		F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */; };
@@ -29,6 +32,7 @@
 
 /* Begin PBXFileReference section */
 		121562265EDE7612187515DD /* QuestionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDialogView.swift; sourceTree = "<group>"; };
+		21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeAvailability.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
 		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
@@ -42,11 +46,13 @@
 		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBubbleView.swift; sourceTree = "<group>"; };
 		C6295BC37E9B655A219CE95D /* PetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetView.swift; sourceTree = "<group>"; };
+		CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowView.swift; sourceTree = "<group>"; };
 		DAD6C1596A1C653DA132297A /* TaskStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStackView.swift; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
 		E46998C00ABB596885D703B7 /* UsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageMonitor.swift; sourceTree = "<group>"; };
 		EBF97BEB4B89A535444ADD4A /* PetConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetConfig.swift; sourceTree = "<group>"; };
 		F00DFE8DF50364DE0240C86F /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
+		F83020535917ED3CD4C35874 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -71,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */,
+				CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */,
 				DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */,
 				121562265EDE7612187515DD /* QuestionDialogView.swift */,
 				72959DA64EAE01980687BA1C /* SettingsWindowView.swift */,
@@ -88,6 +95,8 @@
 				C6295BC37E9B655A219CE95D /* PetView.swift */,
 				60DBE02103BE5B9DEE670B5C /* Hooks */,
 				4756521A0DCCC4E29BF9949C /* Install */,
+				DD860E2F098D2F09F110AB1B /* Onboarding */,
+				B005A15F5E555D278AB9C085 /* Resources */,
 				2AD5AD954394A47B008E8B62 /* Sprites */,
 				932F9248A5EB563281B49789 /* State */,
 				50553F73690BD2BA508734AC /* Views */,
@@ -124,12 +133,28 @@
 			path = State;
 			sourceTree = "<group>";
 		};
+		B005A15F5E555D278AB9C085 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F83020535917ED3CD4C35874 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		D2ABD055CCD03283D0A941A9 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		DD860E2F098D2F09F110AB1B /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -140,6 +165,7 @@
 			buildConfigurationList = 95C0163E9608698CDD8C3964 /* Build configuration list for PBXNativeTarget "PetMacOS" */;
 			buildPhases = (
 				AF764BEC39E891952C51A960 /* Sources */,
+				B2B0BE7522204E68E92BF4E3 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -162,6 +188,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					56030E08A2872C68F902BB27 = {
+						DevelopmentTeam = N5VJ7TQLY7;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -185,15 +212,28 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		B2B0BE7522204E68E92BF4E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				16910DCDF23C4D0B37308E0F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AF764BEC39E891952C51A960 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */,
+				0DC9F1D0615DCC29AAFDA479 /* ClaudeCodeAvailability.swift in Sources */,
 				2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */,
 				1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */,
 				2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */,
+				CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */,
 				AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */,
 				BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */,
 				995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */,
@@ -285,11 +325,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = N5VJ7TQLY7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = PetMacOS;
 				SDKROOT = macosx;
@@ -303,11 +345,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = N5VJ7TQLY7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = PetMacOS;
 				SDKROOT = macosx;

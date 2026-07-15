@@ -72,6 +72,7 @@ struct PetMacOSApp: App {
 final class PetAppDelegate: NSObject, NSApplicationDelegate {
     private var panel: PetPanel?
     private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private(set) var isVisible = false
     private(set) var isClickThrough = false
 
@@ -101,8 +102,30 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         sprites.reload()
         petState.recoverInFlightSubagents()
         showPet()
+        // Decide (and persist) the onboarding flag *before* starting the hook
+        // server: its onReady callback rewrites config.json with a fresh
+        // port/token off the network queue, racing this decision if it ran
+        // second — reading the flag back out from a half-written file.
+        let needsOnboarding = Self.shouldShowOnboarding()
         startHookServer()
         usage.start()
+        if needsOnboarding {
+            openOnboardingWindow()
+        }
+    }
+
+    /// First-run detection: only show the wizard when hooks aren't installed
+    /// *and* the onboarding flag hasn't been set yet. A machine that already
+    /// had hooks installed before this feature shipped (or any already-
+    /// connected machine) is treated as onboarded without ever popping the
+    /// window, so existing users aren't interrupted.
+    private static func shouldShowOnboarding() -> Bool {
+        if PetConfig.readOnboardingCompleted() { return false }
+        if HookInstaller.isInstalled {
+            PetConfig.markOnboardingCompleted()
+            return false
+        }
+        return true
     }
 
     /// Re-reads hook installation state from disk. Call before showing any UI
@@ -152,11 +175,13 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         do {
             try server.start { [weak self] port in
                 // Called on the network queue; persist the handshake file.
-                try? PetConfig(port: port, token: token).write()
+                let onboardingCompleted = PetConfig.readOnboardingCompleted()
+                try? PetConfig(port: port, token: token, onboardingCompleted: onboardingCompleted).write()
                 Task { @MainActor in self?.serverPort = Int(port) }
             }
         } catch {
             NSLog("PetMacOS: failed to start hook server: \(error)")
+            petState.recordError("Không khởi động được server nội bộ: \(error.localizedDescription)")
         }
     }
 
@@ -167,7 +192,9 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             try HookInstaller.install(writeToolsOnly: writeToolsOnly)
             petState.notify("Đã kết nối Claude Code", mood: .talking)
         } catch {
-            petState.notify("Lỗi kết nối: \(error.localizedDescription)")
+            let message = "Lỗi kết nối: \(error.localizedDescription)"
+            petState.notify(message)
+            petState.recordError(message)
         }
         refreshConnectionStatus()
     }
@@ -176,6 +203,82 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         try? HookInstaller.uninstall()
         petState.notify("Đã ngắt kết nối Claude Code")
         refreshConnectionStatus()
+    }
+
+    // MARK: - Diagnostics tab
+
+    /// Result of the last "Kiểm tra kết nối" test run from the Diagnostics tab.
+    struct DiagnosticTestResult {
+        let success: Bool
+        let message: String
+        let at: Date
+    }
+
+    private(set) var diagnosticTestRunning = false
+    private(set) var diagnosticTestResult: DiagnosticTestResult?
+
+    /// Runs a real end-to-end connectivity test: executes the *installed*
+    /// `pet-hook.sh` (not a direct HTTP call) with a synthetic event payload
+    /// on stdin, exactly the way Claude Code itself invokes it, then checks
+    /// whether `PetState` actually observed the event. This exercises the
+    /// whole real path (script → curl → loopback server → decode → state),
+    /// which is the only way to catch a script/server mismatch.
+    func testHookConnection() {
+        guard !diagnosticTestRunning else { return }
+        guard FileManager.default.fileExists(atPath: HookInstaller.scriptURL.path) else {
+            diagnosticTestResult = DiagnosticTestResult(
+                success: false, message: "Chưa cài pet-hook.sh — bấm \"Cài lại hook\" trước.", at: Date())
+            return
+        }
+        diagnosticTestRunning = true
+        diagnosticTestResult = nil
+        let scriptPath = HookInstaller.scriptURL.path
+        let payload = Data("""
+        {"hook_event_name":"PetDiagnostic","session_id":"diagnostic","message":"Kiểm tra kết nối pet-hook.sh"}
+        """.utf8)
+        let start = Date()
+        let petState = petState
+
+        Task.detached {
+            var launchError: String?
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = [scriptPath, "event"]
+            let stdin = Pipe()
+            process.standardInput = stdin
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+            do {
+                try process.run()
+                stdin.fileHandleForWriting.write(payload)
+                try stdin.fileHandleForWriting.close()
+                process.waitUntilExit()
+            } catch {
+                launchError = error.localizedDescription
+            }
+
+            // Give the loopback round-trip (script → curl → server → state)
+            // a brief moment to land before checking.
+            try? await Task.sleep(for: .milliseconds(500))
+
+            await MainActor.run {
+                self.diagnosticTestRunning = false
+                if let launchError {
+                    let message = "Không chạy được pet-hook.sh: \(launchError)"
+                    self.diagnosticTestResult = DiagnosticTestResult(success: false, message: message, at: Date())
+                    petState.recordError(message)
+                    return
+                }
+                if let lastEventAt = petState.lastEventAt, lastEventAt >= start {
+                    self.diagnosticTestResult = DiagnosticTestResult(
+                        success: true, message: "Thành công — pet đã nhận event qua pet-hook.sh.", at: Date())
+                } else {
+                    let message = "Script chạy xong nhưng pet không nhận được event (kiểm tra hooks đã cài, server đang chạy, hoặc events.log)."
+                    self.diagnosticTestResult = DiagnosticTestResult(success: false, message: message, at: Date())
+                    petState.recordError(message)
+                }
+            }
+        }
     }
 
     func setWriteToolsOnly(_ enabled: Bool) {
@@ -247,6 +350,41 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: - Onboarding window
+
+    /// Opens (or fronts) the first-run onboarding wizard. Called automatically
+    /// on a fresh install, and reachable again from Settings via "Mở lại
+    /// hướng dẫn" so a user who skipped it can come back later.
+    func openOnboardingWindow() {
+        refreshConnectionStatus()
+        if onboardingWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
+                styleMask: [.titled, .closable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Kết nối Claude Code"
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(
+                rootView: OnboardingWindowView(delegate: self) { [weak self] in
+                    self?.onboardingWindow?.close()
+                })
+            window.center()
+            // Closing via the titlebar button (not just "Xong"/"Bỏ qua") still
+            // counts as "seen" — otherwise a user who dismisses the window
+            // with the X gets nagged again on every subsequent launch.
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { _ in
+                PetConfig.markOnboardingCompleted()
+            }
+            onboardingWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        onboardingWindow?.makeKeyAndOrderFront(nil)
     }
 }
 

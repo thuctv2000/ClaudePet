@@ -4,3 +4,6 @@
 # Xcode per-user state
 xcuserdata/
 *.xcuserstate
+
+# Release build artifacts (archive, .app, .dmg)
+build/release/

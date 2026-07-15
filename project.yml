@@ -19,7 +19,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.desktoppet.PetMacOS
         PRODUCT_NAME: PetMacOS
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: N5VJ7TQLY7
+        MARKETING_VERSION: "1.0.0"
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_STRICT_CONCURRENCY: complete
     scheme:

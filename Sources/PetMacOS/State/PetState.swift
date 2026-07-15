@@ -127,6 +127,23 @@ final class PetState {
     /// When true, `/ask` requests are auto-approved without showing a dialog.
     var autoAllow = false
 
+    /// Timestamp of the last hook event received on any route (`/event`,
+    /// `/ask`, `/question`). Used by the Diagnostics tab to show "last seen"
+    /// and to detect a silently broken hook pipeline (`pet-hook.sh` always
+    /// exits 0, so Claude Code never surfaces a connection failure itself).
+    private(set) var lastEventAt: Date?
+
+    /// Most recent error the app noticed (hook install failure, server start
+    /// failure, failed connectivity test…). Deliberately just the latest
+    /// message, not a history — the Diagnostics tab only needs "what broke
+    /// most recently", and `events.log` already has the full trail.
+    private(set) var lastErrorMessage: String?
+
+    /// Records the latest error for display in the Diagnostics tab.
+    func recordError(_ message: String) {
+        lastErrorMessage = message
+    }
+
     /// Set by the app delegate to wire the server as the resolver.
     @ObservationIgnored weak var resolver: AskResolver?
 
@@ -367,6 +384,7 @@ final class PetState {
     /// delivery can be debugged (which events arrive, from which agent). The
     /// file is reset once it passes ~1MB so it never grows unbounded.
     private func logEvent(_ event: HookEvent, route: String) {
+        lastEventAt = Date()
         let ts = ISO8601DateFormatter().string(from: Date())
         let line = "\(ts) \(route) \(event.hookEventName ?? "?")"
             + " tool=\(event.toolName ?? "-")"
@@ -584,6 +602,7 @@ final class PetState {
     /// Presents an `AskUserQuestion` request. Unlike `/ask`, questions are shown
     /// even when approvals are paused — they genuinely need a human answer.
     func presentQuestion(id: String, event: HookEvent) {
+        logEvent(event, route: "question")
         let questions = event.askQuestions
         guard !questions.isEmpty else {
             // Nothing parseable to ask; let the terminal handle it.
@@ -623,6 +642,19 @@ final class PetState {
 
     private func truncate(_ text: String, limit: Int = 200) -> String {
         text.count > limit ? String(text.prefix(limit)) + "…" : text
+    }
+
+    // MARK: - Connection health heuristic
+
+    /// True when hooks are installed but no event has arrived for longer than
+    /// `threshold`, which is the only signal the app has for a silently broken
+    /// pipeline (`pet-hook.sh` intentionally exits 0 on every failure so it
+    /// never blocks Claude Code). Deliberately simple: it only fires once we
+    /// have actually seen an event before, so a fresh install that just
+    /// hasn't been used yet does not read as broken.
+    func isConnectionStale(hooksInstalled: Bool, threshold: TimeInterval = 600, now: Date = Date()) -> Bool {
+        guard hooksInstalled, let lastEventAt else { return false }
+        return now.timeIntervalSince(lastEventAt) > threshold
     }
 
     // MARK: - Debug introspection (automated tests only)

@@ -10,6 +10,11 @@ struct SettingsWindowView: View {
     var usage: UsageMonitor
 
     @State private var importMessage: String?
+    @State private var logCopyMessage: String?
+    /// Ticks periodically so the "last event" relative time and the stale-
+    /// connection warning stay fresh while the tab is open (they depend on
+    /// `Date()`, which SwiftUI has no other reason to recompute).
+    @State private var now = Date()
 
     var body: some View {
         TabView {
@@ -21,8 +26,13 @@ struct SettingsWindowView: View {
                 .tabItem { Text("Quyền") }
             colorsTab
                 .tabItem { Text("Màu sắc") }
+            diagnosticsTab
+                .tabItem { Text("Chẩn đoán") }
         }
         .frame(width: 480, height: 540)
+        .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { date in
+            now = date
+        }
     }
 
     // MARK: - Trạng thái
@@ -61,6 +71,7 @@ struct SettingsWindowView: View {
                         Button("Kết nối") { delegate.connectClaudeCode() }
                     }
                     Button("Kiểm tra lại") { delegate.refreshConnectionStatus() }
+                    Button("Mở lại hướng dẫn") { delegate.openOnboardingWindow() }
                 }
             }
 
@@ -268,5 +279,99 @@ struct SettingsWindowView: View {
                 .stroke(color.wrappedValue, lineWidth: 3)
                 .frame(width: 60, height: 22)
         }
+    }
+
+    // MARK: - Chẩn đoán
+
+    private var diagnosticsTab: some View {
+        Form {
+            Section("Trạng thái") {
+                LabeledContent("Hooks") {
+                    Text(delegate.isConnected ? "Đã cài vào ~/.claude/settings.json" : "Chưa cài")
+                        .foregroundStyle(delegate.isConnected ? .green : .red)
+                }
+                LabeledContent("Server nội bộ") {
+                    if let port = delegate.serverPort {
+                        Text("Đang nghe cổng \(String(port))").foregroundStyle(.green)
+                    } else {
+                        Text("Không chạy").foregroundStyle(.red)
+                    }
+                }
+                LabeledContent("Event cuối cùng") {
+                    if let lastEventAt = state.lastEventAt {
+                        Text(lastEventAt.formatted(date: .omitted, time: .standard))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("chưa nhận event nào").foregroundStyle(.tertiary)
+                    }
+                }
+
+                if state.isConnectionStale(hooksInstalled: delegate.isConnected, now: now) {
+                    Text("Cảnh báo: đã cài hook nhưng lâu rồi không nhận được event nào — pet-hook.sh có thể đang không kết nối được tới app. Bấm \"Kiểm tra kết nối\" để xác nhận, hoặc \"Cài lại hook\" để ghi lại script.")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Section("Lỗi gần nhất") {
+                if let error = state.lastErrorMessage {
+                    Text(error)
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("Không có lỗi nào được ghi nhận.")
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Section {
+                HStack {
+                    Button("Copy log") { copyEventsLog() }
+                    Button("Cài lại hook") { delegate.connectClaudeCode() }
+                    Button(delegate.diagnosticTestRunning ? "Đang kiểm tra…" : "Kiểm tra kết nối") {
+                        delegate.testHookConnection()
+                    }
+                    .disabled(delegate.diagnosticTestRunning)
+                }
+
+                if let message = logCopyMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let result = delegate.diagnosticTestResult {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(result.message)
+                            .font(.callout)
+                            .foregroundStyle(result.success ? .green : .orange)
+                        Text(result.at.formatted(date: .omitted, time: .standard))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } header: {
+                Text("Hành động")
+            } footer: {
+                Text("\"Kiểm tra kết nối\" chạy chính script pet-hook.sh đã cài với một event thử, đúng đường đi thật Claude Code dùng — không gọi thẳng server qua HTTP.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// Copies the contents of `~/.petmacos/events.log` to the clipboard so the
+    /// user can paste it into a support request without using the terminal.
+    private func copyEventsLog() {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".petmacos/events.log")
+        guard let content = try? String(contentsOf: url, encoding: .utf8), !content.isEmpty else {
+            logCopyMessage = "Chưa có log (events.log trống hoặc chưa tồn tại)."
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(content, forType: .string)
+        logCopyMessage = "Đã copy events.log (\(content.utf8.count) byte) vào clipboard."
     }
 }
