@@ -73,9 +73,3 @@ tests/e2e_pet_state.sh
 # Build bản phân phối: ký Developer ID + DMG (+ notarize với --notarize)
 scripts/build-release.sh --notarize
 ```
-
-Tài liệu:
-
-- [docs/CODE_INDEX.md](docs/CODE_INDEX.md) — index toàn bộ source code
-- [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) — kế hoạch ký/notarize/phân phối
-- [CLAUDE.md](CLAUDE.md) — hướng dẫn cho Claude Code khi làm việc với repo này

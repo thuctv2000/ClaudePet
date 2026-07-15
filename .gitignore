@@ -7,3 +7,7 @@ xcuserdata/
 
 # Release build artifacts (archive, .app, .dmg)
 build/release/
+
+# Tài liệu nội bộ — chỉ giữ local
+CLAUDE.md
+docs/
