@@ -1,74 +1,81 @@
-# Desktop Pet for macOS
+# ClaudePet — Desktop Pet cho Claude Code trên macOS
 
-A small transparent desktop mascot that stays visible above normal windows and across Spaces/full-screen apps.
+Một chú pet trong suốt sống trên màn hình, luôn nổi trên các cửa sổ và đi theo bạn qua mọi Space/full-screen. Pet là "màn hình phụ" cho [Claude Code](https://claude.com/claude-code): hiển thị Claude đang nghĩ/làm/hỏi gì, và cho phép **duyệt quyền ngay trên pet** khi bạn đang xem video hay ở tab khác.
 
-## Run
+## Cài đặt (khuyên dùng)
 
-```sh
-swift run
-```
+1. Tải **PetMacOS-x.y.z.dmg** từ [Releases](https://github.com/thuctv2000/ClaudePet/releases)
+2. Mở DMG, kéo **PetMacOS** vào **Applications** (theo mũi tên)
+3. Mở app — wizard hướng dẫn tự hiện, bấm **"Kết nối Claude Code"**
+4. Mở Claude Code chạy thử một lệnh để thấy pet phản ứng 🐾
 
-Drag the dog by its transparent window background. Click the dog for a short happy animation. Use the paw icon in the menu bar to hide it, enable click-through, or quit.
+App đã ký Developer ID và được Apple notarize — mở được ngay, không bị Gatekeeper chặn. Yêu cầu **macOS 14+**. Máy chưa cài Claude Code? Wizard sẽ chỉ chỗ cài rồi cho kiểm tra lại.
 
-## Run in Xcode
+## Tính năng
 
-XcodeGen configuration is included. Generate and open the Xcode project with:
+- **Biểu cảm theo trạng thái Claude Code**: thinking, working, talking, asking (xin quyền), sleeping
+- **Task cards**: hoạt động đang chạy, subagent, background task, kết quả hoàn thành
+- **Duyệt quyền trên pet**: hook `PreToolUse` chờ bạn bấm Cho phép/Từ chối rồi mới trả quyết định cho Claude Code — terminal không cần bật lên. Hết thời gian chờ (mặc định 300s) hoặc app không chạy thì tool bị **từ chối an toàn**, Claude Code không treo
+- **Badge mức sử dụng** Claude (cửa sổ 5 giờ / 1 tuần)
+- **Sprite tùy chỉnh**: thay chó vẽ sẵn bằng nhân vật của bạn (xem bên dưới)
+- **Tab Chẩn đoán** trong Settings: trạng thái hook/server, kiểm tra kết nối, copy log, cài lại hook
 
-```sh
-xcodegen generate
-open PetMacOS.xcodeproj
-```
+## Cách hoạt động
 
-Select the **PetMacOS** scheme and press `⌘R`. The app is intentionally a menu-bar app, so look for the paw icon in the menu bar rather than a Dock icon.
+Khi chạy, app mở một HTTP server chỉ trên `127.0.0.1` (port do OS cấp mỗi lần chạy) và ghi port + token vào `~/.petmacos/config.json`. Nút "Kết nối Claude Code" sẽ:
 
-## Kết nối với Claude Code
+- Ghi `~/.petmacos/pet-hook.sh` (đã `chmod +x`)
+- Chèn cấu hình hooks vào `~/.claude/settings.json` (giữ nguyên các cài đặt khác)
 
-Con pet có thể trở thành "màn hình phụ" cho Claude Code: hiển thị Claude đang làm gì, trả
-lời gì, và cho phép **duyệt quyền ngay trên pet** khi bạn đang xem video hay ở tab khác.
+Từ đó mỗi phiên Claude Code mới sẽ gọi `pet-hook.sh` gửi sự kiện tới pet. **"Ngắt kết nối Claude Code"** trong menu bar gỡ sạch các hook đã chèn.
 
-Cách hoạt động: khi app chạy, nó mở một HTTP server chỉ trên `127.0.0.1` và ghi cổng + token
-vào `~/.petmacos/config.json`. Các *hook* của Claude Code gọi `pet-hook.sh` để gửi sự kiện
-tới pet. Với `PreToolUse`, script **chờ** bạn bấm Cho phép/Từ chối trên pet rồi trả quyết
-định cho Claude Code — terminal không cần bật lên.
+Tùy chọn trong menu bar / Settings:
 
-Bật kết nối:
+- **Chỉ hỏi tool ghi/chạy** — chỉ xin quyền với `Bash/Write/Edit/…`, tool đọc chỉ báo
+- **Tạm dừng duyệt quyền** — tự cho phép để đỡ phiền
+- **Hide pet / Click-through** — ẩn pet hoặc cho chuột xuyên qua
 
-1. Chạy app (`swift run`), tìm biểu tượng bàn chân trên menu bar.
-2. Bấm **"Kết nối Claude Code"**. App sẽ:
-   - Ghi `~/.petmacos/pet-hook.sh` (đã `chmod +x`).
-   - Chèn cấu hình hooks vào `~/.claude/settings.json` (giữ nguyên các cài đặt khác).
-3. Mở một phiên Claude Code mới trong terminal và làm việc như bình thường.
+## Sprite tùy chỉnh (anime)
 
-Trong menu bar còn có:
-- **Chỉ hỏi tool ghi/chạy** — chỉ xin quyền với `Bash/Write/Edit/…`, các tool đọc chỉ báo.
-- **Tạm dừng duyệt quyền** — tự động cho phép để đỡ phiền (không hỏi).
-- **Ngắt kết nối Claude Code** — gỡ các hook đã chèn khỏi `settings.json`.
+Mỗi **state** là một chuỗi frame PNG trong suốt, app phát như flipbook. Ảnh nằm **ngoài** app tại `~/.petmacos/sprites/` nên đổi frame không cần build lại.
 
-Nếu hết thời gian chờ (mặc định 300s) hoặc app không chạy, tool sẽ bị **từ chối an toàn** và
-Claude Code không bị treo.
-
-## Animation bằng ảnh (sprite anime)
-
-Con pet có thể thay con chó vẽ sẵn bằng nhân vật anime của bạn. Mỗi **state** là một
-chuỗi frame PNG trong suốt, app phát như flipbook. Ảnh nằm **ngoài** app tại
-`~/.petmacos/sprites/`, nên đổi/thêm frame **không cần build lại**.
-
-1. Menu bar > **"Mở thư mục sprites"** (app tự tạo sẵn các thư mục + `README.txt`).
+1. Menu bar → **"Mở thư mục sprites"** (app tạo sẵn thư mục + `README.txt`)
 2. Thả frame vào từng state, đặt tên theo thứ tự: `idle/idle_000.png`, `idle_001.png`, …
-   - States: `idle` (rảnh), `click` (nhấn vào — chạy 1 lần), `thinking`, `working`,
-     `talking`, `asking` (xin quyền), `sleep` (kết thúc phiên).
-3. Tùy chọn `clip.json` trong mỗi thư mục để chỉnh tốc độ/lặp: `{"fps": 12, "loop": true}`.
-4. Menu bar > **"Tải lại sprites"** để áp dụng.
+   - States: `idle`, `click` (chạy 1 lần), `thinking`, `working`, `talking`, `asking`, `sleep`
+3. Tùy chọn `clip.json` mỗi thư mục: `{"fps": 12, "loop": true}`
+4. Menu bar → **"Tải lại sprites"**
 
-State nào chưa có ảnh sẽ tự dùng frame `idle`; chưa có ảnh nào cả thì dùng con chó vẽ sẵn.
+State chưa có ảnh sẽ dùng frame `idle`; chưa có ảnh nào thì dùng chó vẽ sẵn.
 
-> Lưu ý: nếu dùng art nhân vật có bản quyền (vd nhân vật Genshin) thì chỉ nên dùng cá nhân;
-> cân nhắc khi phát hành công khai.
+> Lưu ý: art nhân vật có bản quyền (vd Genshin) chỉ nên dùng cá nhân; cân nhắc khi phát hành công khai.
 
-## Build an application bundle
+## Khi có trục trặc
+
+Mở **Settings → tab Chẩn đoán**: xem hook đã cài chưa, server nghe cổng nào, event cuối lúc nào; bấm **Kiểm tra kết nối** (bắn event test qua đúng đường hook thật), **Copy log** để gửi kèm khi báo lỗi, hoặc **Cài lại hook**. Log chi tiết ở `~/.petmacos/events.log`.
+
+## Dành cho developer
 
 ```sh
-swift build -c release
+# Chạy nhanh
+swift run
+
+# Hoặc mở bằng Xcode (repo dùng XcodeGen)
+xcodegen generate
+open PetMacOS.xcodeproj   # scheme PetMacOS, ⌘R
 ```
 
-The executable is placed at `.build/release/PetMacOS`.
+App là menu-bar app (LSUIElement) — tìm icon bàn chân trên menu bar, không có icon Dock.
+
+```sh
+# Test e2e (cần app đang chạy)
+tests/e2e_pet_state.sh
+
+# Build bản phân phối: ký Developer ID + DMG (+ notarize với --notarize)
+scripts/build-release.sh --notarize
+```
+
+Tài liệu:
+
+- [docs/CODE_INDEX.md](docs/CODE_INDEX.md) — index toàn bộ source code
+- [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) — kế hoạch ký/notarize/phân phối
+- [CLAUDE.md](CLAUDE.md) — hướng dẫn cho Claude Code khi làm việc với repo này
