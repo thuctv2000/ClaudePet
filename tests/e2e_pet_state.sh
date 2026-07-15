@@ -102,6 +102,19 @@ post_event() {
         --data-binary "$1" >/dev/null 2>&1
 }
 
+# wait_for_mood <mood> <max-seconds> -> polls /debug/state until the mood
+# matches or the deadline passes. Events are applied asynchronously after the
+# POST returns, so fixed sleeps race with slow machines; polling doesn't.
+wait_for_mood() {
+    local want="$1" deadline_s="$2" waited=0
+    while [ "$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;print(json.load(sys.stdin)["mood"])' 2>/dev/null)" != "$want" ]; do
+        waited=$((waited + 1))
+        [ "$waited" -ge $((deadline_s * 5)) ] && return 1
+        sleep 0.2
+    done
+    return 0
+}
+
 # report <name> <result>. result is "PASS", "SKIP: reason", or "FAIL: reason".
 report() {
     local name="$1" result="$2"
@@ -249,9 +262,104 @@ else:
 ' "$STATE"
 
 # ============================================================================
-# TEST 4 — Fleeting auxiliary sessions are filtered. A SessionStart+SessionEnd
-# pair within the 1.5s debounce window must produce NO card; a lone SessionStart
-# left >1.5s must produce a "Bắt đầu phiên mới" card.
+# TEST 3c/3d — Background Bash task status handling: "failed" and "killed"
+# must ALSO retire the card (the original bug: only "completed" did), each
+# with its own Vietnamese notice title and TaskKind "failed" so the UI can
+# tell them apart from a normal "done" result.
+# ============================================================================
+run_bg_status_case() {
+    local label="$1" status="$2" expect_title="$3"
+    local bg_id="E2EBG${status}$$"
+    local bg_sid="bg${status}00000000000000000000004"
+    local bg_desc="e2e-bg-${status}-$$"
+    local transcript="/tmp/petmacos_e2e_bg_${status}_$$.jsonl"
+
+    printf '{"type":"user","message":"seed"}\n' > "$transcript"
+    local tool_response="Command running in background with ID: $bg_id. Output is being written to: $transcript."
+    post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$bg_sid\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$transcript\",\"tool_input\":{\"description\":\"$bg_desc\",\"command\":\"false\",\"run_in_background\":true},\"tool_response\":\"$tool_response\"}"
+    sleep 0.6
+
+    printf '<task-notification><task-id>%s</task-id><status>%s</status></task-notification>\n' "$bg_id" "$status" >> "$transcript"
+    sleep 5
+
+    STATE=$(get_state)
+    assert "$label" '
+bg=s["backgroundTasks"]
+comp=s["completedNotices"]
+still=[c for c in bg if c.get("detail")=="'"$bg_desc"'" or (c.get("title") and "'"$bg_desc"'" in c["title"])]
+done=[c for c in comp if c.get("title")=="'"$expect_title"'" and c.get("kind")=="failed" and c.get("detail") and "'"$bg_desc"'" in c["detail"]]
+if still:
+    print("FAIL: background card still present after '"$status"' signal")
+elif not done:
+    print("FAIL: no '"'"'$expect_title'"'"' (kind=failed) notice for '"$bg_desc"' (got: %s)" % [(c.get("title"),c.get("kind"),c.get("detail")) for c in comp])
+else:
+    print("PASS")
+' "$STATE"
+    rm -f "$transcript"
+}
+
+run_bg_status_case "3c. Background task status=failed retires card as 'Chạy nền lỗi' (kind failed)" "failed" "Chạy nền lỗi"
+run_bg_status_case "3d. Background task status=killed retires card as 'Chạy nền bị dừng' (kind failed)" "killed" "Chạy nền bị dừng"
+
+# ============================================================================
+# TEST 3e — Background task safety-net timeout: with no completion signal at
+# all, the card must retire on its own once `backgroundTimeoutSeconds` (config
+# override, same mechanism as talkingDecaySeconds) elapses, with a notice that
+# says the outcome is simply unknown.
+# ============================================================================
+TIMEOUT_ID="E2EBGTMO$$"
+TIMEOUT_SID="bgtimeout000000000000000000000005"
+TIMEOUT_DESC="e2e-bg-timeout-$$"
+TIMEOUT_TRANSCRIPT="/tmp/petmacos_e2e_bg_timeout_$$.jsonl"
+printf '{"type":"user","message":"seed"}\n' > "$TIMEOUT_TRANSCRIPT"
+
+ORIG_CONFIG_BG=$(cat "$CONFIG")
+python3 - "$CONFIG" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["backgroundTimeoutSeconds"] = 3
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+
+TOOL_RESPONSE_TMO="Command running in background with ID: $TIMEOUT_ID. Output is being written to: $TIMEOUT_TRANSCRIPT."
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$TIMEOUT_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TIMEOUT_TRANSCRIPT\",\"tool_input\":{\"description\":\"$TIMEOUT_DESC\",\"command\":\"sleep 999\",\"run_in_background\":true},\"tool_response\":\"$TOOL_RESPONSE_TMO\"}"
+sleep 0.6
+
+# Never append a completion signal; just wait past the overridden 3s timeout
+# (plus the ~2s poll cadence) and confirm the card retires on its own.
+sleep 6
+
+printf '%s' "$ORIG_CONFIG_BG" > "$CONFIG"
+rm -f "$TIMEOUT_TRANSCRIPT"
+
+STATE=$(get_state)
+assert "3e. Background task with no signal retires after backgroundTimeoutSeconds (kind failed, 'không rõ kết quả')" '
+bg=s["backgroundTasks"]
+comp=s["completedNotices"]
+still=[c for c in bg if c.get("detail")=="'"$TIMEOUT_DESC"'" or (c.get("title") and "'"$TIMEOUT_DESC"'" in c["title"])]
+done=[c for c in comp if "không rõ kết quả" in (c.get("title") or "") and c.get("kind")=="failed" and c.get("detail") and "'"$TIMEOUT_DESC"'" in c["detail"]]
+if still:
+    print("FAIL: background card still present after timeout should have retired it")
+elif not done:
+    print("FAIL: no timeout notice for '"$TIMEOUT_DESC"' (got: %s)" % [(c.get("title"),c.get("kind"),c.get("detail")) for c in comp])
+else:
+    print("PASS")
+' "$STATE"
+
+# ============================================================================
+# TEST 4 — SessionStart/SessionEnd never surface a card. Hooks are installed
+# globally (see the comment in PetState.apply()'s "SessionStart"/"SessionEnd"
+# cases): these events fire for every Claude Code session on the machine, not
+# just the one the user is watching a card here would just be noise from
+# unrelated sessions, so the app deliberately only reacts by changing mood
+# (idle / sleep), never by pushing a running card. (An earlier version of this
+# test asserted the opposite — that a lone SessionStart surfaces a "Bắt đầu
+# phiên mới" card after a debounce window — which no longer matches the
+# intentional behaviour above; this test now asserts what the code actually,
+# and correctly, does.)
 # ============================================================================
 FLEET_SID="fleet10000000000000000000000000004"
 FLEET_TAG="fleet1"
@@ -259,33 +367,34 @@ START_SID="start20000000000000000000000000005"
 START_TAG="start2"
 SESS_CWD="/tmp/e2eproj"
 
-# Part A: back-to-back start/end (well inside the 1.5s debounce window). A short
-# 0.1s gap enforces start-before-end ordering while staying under the window.
+# Part A: back-to-back start/end.
 post_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$FLEET_SID\",\"cwd\":\"$SESS_CWD\"}"
 sleep 0.1
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$FLEET_SID\",\"cwd\":\"$SESS_CWD\"}"
-sleep 2.0
+sleep 1.0
 
 STATE=$(get_state)
-assert "4a. Fleeting SessionStart+End pair produces no session card" '
+assert "4a. SessionStart+End pair produces no session card" '
 run=s["runningTasks"]
 leaked=ctx_has(run, "#'"$FLEET_TAG"'")
 if leaked:
-    print("FAIL: fleeting session leaked a card: %s" % [(c.get("title"),c.get("context")) for c in leaked])
+    print("FAIL: session start/end leaked a card: %s" % [(c.get("title"),c.get("context")) for c in leaked])
 else:
     print("PASS")
 ' "$STATE"
 
-# Part B: a lone SessionStart, given >1.5s, must surface a card.
+# Part B: a lone SessionStart must ALSO never surface a card (only mood reacts).
 post_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$START_SID\",\"cwd\":\"$SESS_CWD\"}"
-sleep 2.0
+sleep 1.0
 
 STATE=$(get_state)
-assert "4b. Lone SessionStart (>1.5s) surfaces a 'Bắt đầu phiên mới' card" '
+assert "4b. Lone SessionStart surfaces no card (mood-only reaction)" '
 run=s["runningTasks"]
-mine=[c for c in run if c.get("title")=="Bắt đầu phiên mới" and c.get("context") and "#'"$START_TAG"'" in c["context"]]
-if not mine:
-    print("FAIL: expected '"'"'Bắt đầu phiên mới'"'"' card with tag #'"$START_TAG"' (got: %s)" % [(c.get("title"),c.get("context")) for c in run])
+mine=ctx_has(run, "#'"$START_TAG"'")
+if mine:
+    print("FAIL: SessionStart unexpectedly created a card: %s" % [(c.get("title"),c.get("context")) for c in mine])
+elif s["mood"] != "idle":
+    print("FAIL: expected mood \"idle\" after SessionStart, got %r" % s["mood"])
 else:
     print("PASS")
 ' "$STATE"
@@ -363,6 +472,236 @@ else:
     echo "      (~300s server timeout) — there is no HTTP way to resolve it; only"
     echo "      the pet UI can. Restart the app for a fully clean state."
 fi
+
+# ============================================================================
+# TEST 7/8/9 — Mood decay (error, talking, and decay-cancellation-by-new-event).
+#
+# Both `talkingDecaySeconds` and `errorDecaySeconds` are overridden via optional
+# fields in ~/.petmacos/config.json (PetState reads them fresh on every use, not
+# just at launch — see PetState.talkingDecaySeconds/errorDecaySeconds) so these
+# tests don't have to wait out the real 20s/6s defaults. The original
+# config.json is restored on exit via the existing cleanup trap.
+# ============================================================================
+ORIG_CONFIG=$(cat "$CONFIG")
+restore_config() { printf '%s' "$ORIG_CONFIG" > "$CONFIG"; }
+cleanup() { rm -f "$TMP_TRANSCRIPT"; restore_config; }
+trap cleanup EXIT
+
+python3 - "$CONFIG" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["talkingDecaySeconds"] = 3
+cfg["errorDecaySeconds"] = 3
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+
+# --- 7. PostToolUse tool_response.is_error -> mood "error", then decays. ---
+ERR_SID="errtest10000000000000000000000006"
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$ERR_SID\",\"cwd\":\"/tmp/e2eerr\",\"tool_input\":{\"description\":\"e2e failing tool\",\"command\":\"false\"},\"tool_response\":{\"is_error\":true,\"stderr\":\"boom\"}}"
+wait_for_mood "error" 2 || true
+
+STATE=$(get_state)
+assert "7a. PostToolUse with tool_response.is_error sets mood \"error\"" '
+if s["mood"] != "error":
+    print("FAIL: expected mood \"error\", got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+sleep 4.5 # past the overridden 3s errorDecaySeconds
+STATE=$(get_state)
+assert "7b. \"error\" mood decays back (working if work active, else idle)" '
+active = bool(s["subagentTasks"]) or bool(s["backgroundTasks"])
+expected = "working" if active else "idle"
+if s["mood"] != expected:
+    print("FAIL: expected mood %r after error decay, got %r" % (expected, s["mood"]))
+else:
+    print("PASS")
+' "$STATE"
+
+# A tool_response WITHOUT an error signal must not flip mood to "error" (guards
+# against over-eager string matching of the response text).
+OK_SID="oktest200000000000000000000000009"
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$OK_SID\",\"cwd\":\"/tmp/e2eerr\",\"tool_input\":{\"description\":\"e2e ok tool\",\"command\":\"echo hi\"},\"tool_response\":\"contains the word error in its output, but no is_error flag\"}"
+sleep 0.5
+STATE=$(get_state)
+assert "7c. PostToolUse with plain-string tool_response (no is_error flag) does not set mood \"error\"" '
+if s["mood"] == "error":
+    print("FAIL: mood incorrectly became \"error\" from response text alone")
+else:
+    print("PASS")
+' "$STATE"
+
+# --- 8. Clean Stop -> mood "talking", then decays to "idle". ---
+STOP_SID="stoptest2000000000000000000000007"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$STOP_SID\",\"cwd\":\"/tmp/e2estop\",\"last_assistant_message\":\"e2e stop reply\"}"
+wait_for_mood "talking" 2 || true
+
+STATE=$(get_state)
+assert "8a. Clean Stop sets mood \"talking\" (no active subagent/background work)" '
+active = bool(s["subagentTasks"]) or bool(s["backgroundTasks"])
+if active:
+    print("SKIP: subagent/background tasks still active from another test; cannot assert talking cleanly")
+elif s["mood"] != "talking":
+    print("FAIL: expected mood \"talking\", got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+sleep 4.5 # past the overridden 3s talkingDecaySeconds
+STATE=$(get_state)
+assert "8b. \"talking\" mood decays to \"idle\" after talkingDecaySeconds" '
+if s["mood"] != "idle":
+    print("FAIL: expected mood \"idle\" after talking decay, got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+# --- 9. A newer event mid-decay must win; the stale timer must not fire later. ---
+CANCEL_SID="canceltest00000000000000000000010"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$CANCEL_SID\",\"cwd\":\"/tmp/e2ecancel\"}"
+sleep 0.3
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$CANCEL_SID\",\"cwd\":\"/tmp/e2ecancel\",\"prompt\":\"e2e new prompt mid-decay\"}"
+sleep 0.3
+
+STATE=$(get_state)
+assert "9a. A new event mid-decay immediately overrides mood" '
+if s["mood"] != "thinking":
+    print("FAIL: expected mood \"thinking\" right after UserPromptSubmit, got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+sleep 3   # past the original ("talking") decay deadline, which must be cancelled
+STATE=$(get_state)
+assert "9b. Stale decay timer does not fire after mood already moved on" '
+if s["mood"] != "thinking":
+    print("FAIL: expected mood still \"thinking\" (stale decay must have been cancelled), got %r" % s["mood"])
+else:
+    print("PASS")
+' "$STATE"
+
+# Restore the real config.json now (rather than only at exit) so TEST 6 below
+# measures the log the app actually wrote to under normal settings.
+restore_config
+
+# ============================================================================
+# TEST 10/11/12 — SubagentStart/agent_id-based matching replaces the old FIFO
+# (oldest-first) SubagentStop matching. Proves: (a) claiming a PreToolUse card
+# by session_id avoids a duplicate card, (b) stopping a YOUNGER subagent by its
+# real agent_id retires that exact card even while an OLDER one is still
+# running (impossible under pure FIFO), (c) a card with no agent_id (older
+# Claude Code build, or SubagentStart never arrived) still falls back to FIFO.
+# ============================================================================
+
+# Drain whatever subagent cards already exist (leftovers from TEST 1/2, or any
+# real dev-session subagent) so the FIFO fallback proof below (12) has a known,
+# clean starting point. Uses fabricated agent_ids that cannot match any real
+# tagged card, forcing the FIFO fallback path each time -- exactly like TEST 2.
+drain_all_subagents() {
+    local n
+    n=$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["subagentTasks"]))')
+    local i=0
+    while [ "$i" -lt "$n" ]; do
+        post_event "{\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"e2e-drain-$$-$i\",\"session_id\":\"drain\",\"cwd\":\"$CWD_SUB\"}"
+        i=$((i+1))
+        sleep 0.2
+    done
+    sleep 0.3
+}
+drain_all_subagents
+
+SIDA10="tenA0000000000000000000000000010"
+TAGA10="tenA00"
+SIDB10="tenB0000000000000000000000000011"
+TAGB10="tenB00"
+
+# Card A: PreToolUse Task (unclaimed, no agent_id yet) then a SubagentStart
+# that claims it by session_id -- must NOT produce a second card.
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SIDA10\",\"cwd\":\"$CWD_SUB\",\"tool_input\":{\"description\":\"e2e subagent A10\",\"subagent_type\":\"general-purpose\"}}"
+sleep 0.3
+post_event "{\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"e2e-agentA-$$\",\"agent_type\":\"general-purpose\",\"session_id\":\"$SIDA10\",\"cwd\":\"$CWD_SUB\"}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "10. SubagentStart claims the PreToolUse card by session_id (no duplicate)" '
+subs=s["subagentTasks"]
+mine=ctx_has(subs, "#'"$TAGA10"'")
+if len(mine) == 0:
+    print("FAIL: no subagent card with context tag #'"$TAGA10"'")
+elif len(mine) > 1:
+    print("FAIL: SubagentStart created a DUPLICATE card instead of claiming the existing one (got %d)" % len(mine))
+else:
+    print("PASS")
+' "$STATE"
+
+# Card B: SubagentStart only (no preceding PreToolUse reaching us -- simulates
+# manual/"ask" launches or an event we never saw), started AFTER card A.
+post_event "{\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"e2e-agentB-$$\",\"agent_type\":\"general-purpose\",\"session_id\":\"$SIDB10\",\"cwd\":\"$CWD_SUB\"}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "11. SubagentStart with no matching PreToolUse card creates a fresh card" '
+subs=s["subagentTasks"]
+mine=ctx_has(subs, "#'"$TAGB10"'")
+if not mine:
+    print("FAIL: no subagent card with context tag #'"$TAGB10"' (got contexts: %s)" % [c.get("context") for c in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+# The actual regression proof: stop the YOUNGER subagent (B) first, by its
+# real agent_id. Under the old FIFO-only logic this would have incorrectly
+# removed the OLDER card (A) instead. With agent_id matching, B's card is
+# removed and A's card -- still "running" -- must remain untouched.
+post_event "{\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"e2e-agentB-$$\",\"agent_type\":\"general-purpose\",\"session_id\":\"$SIDB10\",\"cwd\":\"$CWD_SUB\",\"last_assistant_message\":\"e2e B done\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "12. SubagentStop(agent_id=B) removes exactly B, NOT the older A (proves FIFO is gone)" '
+subs=s["subagentTasks"]
+a=ctx_has(subs, "#'"$TAGA10"'")
+b=ctx_has(subs, "#'"$TAGB10"'")
+if b:
+    print("FAIL: card B still present after its own SubagentStop")
+elif not a:
+    print("FAIL: card A was wrongly removed instead of B -- FIFO fallback fired despite a valid agent_id match")
+else:
+    print("PASS")
+' "$STATE"
+
+# Fallback proof: a card with NO agent_id (older Claude Code build / never got
+# a SubagentStart) must still be retirable via the FIFO fallback. At this
+# point the only subagent card left from this test group is A; add a fresh
+# unclaimed card C, then send a SubagentStop with no agent_id at all -- it
+# must fall back to removing the oldest tracked card (A), leaving C.
+SIDC10="tenC0000000000000000000000000012"
+TAGC10="tenC00"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SIDC10\",\"cwd\":\"$CWD_SUB\",\"tool_input\":{\"description\":\"e2e subagent C10\",\"subagent_type\":\"general-purpose\"}}"
+sleep 0.4
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SIDA10\",\"cwd\":\"$CWD_SUB\",\"last_assistant_message\":\"e2e no-id stop\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "13. SubagentStop with no agent_id falls back to FIFO (removes oldest: A), C remains" '
+subs=s["subagentTasks"]
+a=ctx_has(subs, "#'"$TAGA10"'")
+c=ctx_has(subs, "#'"$TAGC10"'")
+if a:
+    print("FAIL: card A still present -- fallback FIFO removal did not happen")
+elif not c:
+    print("FAIL: card C missing -- fallback FIFO removed the wrong card")
+else:
+    print("PASS")
+' "$STATE"
+
+# Clean up: drain whatever this test group left behind (card C) so it doesn't
+# leak into a subsequent run of this suite.
+drain_all_subagents
 
 # ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
