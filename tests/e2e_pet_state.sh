@@ -796,6 +796,166 @@ else:
 drain_all_subagents
 
 # ============================================================================
+# TEST 14/15/16 — Session-name resolution (SessionNames.swift). `contextLabel`
+# should caption cards with the conversation's first-prompt name resolved from
+# `history.jsonl` instead of the raw "#tag", falling back to "#tag" when a
+# session can't be resolved (never in the file, or a "[Pasted text ...]"
+# placeholder that cleans to nothing). The history file path is injected via
+# the optional `historyPath` field in config.json -- same override mechanism
+# as talkingDecaySeconds/errorDecaySeconds -- pointed at a throwaway fixture so
+# the real ~/.claude/history.jsonl is never touched.
+# ============================================================================
+TMP_HISTORY="/tmp/petmacos_e2e_history_$$.jsonl"
+cleanup() { rm -f "$TMP_TRANSCRIPT" "$TMP_HISTORY"; restore_config; }
+trap cleanup EXIT
+
+SID_NAME="namedses0000000000000000000000014"
+SID_PASTE="pastedses000000000000000000000015"
+SID_UNKNOWN="unknownse00000000000000000000016"
+SID_LATE="latesess0000000000000000000000017"
+CWD_NAME="/tmp/e2ename"
+TAGNAME6="${SID_NAME:0:6}"
+TAGPASTE6="${SID_PASTE:0:6}"
+TAGUNKNOWN6="${SID_UNKNOWN:0:6}"
+TAGLATE6="${SID_LATE:0:6}"
+
+python3 - "$TMP_HISTORY" "$SID_NAME" "$SID_PASTE" <<'PYEOF'
+import json, sys
+path, sid_name, sid_paste = sys.argv[1], sys.argv[2], sys.argv[3]
+lines = [
+    {"display": "Refactor the entire authentication and session management subsystem for scalability",
+     "pastedContents": {}, "timestamp": 1000, "project": "/tmp/e2ename", "sessionId": sid_name},
+    {"display": "[Pasted text #1 +22 lines] ",
+     "pastedContents": {"1": {"id": 1, "type": "text", "content": "irrelevant"}},
+     "timestamp": 1001, "project": "/tmp/e2ename", "sessionId": sid_paste},
+]
+with open(path, "w") as f:
+    for l in lines:
+        f.write(json.dumps(l) + "\n")
+PYEOF
+
+python3 - "$CONFIG" "$TMP_HISTORY" <<'PYEOF'
+import json, sys
+path, history_path = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["historyPath"] = history_path
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+
+# --- 14a. Resolvable session: context uses the (truncated) conversation name, not "#tag". ---
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SID_NAME\",\"cwd\":\"$CWD_NAME\",\"tool_input\":{\"description\":\"e2e named subagent\",\"subagent_type\":\"general-purpose\"}}"
+post_event "{\"hook_event_name\":\"SubagentStart\",\"session_id\":\"$SID_NAME\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentname14\",\"agent_type\":\"general-purpose\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "14a. Resolvable session: card context shows the conversation name (truncated at a word boundary), not #tag" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "e2ename" in c["context"]]
+if not c:
+    print("FAIL: no card with e2ename context found")
+else:
+    ctx = c[0]["context"]
+    if "#'"$TAGNAME6"'" in ctx:
+        print("FAIL: context still shows the raw #tag instead of the resolved name: %r" % ctx)
+    elif "Refactor the entire" not in ctx:
+        print("FAIL: context does not contain the expected conversation name: %r" % ctx)
+    elif len(ctx) > 60:
+        print("FAIL: context looks untruncated / too long: %r" % ctx)
+    else:
+        print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_NAME\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentname14\",\"last_assistant_message\":\"done\"}"
+sleep 0.3
+
+# --- 14b. A "[Pasted text ...]"-only display cleans to nothing -> falls back to #tag. ---
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SID_PASTE\",\"cwd\":\"$CWD_NAME\",\"tool_input\":{\"description\":\"e2e pasted subagent\",\"subagent_type\":\"general-purpose\"}}"
+post_event "{\"hook_event_name\":\"SubagentStart\",\"session_id\":\"$SID_PASTE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentpaste14\",\"agent_type\":\"general-purpose\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "14b. Pasted-text-only display cleans to nothing -> falls back to #tag" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "#'"$TAGPASTE6"'" in c["context"]]
+if not c:
+    print("FAIL: expected fallback #'"$TAGPASTE6"' tag not found (contexts: %s)" % [x.get("context") for x in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_PASTE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentpaste14\",\"last_assistant_message\":\"done\"}"
+sleep 0.3
+
+# --- 15. Session never present in history.jsonl -> falls back to #tag. ---
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SID_UNKNOWN\",\"cwd\":\"$CWD_NAME\",\"tool_input\":{\"description\":\"e2e unknown subagent\",\"subagent_type\":\"general-purpose\"}}"
+post_event "{\"hook_event_name\":\"SubagentStart\",\"session_id\":\"$SID_UNKNOWN\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentunknown15\",\"agent_type\":\"general-purpose\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "15. Session absent from history.jsonl falls back to #tag" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "#'"$TAGUNKNOWN6"'" in c["context"]]
+if not c:
+    print("FAIL: expected fallback #'"$TAGUNKNOWN6"' tag not found (contexts: %s)" % [x.get("context") for x in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_UNKNOWN\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentunknown15\",\"last_assistant_message\":\"done\"}"
+sleep 0.3
+
+# --- 16. Brand-new session: history.jsonl catches up *after* the first event
+# for it, so its name must appear on a later event rather than being cached as
+# a permanent miss. ---
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"tool_input\":{\"description\":\"e2e late subagent\",\"subagent_type\":\"general-purpose\"}}"
+post_event "{\"hook_event_name\":\"SubagentStart\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentlate16\",\"agent_type\":\"general-purpose\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "16a. Not-yet-in-history session initially falls back to #tag" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "#'"$TAGLATE6"'" in c["context"]]
+if not c:
+    print("FAIL: expected fallback #'"$TAGLATE6"' tag not found (contexts: %s)" % [x.get("context") for x in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+# The "prompt" for this session lands in history.jsonl only now, simulating
+# Claude Code's async append happening after the pet's first hook event.
+python3 - "$TMP_HISTORY" "$SID_LATE" <<'PYEOF'
+import json, sys
+path, sid = sys.argv[1], sys.argv[2]
+with open(path, "a") as f:
+    f.write(json.dumps({
+        "display": "Investigate the flaky network retry logic",
+        "pastedContents": {}, "timestamp": 2000, "project": "/tmp/e2ename", "sessionId": sid,
+    }) + "\n")
+PYEOF
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentlate16\",\"last_assistant_message\":\"done\"}"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"tool_input\":{\"description\":\"e2e late subagent 2\",\"subagent_type\":\"general-purpose\"}}"
+post_event "{\"hook_event_name\":\"SubagentStart\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentlate16b\",\"agent_type\":\"general-purpose\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "16b. Once history.jsonl catches up, a later event resolves the real name (miss was not cached permanently)" '
+subs=s["subagentTasks"]
+c=[c for c in subs if c.get("context") and "Investigate the flaky" in (c["context"] or "")]
+if not c:
+    print("FAIL: expected resolved name not found (contexts: %s)" % [x.get("context") for x in subs])
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$SID_LATE\",\"cwd\":\"$CWD_NAME\",\"agent_id\":\"agentlate16b\",\"last_assistant_message\":\"done\"}"
+sleep 0.3
+
+restore_config
+
+# ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
 # ~1.1MB (the app resets it once it passes ~1MB).
 # ============================================================================

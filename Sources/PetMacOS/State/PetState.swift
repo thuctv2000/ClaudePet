@@ -187,6 +187,12 @@ final class PetState {
     private let maxRunning = 3
     private let runningTTL: TimeInterval = 8
 
+    /// Resolves a `session_id` to its conversation's first-prompt name from
+    /// `~/.claude/history.jsonl`, used by `contextLabel(for:)` to caption
+    /// cards with something meaningful instead of a raw session-id tag. See
+    /// `SessionNameResolver` for the read/cache strategy.
+    @ObservationIgnored private let sessionNames = SessionNameResolver()
+
     /// Per-item auto-expiry tasks for running cards, so they can be cancelled
     /// when the task finishes early or is pushed out of the stack.
     private var expiryTasks: [UUID: Task<Void, Never>] = [:]
@@ -680,12 +686,22 @@ final class PetState {
         }
     }
 
-    /// Small caption shown above a card: "project · #tab", where the tab tag
-    /// is a stable prefix of the session id — enough to tell apart subagents
-    /// or background tasks launched from different Claude Code tabs, even
-    /// when they share the same project folder.
+    /// Small caption shown above a card: "project · name", where `name` is
+    /// the conversation's first prompt (resolved via `sessionNames` from
+    /// `~/.claude/history.jsonl` — the same text `claude --resume` lists it
+    /// under), falling back to the old "#tab" stable session-id prefix when
+    /// no name can be resolved yet (brand-new session whose first prompt
+    /// hasn't reached history.jsonl, or history.jsonl unavailable). The tag
+    /// still distinguishes subagents/background tasks from different Claude
+    /// Code tabs sharing one project folder even in the fallback case.
     private func contextLabel(for event: HookEvent) -> String? {
-        let parts = [event.projectName, event.sessionTag.map { "#\($0)" }].compactMap { $0 }
+        let tab: String?
+        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId) {
+            tab = name
+        } else {
+            tab = event.sessionTag.map { "#\($0)" }
+        }
+        let parts = [event.projectName, tab].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
