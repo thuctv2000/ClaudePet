@@ -128,6 +128,19 @@ struct HookEvent: Decodable {
         agentId != nil && hookEventName != "SubagentStop"
     }
 
+    /// True when a `PostToolUse` event's `tool_response` signals the tool
+    /// failed. Checks the structured `is_error` / `isError` boolean Claude
+    /// Code sets on failed tool results (the same flag used for MCP tool_result
+    /// blocks), rather than string-matching the response text — grepping for
+    /// "error" in arbitrary tool output is unreliable (a file can legitimately
+    /// contain that word) and would flip the pet's mood on false positives.
+    var isToolError: Bool {
+        for key in ["is_error", "isError"] {
+            if case let .bool(flag)? = toolResponse?[key] { return flag }
+        }
+        return false
+    }
+
     /// Best-effort one-line summary of a tool's input for display.
     var toolInputSummary: String? {
         guard let toolInput else { return nil }

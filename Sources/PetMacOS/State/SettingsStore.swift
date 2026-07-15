@@ -73,6 +73,11 @@ final class SettingsStore {
         case .done: return done
         case .subagent: return subagent
         case .background: return background
+        // `.failed` only ever appears on a completed notice (see TaskKind's
+        // doc comment), which renders via `CompletedCard`'s gradient/red
+        // stroke, not this per-kind running-card color -- a plain,
+        // non-configurable red is enough here to keep this minimal.
+        case .failed: return .red.opacity(0.9)
         }
     }
 

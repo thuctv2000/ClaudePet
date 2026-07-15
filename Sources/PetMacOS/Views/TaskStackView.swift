@@ -211,7 +211,11 @@ private struct CompletedCard: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(gradient, lineWidth: 2)
+                // Failed/killed/timed-out background notices get a plain red
+                // border instead of the usual "success" gradient, so they read
+                // as distinct at a glance without a full card redesign.
+                .stroke(item.kind == .failed ? AnyShapeStyle(Color.red.opacity(0.85)) : AnyShapeStyle(gradient),
+                        lineWidth: 2)
         )
         .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
         .contentShape(Rectangle())

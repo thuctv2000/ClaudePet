@@ -31,6 +31,17 @@ enum HookInstaller {
             ("PostToolUse", "event", toolMatcher, nil),
             ("Notification", "event", nil, nil),
             ("Stop", "event", nil, nil),
+            // SubagentStart is new in Claude Code v2.1.177+ (carries agent_id/
+            // agent_type for a subagent that's about to run) and lets PetState
+            // retire the *right* SubagentStop card instead of oldest-first
+            // (FIFO) guessing — see PetState.handleSubagentStart. There is no
+            // version-hash / auto-migrate mechanism for installed hooks in this
+            // app (`isInstalled` only checks presence of our marker, not which
+            // events are wired up), so an existing install won't pick this up
+            // on its own: the user must reconnect (Ngắt kết nối rồi Kết nối
+            // lại Claude Code, or "Cài lại hook" in Chẩn đoán) for it to take
+            // effect.
+            ("SubagentStart", "event", nil, nil),
             ("SubagentStop", "event", nil, nil),
             ("SessionStart", "event", nil, nil),
             ("SessionEnd", "event", nil, nil),

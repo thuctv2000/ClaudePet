@@ -21,14 +21,17 @@ final class SpriteLibrary {
 
     static let root = PetConfig.directory.appendingPathComponent("sprites", isDirectory: true)
 
-    /// Every state the app knows how to play. `click` is the tap reaction.
-    static let states = ["idle", "click", "thinking", "working", "talking", "asking", "sleep"]
+    /// Every state the app knows how to play. `click` is the tap reaction;
+    /// `happy` is the one-shot played on a clean `Stop` (see `PetState.happyID`).
+    static let states = ["idle", "click", "thinking", "working", "talking", "asking", "sleep", "error", "happy"]
 
     /// Sensible default fps / looping per state (overridable via clip.json).
     private static func defaults(for state: String) -> (fps: Double, loops: Bool) {
         switch state {
         case "click": return (14, false)   // one-shot reaction
+        case "happy": return (14, false)   // one-shot reaction, like click
         case "talking": return (10, false) // play once, hold last frame
+        case "error": return (10, true)    // loops for as long as the mood shows
         case "sleep": return (5, true)
         default: return (10, true)
         }
@@ -73,8 +76,11 @@ final class SpriteLibrary {
             try? FileManager.default.createDirectory(
                 at: root.appendingPathComponent(state), withIntermediateDirectories: true)
         }
+        // README.txt is generated documentation, not user content — safe to
+        // overwrite on every launch (unlike the sprite frames / clip.json next
+        // to it, which are never touched here) so users who installed the app
+        // before "error"/"happy" existed still see them listed.
         let readme = root.appendingPathComponent("README.txt")
-        guard !FileManager.default.fileExists(atPath: readme.path) else { return }
         let text = """
         SPRITES CHO DESKTOP PET
         =======================
@@ -90,6 +96,9 @@ final class SpriteLibrary {
           - talking  : vừa trả lời xong
           - asking   : đang xin quyền (cần chú ý)
           - sleep    : kết thúc phiên
+          - error    : một tool vừa thất bại (hiện một lúc ngắn rồi tự tắt)
+          - happy    : phản ứng khi Claude vừa trả lời xong sạch sẽ (chạy 1 lần,
+                       nếu chưa có ảnh thì pet chỉ dùng "talking" như bình thường)
 
         Tùy chọn: thêm file clip.json trong thư mục state để chỉnh tốc độ/lặp:
             {"fps": 12, "loop": true}

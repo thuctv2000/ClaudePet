@@ -11,6 +11,7 @@ struct PetView: View {
     @State private var eyesClosed = false
     @State private var isHappy = false
     @State private var reacting = false   // playing the one-shot click clip
+    @State private var celebratingStop = false   // playing the one-shot "happy" clip after a clean Stop
 
     /// A blocking dialog is on screen; shrink the pet to give it room.
     private var dialogActive: Bool {
@@ -51,6 +52,17 @@ struct PetView: View {
         .background(Color.clear)
         .contextMenu {
             Text("Drag me anywhere")
+        }
+        .onChange(of: state.happyID) { _, newValue in
+            // A clean Stop just happened. Play "happy" once if the user has
+            // that sprite; otherwise this is a no-op and the mood's own clip
+            // ("talking", already set by PetState) keeps playing unchanged.
+            guard newValue != nil, let clip = sprites.clip(named: "happy") else { return }
+            celebratingStop = true
+            let seconds = max(clip.duration, 0.3)
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+                celebratingStop = false
+            }
         }
     }
 
@@ -101,9 +113,11 @@ struct PetView: View {
         }
     }
 
-    /// Name of the clip to play right now: click reaction wins, else the mood.
+    /// Name of the clip to play right now: click reaction wins, then the
+    /// "happy" one-shot after a clean Stop, else the mood's own clip.
     private var activeClipName: String {
         if reacting, sprites.clip(named: "click") != nil { return "click" }
+        if celebratingStop, sprites.clip(named: "happy") != nil { return "happy" }
         return state.mood.spriteName
     }
 

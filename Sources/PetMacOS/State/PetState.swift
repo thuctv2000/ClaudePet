@@ -43,6 +43,11 @@ enum TaskKind: Equatable {
     case done           // a completed result (gradient border)
     case subagent       // a running subagent (Task/Agent tool)
     case background     // a Bash command launched with run_in_background
+    /// A background task that ended in failure/kill, or whose outcome timed
+    /// out unseen. Only ever appears on a *completed notice* (never a running
+    /// card) so it can get a visually distinct (red) border from `.done`
+    /// without a full card redesign -- see `CompletedCard` in TaskStackView.
+    case failed
 }
 
 /// One card in the task stack.
@@ -65,10 +70,20 @@ struct TaskItem: Identifiable, Equatable {
     /// Present only for background-task cards: transcript file to tail for
     /// the completion signal.
     let transcriptPath: String?
+    /// Present only for subagent cards: the `session_id` the launch (PreToolUse
+    /// Task/Agent, or an allowed `/ask`) came from. Used to reconcile a
+    /// not-yet-identified subagent card with a later `SubagentStart` event that
+    /// carries the real `agent_id` -- see `PetState.handleSubagentStart`.
+    let sessionId: String?
+    /// Present only for subagent cards once claimed by a `SubagentStart` event:
+    /// the `agent_id` used to retire the *correct* card on `SubagentStop`,
+    /// instead of falling back to oldest-first (FIFO) removal.
+    let agentId: String?
 
     init(id: UUID = UUID(), title: String, detail: String? = nil, kind: TaskKind,
          dedupeKey: String? = nil, context: String? = nil, startedAt: Date = Date(),
-         taskId: String? = nil, transcriptPath: String? = nil) {
+         taskId: String? = nil, transcriptPath: String? = nil,
+         sessionId: String? = nil, agentId: String? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
@@ -78,6 +93,8 @@ struct TaskItem: Identifiable, Equatable {
         self.startedAt = startedAt
         self.taskId = taskId
         self.transcriptPath = transcriptPath
+        self.sessionId = sessionId
+        self.agentId = agentId
     }
 }
 
@@ -94,6 +111,7 @@ final class PetState {
         case talking    // Claude produced output
         case asking     // waiting for the user to approve something
         case sleep      // session ended
+        case error      // a tool just failed (transient — decays back on its own)
 
         /// Folder name under ~/.petmacos/sprites/ that plays for this mood.
         var spriteName: String {
@@ -104,6 +122,7 @@ final class PetState {
             case .talking: return "talking"
             case .asking: return "asking"
             case .sleep: return "sleep"
+            case .error: return "error"
             }
         }
     }
@@ -111,6 +130,13 @@ final class PetState {
     private(set) var mood: Mood = .idle
     private(set) var pendingAsk: PendingAsk?
     private(set) var pendingQuestion: PendingQuestion?
+
+    /// Bumped to a fresh id whenever the "happy" one-shot sprite should play
+    /// (a clean `Stop` with no subagent/background work left). `PetView`
+    /// observes this and plays the clip once, mirroring the existing
+    /// tap-to-react "click" one-shot; if the user has no "happy" frames it is
+    /// simply a no-op and the mood's own sprite (talking) keeps playing.
+    private(set) var happyID: UUID?
 
     /// Running tasks, newest first, capped at 3. Each auto-expires after a while.
     private(set) var runningTasks: [TaskItem] = []
@@ -163,6 +189,77 @@ final class PetState {
     /// when the task finishes early or is pushed out of the stack.
     private var expiryTasks: [UUID: Task<Void, Never>] = [:]
 
+    /// Pending decay for a transient mood (`.talking`, `.error`). Cancelled and
+    /// replaced every time `setMood` runs, so a stale timer from an earlier
+    /// mood can never fire after a newer event has already moved on.
+    private var moodDecayTask: Task<Void, Never>?
+
+    // MARK: - Mood
+
+    /// Default decay for `.talking` set by `Stop`/`notify` with no override
+    /// (see `talkingDecaySeconds`).
+    private static let defaultTalkingDecaySeconds: TimeInterval = 20
+    /// Default decay for `.error` (see `errorDecaySeconds`).
+    private static let defaultErrorDecaySeconds: TimeInterval = 6
+
+    /// How long `.talking` lingers before falling back to `.idle`. Read fresh
+    /// from the optional `talkingDecaySeconds` field in `~/.petmacos/config.json`
+    /// on every use (not just at launch) so automated tests can shorten it on a
+    /// *running* app without restarting it — the app itself never writes this
+    /// field, only the hook server's port/token, so it's safe for a test to add.
+    var talkingDecaySeconds: TimeInterval {
+        Self.configOverride(key: "talkingDecaySeconds") ?? Self.defaultTalkingDecaySeconds
+    }
+
+    /// How long `.error` lingers before falling back to `.working`/`.idle`.
+    /// Same override mechanism as `talkingDecaySeconds`.
+    var errorDecaySeconds: TimeInterval {
+        Self.configOverride(key: "errorDecaySeconds") ?? Self.defaultErrorDecaySeconds
+    }
+
+    private static func configOverride(key: String) -> TimeInterval? {
+        guard let data = try? Data(contentsOf: PetConfig.fileURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let value = object[key] as? NSNumber
+        else { return nil }
+        return value.doubleValue
+    }
+
+    /// True while a subagent or background task is still known to be running
+    /// — used by the `.error` decay fallback to pick `.working` over `.idle`.
+    private var hasActiveWork: Bool { !subagentTasks.isEmpty || !backgroundTasks.isEmpty }
+
+    /// The single place `mood` is ever written. Cancels any decay timer left
+    /// over from a previous mood, then — for the transient moods `.talking`
+    /// and `.error` — schedules a fresh one so a card-less "just finished" or
+    /// "just failed" expression doesn't linger forever. `.idle`, `.thinking`,
+    /// `.working`, `.asking` and `.sleep` are stable states set explicitly by
+    /// their own events and are never auto-decayed.
+    private func setMood(_ newMood: Mood) {
+        moodDecayTask?.cancel()
+        moodDecayTask = nil
+        mood = newMood
+        switch newMood {
+        case .talking:
+            scheduleMoodDecay(after: talkingDecaySeconds) { .idle }
+        case .error:
+            scheduleMoodDecay(after: errorDecaySeconds) { [weak self] in
+                (self?.hasActiveWork ?? false) ? .working : .idle
+            }
+        default:
+            break
+        }
+    }
+
+    private func scheduleMoodDecay(after seconds: TimeInterval, fallback: @escaping () -> Mood) {
+        moodDecayTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self else { return }
+            self.mood = fallback()
+            self.moodDecayTask = nil
+        }
+    }
+
     /// Byte offset already scanned in each transcript being tailed for
     /// background-task completion signals (see `pollBackgroundTasks`).
     private var backgroundOffsets: [String: UInt64] = [:]
@@ -207,9 +304,11 @@ final class PetState {
         persistInFlightSubagents()
     }
 
-    /// Removes the oldest still-running subagent card (FIFO — PreToolUse for
-    /// Task carries no `agent_id` to match on). Returns it for the completion
-    /// notice.
+    /// Removes the oldest still-running subagent card (FIFO). This is the
+    /// fallback used when a `SubagentStop` carries no `agent_id`, or carries
+    /// one we never managed to claim onto a card (see `finishSubagent(agentId:)`
+    /// below) -- e.g. an older Claude Code build that predates `SubagentStart`.
+    /// Returns the removed card for the completion notice.
     @discardableResult
     private func finishOldestSubagent() -> TaskItem? {
         guard !subagentTasks.isEmpty else { return nil }
@@ -217,6 +316,59 @@ final class PetState {
         updatePassthrough()
         persistInFlightSubagents()
         return item
+    }
+
+    /// Removes the subagent card matching `agentId` if one was claimed for it
+    /// (see `handleSubagentStart`); otherwise falls back to FIFO removal. This
+    /// is the actual fix for the old bug where `SubagentStop` always retired
+    /// the *oldest* subagent regardless of which one truly finished -- now that
+    /// `SubagentStart` tags cards with their real `agent_id`, a `SubagentStop`
+    /// for a *younger* subagent removes the right card even if an older one is
+    /// still running. Returns the removed card, if any.
+    @discardableResult
+    private func finishSubagent(agentId: String?) -> TaskItem? {
+        if let agentId, let index = subagentTasks.firstIndex(where: { $0.agentId == agentId }) {
+            let item = subagentTasks.remove(at: index)
+            updatePassthrough()
+            persistInFlightSubagents()
+            return item
+        }
+        return finishOldestSubagent()
+    }
+
+    /// Handles a `SubagentStart` event (agent_id + agent_type; Claude Code
+    /// v2.1.177+). Reconciliation trade-off: `PreToolUse` for the `Task`/`Agent`
+    /// tool (and the manual "/ask" allow path) already create a subagent card
+    /// with a nice human-written title (from `description`), but *no*
+    /// `agent_id` -- the subagent hasn't been assigned one yet at that point.
+    /// `SubagentStart` arrives moments later with the real `agent_id` but only
+    /// `agent_type` (no free-text description) to title a card with. Rather than
+    /// show two cards for the same subagent, this "claims" the oldest
+    /// still-unclaimed card from the *same session* (FIFO within a session,
+    /// since parallel Task launches from one session can't be told apart any
+    /// other way) by stamping its `agent_id` on it. Only when no such card
+    /// exists (e.g. this Claude Code build sends `SubagentStart` without ever
+    /// having sent a matching `PreToolUse` event to us, or the event arrived
+    /// out of order) does it fall back to creating a fresh card titled from
+    /// `agent_type` alone.
+    private func handleSubagentStart(_ event: HookEvent) {
+        guard let agentId = event.agentId else { return }
+        guard !subagentTasks.contains(where: { $0.agentId == agentId }) else { return } // duplicate event
+        if let index = subagentTasks.firstIndex(where: { $0.agentId == nil && $0.sessionId == event.sessionId }) {
+            let old = subagentTasks[index]
+            subagentTasks[index] = TaskItem(
+                id: old.id, title: old.title, detail: old.detail, kind: .subagent,
+                dedupeKey: old.dedupeKey, context: old.context, startedAt: old.startedAt,
+                sessionId: old.sessionId, agentId: agentId
+            )
+            persistInFlightSubagents()
+            return
+        }
+        let title = event.agentType.map { "Subagent: \($0)" } ?? "Subagent đang chạy"
+        startSubagent(TaskItem(
+            title: title, kind: .subagent, context: contextLabel(for: event),
+            sessionId: event.sessionId, agentId: agentId
+        ))
     }
 
     // MARK: - Subagent recovery across restarts
@@ -231,6 +383,11 @@ final class PetState {
         let detail: String?
         let context: String?
         let startedAt: Date
+        /// Added alongside SubagentStart/agent_id tracking. Absent in files
+        /// written by older builds -- Codable decodes missing Optional keys as
+        /// nil automatically, so old on-disk records still load fine.
+        let sessionId: String?
+        let agentId: String?
     }
 
     private static var inFlightSubagentsURL: URL {
@@ -242,7 +399,8 @@ final class PetState {
     /// after every add/remove so the file never lags behind what's on screen.
     private func persistInFlightSubagents() {
         let records = subagentTasks.map {
-            PersistedSubagent(title: $0.title, detail: $0.detail, context: $0.context, startedAt: $0.startedAt)
+            PersistedSubagent(title: $0.title, detail: $0.detail, context: $0.context,
+                              startedAt: $0.startedAt, sessionId: $0.sessionId, agentId: $0.agentId)
         }
         let data = (try? JSONEncoder().encode(records)) ?? Data()
         try? data.write(to: Self.inFlightSubagentsURL)
@@ -263,7 +421,8 @@ final class PetState {
             let context = [record.context, "khôi phục"].compactMap { $0 }.joined(separator: " · ")
             subagentTasks.append(TaskItem(
                 title: record.title, detail: record.detail, kind: .subagent,
-                context: context, startedAt: record.startedAt
+                context: context, startedAt: record.startedAt,
+                sessionId: record.sessionId, agentId: record.agentId
             ))
         }
         if !subagentTasks.isEmpty { updatePassthrough() }
@@ -280,9 +439,34 @@ final class PetState {
 
     // MARK: - Background Bash tasks (run_in_background)
 
+    /// Outcome parsed from a `<status>` element inside a `<task-notification>`
+    /// block. Anything else (a status string we don't recognise) is treated as
+    /// "not actionable yet" by the caller, not as a fourth case here.
+    enum BackgroundStatus: String {
+        case completed, failed, killed
+    }
+
+    /// Default safety-net timeout: a background card retires on its own after
+    /// this long with no completion signal, so a missed/garbled
+    /// `<task-notification>` (or a command that genuinely never returns) can't
+    /// pin a card on screen forever. Overridable via the optional
+    /// `backgroundTimeoutSeconds` field in `~/.petmacos/config.json`, same
+    /// mechanism as `talkingDecaySeconds`/`errorDecaySeconds` (see
+    /// `configOverride`) -- tests shorten it instead of waiting 120 real minutes.
+    private static let defaultBackgroundTimeoutSeconds: TimeInterval = 120 * 60
+
+    var backgroundTimeoutSeconds: TimeInterval {
+        Self.configOverride(key: "backgroundTimeoutSeconds") ?? Self.defaultBackgroundTimeoutSeconds
+    }
+
+    /// Per-background-task safety timeout, cancelled as soon as the task
+    /// retires normally (completion signal or manual dismiss).
+    private var backgroundTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+
     /// Tracks a newly launched background Bash command. No hook reports its
     /// completion, so a transcript-tailing poll loop is (re)started to watch
-    /// for the `<task-notification>` block Claude Code writes when it's done.
+    /// for the `<task-notification>` block Claude Code writes when it's done,
+    /// and a safety timeout is armed in case that signal never arrives.
     private func startBackgroundTask(taskId: String, title: String, detail: String?,
                                       context: String?, transcriptPath: String) {
         guard !backgroundTasks.contains(where: { $0.taskId == taskId }) else { return }
@@ -290,10 +474,12 @@ final class PetState {
             // Skip everything already in the transcript; only new writes matter.
             backgroundOffsets[transcriptPath] = Self.fileSize(path: transcriptPath)
         }
-        backgroundTasks.append(TaskItem(
+        let item = TaskItem(
             title: title, detail: detail, kind: .background, context: context,
             taskId: taskId, transcriptPath: transcriptPath
-        ))
+        )
+        backgroundTasks.append(item)
+        scheduleBackgroundTimeout(id: item.id, taskId: taskId)
         updatePassthrough()
         ensureBackgroundPolling()
     }
@@ -302,6 +488,7 @@ final class PetState {
     /// signal is ever missed).
     func dismissBackgroundTask(id: UUID) {
         backgroundTasks.removeAll { $0.id == id }
+        cancelBackgroundTimeout(id: id)
         updatePassthrough()
     }
 
@@ -321,27 +508,69 @@ final class PetState {
     }
 
     /// Reads any new transcript bytes for every transcript a background task
-    /// is running under, and retires cards whose id shows up as completed.
+    /// is running under, and retires cards whose id shows up with a status we
+    /// recognise (completed, failed, or killed).
     private func pollBackgroundTasks() {
         let paths = Set(backgroundTasks.compactMap(\.transcriptPath))
         for path in paths {
             var offset = backgroundOffsets[path] ?? 0
             let notifications = Self.scanTaskNotifications(path: path, offset: &offset)
             backgroundOffsets[path] = offset
-            for note in notifications where note.completed {
-                finishBackgroundTask(taskId: note.taskId)
+            for note in notifications {
+                guard let status = note.status else { continue }
+                finishBackgroundTask(taskId: note.taskId, status: status)
             }
         }
     }
 
-    private func finishBackgroundTask(taskId: String) {
-        guard let index = backgroundTasks.firstIndex(where: { $0.taskId == taskId }) else { return }
+    /// Arms the safety-net timeout for a just-started background task.
+    private func scheduleBackgroundTimeout(id: UUID, taskId: String) {
+        backgroundTimeoutTasks[id] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(self?.backgroundTimeoutSeconds ?? Self.defaultBackgroundTimeoutSeconds))
+            guard !Task.isCancelled, let self else { return }
+            self.timeoutBackgroundTask(id: id, taskId: taskId)
+        }
+    }
+
+    private func cancelBackgroundTimeout(id: UUID) {
+        backgroundTimeoutTasks.removeValue(forKey: id)?.cancel()
+    }
+
+    /// Fires when a background task's safety-net timeout elapses with no
+    /// completion signal ever having arrived. Retires the card with a notice
+    /// that makes clear the outcome is simply unknown, not that it failed.
+    private func timeoutBackgroundTask(id: UUID, taskId: String) {
+        guard let index = backgroundTasks.firstIndex(where: { $0.id == id }) else { return }
         let item = backgroundTasks.remove(at: index)
+        backgroundTimeoutTasks.removeValue(forKey: id)
         updatePassthrough()
         pushCompleted(TaskItem(
-            title: "Chạy nền xong",
+            title: "Chạy nền: không rõ kết quả (quá hạn theo dõi)",
             detail: item.title,
-            kind: .done,
+            kind: .failed,
+            dedupeKey: "bg-\(taskId)",
+            context: item.context
+        ))
+    }
+
+    /// Retires a background task's card once its outcome is known, with a
+    /// notice worded for that specific outcome.
+    private func finishBackgroundTask(taskId: String, status: BackgroundStatus) {
+        guard let index = backgroundTasks.firstIndex(where: { $0.taskId == taskId }) else { return }
+        let item = backgroundTasks.remove(at: index)
+        cancelBackgroundTimeout(id: item.id)
+        updatePassthrough()
+        let (title, kind): (String, TaskKind) = {
+            switch status {
+            case .completed: return ("Chạy nền xong", .done)
+            case .failed: return ("Chạy nền lỗi", .failed)
+            case .killed: return ("Chạy nền bị dừng", .failed)
+            }
+        }()
+        pushCompleted(TaskItem(
+            title: title,
+            detail: item.title,
+            kind: kind,
             dedupeKey: "bg-\(taskId)",
             context: item.context
         ))
@@ -374,7 +603,7 @@ final class PetState {
 
     /// Shows a short-lived app notice (connection, sprites) as a session card.
     func notify(_ title: String, mood: Mood = .idle) {
-        self.mood = mood
+        setMood(mood)
         pushRunning(TaskItem(title: title, kind: .session))
     }
 
@@ -420,11 +649,11 @@ final class PetState {
         let context = contextLabel(for: event)
         switch event.hookEventName ?? "" {
         case "UserPromptSubmit":
-            mood = .thinking
+            setMood(.thinking)
             pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context))
         case "PreToolUse":
             // Reached here only in auto mode (manual mode blocks via /ask).
-            mood = .working
+            setMood(.working)
             // Tools running inside a subagent are internal noise; the parent
             // subagent card already represents the work.
             if event.isFromSubagent { return }
@@ -443,7 +672,13 @@ final class PetState {
             // A tool finished. Cards live out their TTL; we only refresh mood.
             // Task/Agent returning does NOT mean the subagent finished (async
             // agents return immediately) — removal happens on SubagentStop.
-            mood = .working
+            // A failed tool briefly shows "error" instead, decaying back to
+            // "working"/"idle" on its own (see `setMood`).
+            if event.isToolError {
+                setMood(.error)
+            } else {
+                setMood(.working)
+            }
             if event.isFromSubagent { return }
             // A Bash call launched with run_in_background: true has no hook
             // that reports when it finishes, so track it separately and tail
@@ -458,18 +693,33 @@ final class PetState {
                 )
             }
         case "Notification":
-            mood = .asking
+            setMood(.asking)
             pushRunning(TaskItem(title: event.message ?? "Claude cần chú ý",
                                  kind: .notification, context: context))
         case "Stop":
             // Subagents/background tasks may still be working; keep their
-            // cards and stay in "working" mood while any remain.
-            mood = (subagentTasks.isEmpty && backgroundTasks.isEmpty) ? .talking : .working
+            // cards and stay in "working" mood while any remain. A fully clean
+            // stop plays the "happy" one-shot once (falls back to just
+            // "talking" if the user has no "happy" frames — see PetView) and
+            // then decays back to idle after a while (see `setMood`).
+            if subagentTasks.isEmpty && backgroundTasks.isEmpty {
+                happyID = UUID()
+                setMood(.talking)
+            } else {
+                setMood(.working)
+            }
             clearRunning()
             pushStopNotice(for: event)
+        case "SubagentStart":
+            // New in Claude Code v2.1.177+: carries the real agent_id/agent_type
+            // for a subagent that's about to start. See `handleSubagentStart` for
+            // how this reconciles with the card `PreToolUse`/allowed-`/ask`
+            // already created (title, but no id).
+            setMood(.working)
+            handleSubagentStart(event)
         case "SubagentStop":
-            mood = subagentTasks.count > 1 ? .working : .talking
-            let card = finishOldestSubagent()
+            setMood(subagentTasks.count > 1 ? .working : .talking)
+            let card = finishSubagent(agentId: event.agentId)
             let title = event.agentType.map { "Subagent \($0) hoàn thành" }
                 ?? "Subagent hoàn thành"
             // Fall back to the launch card's purpose when the stop event carries
@@ -488,7 +738,7 @@ final class PetState {
             // Claude Code session on the machine (other projects, automated
             // routines...), not just the one the user is watching — a card
             // here reads as noise. Only the mood/sprite reacts.
-            mood = .idle
+            setMood(.idle)
         case "SessionEnd":
             // Hooks are installed globally, so this fires for every Claude
             // Code session on the machine — NOT just the one the pet is
@@ -497,7 +747,7 @@ final class PetState {
             // wiped just because an unrelated session ended. Each subagent
             // card is only removed by its own SubagentStop, a manual dismiss,
             // or expiring after a restart (see recoverInFlightSubagents).
-            mood = .sleep
+            setMood(.sleep)
             clearRunning()
         default:
             if let message = event.message {
@@ -506,13 +756,18 @@ final class PetState {
         }
     }
 
-    /// Builds the persistent running card for a Task/Agent launch.
+    /// Builds the persistent running card for a Task/Agent launch. No
+    /// `agent_id` is available yet at this point (`PreToolUse`/`/ask` precede
+    /// the subagent actually starting) — `sessionId` is stamped instead so a
+    /// later `SubagentStart` can claim this exact card (see
+    /// `handleSubagentStart`).
     private func subagentCard(for event: HookEvent) -> TaskItem {
         TaskItem(
             title: event.intentTitle,
             detail: event.intentDetail.map { truncate($0) },
             kind: .subagent,
-            context: contextLabel(for: event)
+            context: contextLabel(for: event),
+            sessionId: event.sessionId
         )
     }
 
@@ -564,7 +819,7 @@ final class PetState {
             resolver?.resolveAsk(id: id, decision: PetDecision(decision: "allow", text: nil))
             return
         }
-        mood = .asking
+        setMood(.asking)
         pendingAsk = PendingAsk(
             id: id,
             toolName: event.toolName ?? "Tool",
@@ -582,7 +837,7 @@ final class PetState {
             startSubagent(card)
         }
         pendingAsk = nil
-        mood = .idle
+        setMood(.idle)
         onInteractiveNeeded?(false)
         // Keep passthrough on if notices are still visible.
         updatePassthrough()
@@ -592,7 +847,7 @@ final class PetState {
     func cancelAsk(id: String) {
         guard pendingAsk?.id == id else { return }
         pendingAsk = nil
-        mood = .idle
+        setMood(.idle)
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
@@ -609,7 +864,7 @@ final class PetState {
             resolver?.resolveQuestion(id: id, answers: nil)
             return
         }
-        mood = .asking
+        setMood(.asking)
         pendingQuestion = PendingQuestion(id: id, questions: questions)
         onInteractiveNeeded?(true)
     }
@@ -619,7 +874,7 @@ final class PetState {
         guard let question = pendingQuestion else { return }
         resolver?.resolveQuestion(id: question.id, answers: answers)
         pendingQuestion = nil
-        mood = .idle
+        setMood(.idle)
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
@@ -635,7 +890,7 @@ final class PetState {
         guard pendingQuestion?.id == id else { return }
         resolver?.resolveQuestion(id: id, answers: nil)
         pendingQuestion = nil
-        mood = .idle
+        setMood(.idle)
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
@@ -748,7 +1003,7 @@ final class PetState {
     /// for the next poll rather than dropped. Runs off the main actor.
     nonisolated static func scanTaskNotifications(
         path: String, offset: inout UInt64
-    ) -> [(taskId: String, completed: Bool)] {
+    ) -> [(taskId: String, status: BackgroundStatus?)] {
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
         guard (try? handle.seek(toOffset: offset)) != nil,
@@ -762,7 +1017,7 @@ final class PetState {
         let consumed = text[text.startIndex..<lastClose.upperBound]
         offset += UInt64(consumed.utf8.count)
 
-        var results: [(String, Bool)] = []
+        var results: [(String, BackgroundStatus?)] = []
         var cursor = consumed.startIndex
         while let openRange = consumed.range(of: "<task-notification>", range: cursor..<consumed.endIndex) {
             let closeRange = consumed.range(
@@ -773,8 +1028,12 @@ final class PetState {
                let idClose = block.range(of: "</task-id>", range: idOpen.upperBound..<block.endIndex) {
                 let taskId = String(block[idOpen.upperBound..<idClose.lowerBound])
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                let completed = block.contains("<status>completed</status>")
-                results.append((taskId, completed))
+                let status: BackgroundStatus?
+                if block.contains("<status>completed</status>") { status = .completed }
+                else if block.contains("<status>failed</status>") { status = .failed }
+                else if block.contains("<status>killed</status>") { status = .killed }
+                else { status = nil } // unrecognised status; poll again next time
+                results.append((taskId, status))
             }
             cursor = closeRange?.upperBound ?? consumed.endIndex
         }

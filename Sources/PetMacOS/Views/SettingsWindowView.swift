@@ -211,6 +211,8 @@ struct SettingsWindowView: View {
         case "talking": return "talking — vừa trả lời"
         case "asking": return "asking — đang xin quyền"
         case "sleep": return "sleep — kết thúc phiên"
+        case "error": return "error — một tool vừa thất bại"
+        case "happy": return "happy — Claude vừa trả lời xong sạch sẽ"
         default: return state
         }
     }
