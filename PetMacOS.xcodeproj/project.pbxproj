@@ -188,7 +188,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					56030E08A2872C68F902BB27 = {
-						DevelopmentTeam = N5VJ7TQLY7;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -325,7 +324,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = N5VJ7TQLY7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -345,7 +343,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = N5VJ7TQLY7;
 				ENABLE_HARDENED_RUNTIME = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -73,3 +73,11 @@ tests/e2e_pet_state.sh
 # Build bản phân phối: ký Developer ID + DMG (+ notarize với --notarize)
 scripts/build-release.sh --notarize
 ```
+
+Build từ source **không cần** Apple Developer account (Xcode ký ad-hoc chạy local). Muốn tự phát hành bản fork thì cần account của bạn, override identity qua biến môi trường:
+
+```sh
+PET_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+PET_TEAM_ID=TEAMID PET_NOTARY_PROFILE=YourProfile \
+scripts/build-release.sh --notarize
+```

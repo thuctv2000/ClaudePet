@@ -5,8 +5,13 @@
 #
 # Usage:
 #   scripts/build-release.sh              # build + sign + dmg (no notarize)
-#   scripts/build-release.sh --notarize   # also notarize + staple (needs
-#                                          # keychain profile "PetMacOS")
+#   scripts/build-release.sh --notarize   # also notarize + staple (needs a
+#                                          # notarytool keychain profile)
+#
+# Building your own fork? Override the signing identity via env vars:
+#   PET_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+#   PET_TEAM_ID=TEAMID PET_NOTARY_PROFILE=YourProfile \
+#   scripts/build-release.sh --notarize
 #
 # See docs/DISTRIBUTION.md for the full distribution plan. This script
 # implements step 2 (signing + packaging); notarization (step 3) is wired
@@ -31,9 +36,14 @@ APP_NAME="PetMacOS.app"
 APP_PATH="$EXPORT_APP_DIR/$APP_NAME"
 DMG_STAGING_DIR="$BUILD_DIR/dmg-staging"
 
-DEVELOPER_ID="Developer ID Application: Tran Van Thuc (N5VJ7TQLY7)"
-TEAM_ID="N5VJ7TQLY7"
-NOTARY_PROFILE="PetMacOS"
+# Signing/notarization identity — override these for your own fork:
+#   PET_SIGN_IDENTITY   full "Developer ID Application: ..." identity string
+#   PET_TEAM_ID         your Apple Developer team ID
+#   PET_NOTARY_PROFILE  notarytool keychain profile name
+#                       (create with: xcrun notarytool store-credentials)
+DEVELOPER_ID="${PET_SIGN_IDENTITY:-Developer ID Application: Tran Van Thuc (N5VJ7TQLY7)}"
+TEAM_ID="${PET_TEAM_ID:-N5VJ7TQLY7}"
+NOTARY_PROFILE="${PET_NOTARY_PROFILE:-PetMacOS}"
 
 DO_NOTARIZE=0
 for arg in "$@"; do
@@ -342,7 +352,7 @@ if [[ "$DO_NOTARIZE" -eq 1 ]]; then
   log "Stapling $DMG_PATH"
   xcrun stapler staple "$DMG_PATH"
 else
-  log "Skipping notarization (run with --notarize once the 'PetMacOS' notarytool keychain profile exists)"
+  log "Skipping notarization (run with --notarize once the '$NOTARY_PROFILE' notarytool keychain profile exists)"
 fi
 
 # ---------------------------------------------------------------------------
