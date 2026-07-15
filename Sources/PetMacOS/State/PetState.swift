@@ -1,3 +1,4 @@
+import Dispatch
 import Foundation
 import Observation
 
@@ -144,8 +145,9 @@ final class PetState {
     /// stay on screen until their SubagentStop arrives (they survive Stop).
     private(set) var subagentTasks: [TaskItem] = []
     /// Running background Bash commands (`run_in_background: true`), oldest
-    /// first. No hook reports their completion, so they stay until a transcript
-    /// poll finds the matching `<task-notification>` (see `pollBackgroundTasks`).
+    /// first. No hook reports their completion, so they stay until a
+    /// filesystem watcher (or the safety-net poll) finds the matching
+    /// `<task-notification>` — see `TranscriptWatcher` and `scanTranscript`.
     private(set) var backgroundTasks: [TaskItem] = []
     /// Completed notices, newest first. These never auto-hide; the user closes them.
     private(set) var completedNotices: [TaskItem] = []
@@ -261,10 +263,16 @@ final class PetState {
     }
 
     /// Byte offset already scanned in each transcript being tailed for
-    /// background-task completion signals (see `pollBackgroundTasks`).
+    /// background-task completion signals (see `scanTranscript`).
     private var backgroundOffsets: [String: UInt64] = [:]
-    /// Repeats while `backgroundTasks` is non-empty; nil otherwise.
-    private var backgroundPollTask: Task<Void, Never>?
+    /// One filesystem watcher per transcript currently being tailed, keyed by
+    /// `transcriptPath`. Several background tasks can share one transcript
+    /// (e.g. two `run_in_background` Bash calls from the same session), so
+    /// this is keyed by path, not by task id.
+    private var transcriptWatchers: [String: TranscriptWatcher] = [:]
+    /// Slow safety-net poll — repeats while `backgroundTasks` is non-empty;
+    /// nil otherwise. See `ensureBackgroundSafetyPoll`.
+    private var backgroundSafetyPollTask: Task<Void, Never>?
 
     // MARK: - Task stack
 
@@ -464,9 +472,10 @@ final class PetState {
     private var backgroundTimeoutTasks: [UUID: Task<Void, Never>] = [:]
 
     /// Tracks a newly launched background Bash command. No hook reports its
-    /// completion, so a transcript-tailing poll loop is (re)started to watch
-    /// for the `<task-notification>` block Claude Code writes when it's done,
-    /// and a safety timeout is armed in case that signal never arrives.
+    /// completion, so a filesystem watcher is (re)started on its transcript to
+    /// react to the `<task-notification>` block Claude Code writes when it's
+    /// done (see `TranscriptWatcher`), backed by a slow safety-net poll, and a
+    /// safety timeout is armed in case no signal ever arrives at all.
     private func startBackgroundTask(taskId: String, title: String, detail: String?,
                                       context: String?, transcriptPath: String) {
         guard !backgroundTasks.contains(where: { $0.taskId == taskId }) else { return }
@@ -481,44 +490,79 @@ final class PetState {
         backgroundTasks.append(item)
         scheduleBackgroundTimeout(id: item.id, taskId: taskId)
         updatePassthrough()
-        ensureBackgroundPolling()
+        ensureWatcher(for: transcriptPath)
+        ensureBackgroundSafetyPoll()
     }
 
     /// Manual close of a background-task card (safety valve if the completion
     /// signal is ever missed).
     func dismissBackgroundTask(id: UUID) {
-        backgroundTasks.removeAll { $0.id == id }
+        guard let index = backgroundTasks.firstIndex(where: { $0.id == id }) else { return }
+        let item = backgroundTasks.remove(at: index)
         cancelBackgroundTimeout(id: id)
+        if let path = item.transcriptPath { retireWatcherIfUnused(path: path) }
         updatePassthrough()
     }
 
-    private func ensureBackgroundPolling() {
-        guard backgroundPollTask == nil else { return }
-        backgroundPollTask = Task { [weak self] in
-            while true {
-                try? await Task.sleep(for: .seconds(2))
-                guard !Task.isCancelled, let self else { return }
-                if self.backgroundTasks.isEmpty {
-                    self.backgroundPollTask = nil
-                    return
-                }
-                self.pollBackgroundTasks()
-            }
+    /// Starts (or reuses) the DispatchSource-based watcher for one transcript
+    /// path. Several background tasks can share a transcript, so this is a
+    /// no-op if a watcher for `path` already exists.
+    private func ensureWatcher(for path: String) {
+        guard transcriptWatchers[path] == nil else { return }
+        transcriptWatchers[path] = TranscriptWatcher(path: path) { [weak self] in
+            self?.scanTranscript(path: path)
         }
     }
 
-    /// Reads any new transcript bytes for every transcript a background task
-    /// is running under, and retires cards whose id shows up with a status we
-    /// recognise (completed, failed, or killed).
-    private func pollBackgroundTasks() {
-        let paths = Set(backgroundTasks.compactMap(\.transcriptPath))
-        for path in paths {
-            var offset = backgroundOffsets[path] ?? 0
-            let notifications = Self.scanTaskNotifications(path: path, offset: &offset)
-            backgroundOffsets[path] = offset
-            for note in notifications {
-                guard let status = note.status else { continue }
-                finishBackgroundTask(taskId: note.taskId, status: status)
+    /// Cancels and drops the watcher for `path` once no background task under
+    /// it remains — called from every retirement path (completed, failed,
+    /// killed, timeout, manual dismiss) so a watcher is never leaked.
+    private func retireWatcherIfUnused(path: String) {
+        guard !backgroundTasks.contains(where: { $0.transcriptPath == path }) else { return }
+        transcriptWatchers.removeValue(forKey: path)?.cancel()
+        backgroundOffsets.removeValue(forKey: path)
+    }
+
+    /// Scans one transcript for new `<task-notification>` blocks and retires
+    /// any background task whose id shows up with a recognised status. Called
+    /// both by that transcript's `TranscriptWatcher` (the fast path, driven by
+    /// real filesystem events) and by the slow safety-net poll below — same
+    /// parsing/offset-tracking logic either way; only the trigger differs.
+    private func scanTranscript(path: String) {
+        guard backgroundTasks.contains(where: { $0.transcriptPath == path }) else { return }
+        var offset = backgroundOffsets[path] ?? 0
+        let notifications = Self.scanTaskNotifications(path: path, offset: &offset)
+        backgroundOffsets[path] = offset
+        for note in notifications {
+            guard let status = note.status else { continue }
+            finishBackgroundTask(taskId: note.taskId, status: status)
+        }
+    }
+
+    /// Cadence of the slow safety-net poll — see `ensureBackgroundSafetyPoll`.
+    private static let backgroundSafetyPollInterval: TimeInterval = 10
+
+    /// Guarantees background-task completion is *never* missed even if every
+    /// `TranscriptWatcher` somehow fails (e.g. both the direct file-fd open and
+    /// the parent-directory-fd open are denied by sandboxing/permissions, or a
+    /// rotation edge case slips through the watcher's demote/promote dance).
+    /// 10s is slow enough that the I/O cost is negligible, while still bounding
+    /// worst-case detection latency well under the 120-minute safety timeout.
+    /// The watcher is expected to drive the common case's latency far below
+    /// this; this loop exists purely as a backstop, matching the old
+    /// fixed-interval poll's guarantee so nothing regresses.
+    private func ensureBackgroundSafetyPoll() {
+        guard backgroundSafetyPollTask == nil else { return }
+        backgroundSafetyPollTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(for: .seconds(Self.backgroundSafetyPollInterval))
+                guard !Task.isCancelled, let self else { return }
+                if self.backgroundTasks.isEmpty {
+                    self.backgroundSafetyPollTask = nil
+                    return
+                }
+                let paths = Set(self.backgroundTasks.compactMap(\.transcriptPath))
+                for path in paths { self.scanTranscript(path: path) }
             }
         }
     }
@@ -543,6 +587,7 @@ final class PetState {
         guard let index = backgroundTasks.firstIndex(where: { $0.id == id }) else { return }
         let item = backgroundTasks.remove(at: index)
         backgroundTimeoutTasks.removeValue(forKey: id)
+        if let path = item.transcriptPath { retireWatcherIfUnused(path: path) }
         updatePassthrough()
         pushCompleted(TaskItem(
             title: "Chạy nền: không rõ kết quả (quá hạn theo dõi)",
@@ -559,6 +604,7 @@ final class PetState {
         guard let index = backgroundTasks.firstIndex(where: { $0.taskId == taskId }) else { return }
         let item = backgroundTasks.remove(at: index)
         cancelBackgroundTimeout(id: item.id)
+        if let path = item.transcriptPath { retireWatcherIfUnused(path: path) }
         updatePassthrough()
         let (title, kind): (String, TaskKind) = {
             switch status {
@@ -1038,5 +1084,152 @@ final class PetState {
             cursor = closeRange?.upperBound ?? consumed.endIndex
         }
         return results
+    }
+}
+
+/// Watches one background task's transcript file for new writes, replacing
+/// the old fixed-interval poll with real filesystem events (`PetState`'s
+/// `scanTranscript` still does the actual parsing — this class only decides
+/// *when* to call it).
+///
+/// ## Design trade-off: DispatchSource vs FSEvents
+///
+/// `DispatchSource.makeFileSystemObjectSource` is the lighter-weight, more
+/// direct option — it needs only a POSIX file descriptor and delivers
+/// `.write`/`.extend`/`.delete`/`.rename` events for that one fd via GCD,
+/// which fits neatly into this app's existing dispatch-based hook server.
+/// FSEvents is the alternative: it watches a *path* (no fd needed, so it
+/// tolerates the file not existing yet out of the box) and is the natural
+/// choice for recursively watching a whole directory tree. But it's a
+/// heavier, run-loop/CFRunLoop-based API, coalesces and can *drop* events
+/// under load (by design — it's meant for "something changed, go look", not
+/// a reliable per-write signal), and would mean tracking a second concurrency
+/// model alongside GCD for what is here just a handful of known, individual
+/// files. Given that trade-off, this uses DispatchSource for the common case
+/// (file already exists, tailing new appends) and only falls back to
+/// directory-level watching — still via DispatchSource, not FSEvents — for
+/// the narrow "file doesn't exist yet" gap that a bare fd-based API can't
+/// cover on its own.
+///
+/// ## Handling "doesn't exist yet" and rotation
+///
+/// A background task's transcript path is known the moment the task launches
+/// (the hook reports it in the same `PostToolUse` payload), but the file
+/// itself may not have been created yet by the Claude Code process that will
+/// append to it, and in principle it could be rotated/replaced later. So:
+/// `init` first tries to open+watch the file directly; if that fails
+/// (`ENOENT`), it opens a DispatchSource on the *parent directory* instead —
+/// any write there (including the file's own creation) triggers a re-check
+/// that promotes to the direct file watch as soon as it succeeds. A
+/// `.delete`/`.rename` event on an already-open file watch (rotation) demotes
+/// back to the directory watch the same way, so the watcher can never get
+/// stuck pointing at a file descriptor for a file that's gone.
+///
+/// ## Safety net
+///
+/// Both fd opens can fail for reasons outside this class's control (odd
+/// sandboxing, a directory permission edge case, `EMFILE`); rather than treat
+/// that as fatal, `ensureWatcher`'s caller also runs a slow 10s poll
+/// (`ensureBackgroundSafetyPoll` in `PetState`) for as long as any background
+/// task is tracked, so a watcher failure degrades to "same as the old poll",
+/// never to "silently stuck".
+///
+/// Not `@MainActor`: DispatchSource event handlers fire on the `.main` queue,
+/// which the Swift 6 concurrency checker doesn't statically treat as
+/// main-actor-isolated. `fire()` hops onto the main actor explicitly via
+/// `Task { @MainActor in ... }` before touching `PetState` (same pattern
+/// `HookServer` uses for its NWListener callbacks). All of this class's own
+/// mutable state (`fileSource`/`dirSource`) is only ever touched from
+/// handlers scheduled on that same serial `.main` queue, so there is no
+/// actual data race — `@unchecked Sendable` documents that guarantee for the
+/// compiler, matching the existing convention in `HookServer`.
+private final class TranscriptWatcher: @unchecked Sendable {
+    private var fileSource: DispatchSourceFileSystemObject?
+    private var dirSource: DispatchSourceFileSystemObject?
+    private let path: String
+    private let onChange: @MainActor () -> Void
+
+    init(path: String, onChange: @escaping @MainActor () -> Void) {
+        self.path = path
+        self.onChange = onChange
+        if !openFileWatch() {
+            openDirectoryWatch()
+        }
+    }
+
+    /// Hops onto the main actor before invoking `onChange`, since this class
+    /// itself is not actor-isolated (see the type-level doc comment above).
+    private func fire() {
+        let onChange = onChange
+        Task { @MainActor in onChange() }
+    }
+
+    /// Attempts to open the transcript file itself and watch it directly.
+    /// Returns `false` (leaving both sources untouched) if the file doesn't
+    /// exist yet — the caller falls back to `openDirectoryWatch()`.
+    @discardableResult
+    private func openFileWatch() -> Bool {
+        let fd = open(path, O_EVTONLY)
+        guard fd >= 0 else { return false }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend, .delete, .rename], queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            if source.data.contains(.delete) || source.data.contains(.rename) {
+                // The file was rotated/removed out from under us: drop this
+                // watch and fall back to watching the directory until (if
+                // ever) a file at this path exists again.
+                self.demoteToDirectoryWatch()
+                return
+            }
+            self.fire()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        fileSource = source
+        return true
+    }
+
+    /// Watches the transcript's parent directory: any write there (including
+    /// the transcript file's own creation) is a signal to re-check.
+    private func openDirectoryWatch() {
+        guard dirSource == nil else { return }
+        let dir = (path as NSString).deletingLastPathComponent
+        let fd = open(dir.isEmpty ? "." : dir, O_EVTONLY)
+        guard fd >= 0 else { return } // the 10s safety-net poll covers this
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write], queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            if self.fileSource == nil, self.openFileWatch() {
+                // Promoted to a direct file watch; the directory watch is no
+                // longer needed.
+                self.dirSource?.cancel()
+                self.dirSource = nil
+            }
+            self.fire()
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        dirSource = source
+    }
+
+    private func demoteToDirectoryWatch() {
+        fileSource?.cancel()
+        fileSource = nil
+        openDirectoryWatch()
+        fire() // the rotation itself may be worth a re-scan (new file, new content)
+    }
+
+    /// Cancels both sources. Must be called exactly once per watcher, when the
+    /// last background task under its transcript retires (see
+    /// `PetState.retireWatcherIfUnused`) — cancelling closes the underlying
+    /// file descriptors via each source's cancel handler, so this is the only
+    /// place those fds are released.
+    func cancel() {
+        fileSource?.cancel()
+        fileSource = nil
+        dirSource?.cancel()
+        dirSource = nil
     }
 }

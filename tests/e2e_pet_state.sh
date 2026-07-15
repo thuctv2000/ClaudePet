@@ -115,6 +115,40 @@ wait_for_mood() {
     return 0
 }
 
+# wait_bg_retired <desc-substring> <timeout-seconds> -> polls /debug/state
+# (every 0.1s) until no backgroundTasks card matches <desc-substring>, then
+# prints how long that took. Used after appending a <task-notification> signal
+# to a transcript: with file-watching (DispatchSource) instead of the old
+# fixed ~2s poll, retirement should be near-instant (well under a second) —
+# printing the elapsed time makes that improvement visible in the test output
+# without hardcoding a tight, potentially-flaky assertion on the exact number.
+# Returns 0 if retired within the timeout, 1 otherwise (caller still re-reads
+# /debug/state afterwards either way, so a timeout just surfaces as the normal
+# assertion failing below with full diagnostic detail).
+wait_bg_retired() {
+    local desc="$1" timeout_s="$2" waited=0
+    local start
+    start=$(python3 -c 'import time;print(time.time())')
+    while true; do
+        local still
+        still=$(get_state | python3 -c 'import json,sys
+s=json.load(sys.stdin)
+bg=s["backgroundTasks"]
+mine=[c for c in bg if c.get("detail")=="'"$desc"'" or (c.get("title") and "'"$desc"'" in c["title"])]
+print("yes" if mine else "no")' 2>/dev/null)
+        if [ "$still" = "no" ]; then
+            local end elapsed
+            end=$(python3 -c 'import time;print(time.time())')
+            elapsed=$(python3 -c "print(f'{$end-$start:.2f}')")
+            echo "      (background card retired after ${elapsed}s)"
+            return 0
+        fi
+        waited=$((waited + 1))
+        [ "$waited" -ge $((timeout_s * 10)) ] && return 1
+        sleep 0.1
+    done
+}
+
 # report <name> <result>. result is "PASS", "SKIP: reason", or "FAIL: reason".
 report() {
     local name="$1" result="$2"
@@ -243,9 +277,14 @@ else:
     print("PASS")
 ' "$STATE"
 
-# Append the completion signal; the app polls the transcript every ~2s.
+# Append the completion signal. Detection is now driven by a filesystem
+# watcher on the transcript (see TranscriptWatcher in PetState.swift) rather
+# than the old fixed ~2s poll, so this should retire in well under a second;
+# the 5s bound is only a generous ceiling for a loaded/slow machine (the old
+# poll-based version needed a fixed `sleep 5` here with no visibility into how
+# close it was cutting it -- wait_bg_retired also prints the actual latency).
 printf '<task-notification><task-id>%s</task-id><status>completed</status></task-notification>\n' "$BG_ID" >> "$TMP_TRANSCRIPT"
-sleep 5
+wait_bg_retired "$BG_DESC" 5
 
 STATE=$(get_state)
 assert "3b. Completion signal retires background card + adds 'Chạy nền xong' notice" '
@@ -280,7 +319,7 @@ run_bg_status_case() {
     sleep 0.6
 
     printf '<task-notification><task-id>%s</task-id><status>%s</status></task-notification>\n' "$bg_id" "$status" >> "$transcript"
-    sleep 5
+    wait_bg_retired "$bg_desc" 5
 
     STATE=$(get_state)
     assert "$label" '
@@ -348,6 +387,59 @@ elif not done:
 else:
     print("PASS")
 ' "$STATE"
+
+# ============================================================================
+# TEST 3f — Background task whose transcript file does NOT exist yet at task
+# start (only its containing directory does — the normal case for a project
+# that's mid-session but hasn't had this particular transcript created yet).
+# This exercises TranscriptWatcher's directory-watch fallback: it can't open
+# a DispatchSource on a nonexistent file, so it must watch the parent
+# directory instead, then promote to a direct file watch once the file
+# appears, and still catch the completion signal.
+# ============================================================================
+NEW_DIR="/tmp/petmacos_e2e_newfile_$$"
+mkdir -p "$NEW_DIR"
+NEW_TRANSCRIPT="$NEW_DIR/transcript.jsonl"
+rm -f "$NEW_TRANSCRIPT" # must NOT exist yet when the task starts
+NEW_ID="E2EBGNEW$$"
+NEW_SID="bgnewfile000000000000000000000006"
+NEW_DESC="e2e-bg-newfile-$$"
+
+TOOL_RESPONSE_NEW="Command running in background with ID: $NEW_ID. Output is being written to: $NEW_TRANSCRIPT."
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$NEW_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$NEW_TRANSCRIPT\",\"tool_input\":{\"description\":\"$NEW_DESC\",\"command\":\"sleep 100\",\"run_in_background\":true},\"tool_response\":\"$TOOL_RESPONSE_NEW\"}"
+sleep 0.6
+
+STATE=$(get_state)
+assert "3f-start. Background card created even though transcript file did not exist yet" '
+bg=s["backgroundTasks"]
+mine=[c for c in bg if c.get("detail")=="'"$NEW_DESC"'" or (c.get("title") and "'"$NEW_DESC"'" in c["title"])]
+if not mine:
+    print("FAIL: no background card for '"$NEW_DESC"' (got: %s)" % [(c.get("title"),c.get("context")) for c in bg])
+else:
+    print("PASS")
+' "$STATE"
+
+# Now the file appears for the first time, already containing the completion
+# signal (simulates Claude Code creating + writing the transcript after the
+# task was already tracked with a missing-file watcher).
+printf '{"type":"user","message":"seed"}\n<task-notification><task-id>%s</task-id><status>completed</status></task-notification>\n' "$NEW_ID" > "$NEW_TRANSCRIPT"
+wait_bg_retired "$NEW_DESC" 5
+
+STATE=$(get_state)
+assert "3f. Directory-watch fallback catches a transcript created after task start" '
+bg=s["backgroundTasks"]
+comp=s["completedNotices"]
+still=[c for c in bg if c.get("detail")=="'"$NEW_DESC"'" or (c.get("title") and "'"$NEW_DESC"'" in c["title"])]
+done=[c for c in comp if c.get("title")=="Chạy nền xong" and c.get("detail") and "'"$NEW_DESC"'" in c["detail"]]
+if still:
+    print("FAIL: background card still present after transcript was created with the completion signal")
+elif not done:
+    print("FAIL: no '"'"'Chạy nền xong'"'"' notice for '"$NEW_DESC"' (got: %s)" % [(c.get("title"),c.get("detail")) for c in comp])
+else:
+    print("PASS")
+' "$STATE"
+
+rm -rf "$NEW_DIR"
 
 # ============================================================================
 # TEST 4 — SessionStart/SessionEnd never surface a card. Hooks are installed
