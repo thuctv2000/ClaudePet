@@ -18,31 +18,45 @@ struct PetView: View {
         state.pendingQuestion != nil || state.pendingAsk != nil
     }
 
-    private var petSide: CGFloat { dialogActive ? 150 : 280 }
+    private func petSide(hasCards: Bool) -> CGFloat {
+        if dialogActive { return 150 }
+        // Give the session-card stack breathing room while cards are on
+        // screen; the pet grows back once every conversation is done.
+        return hasCards ? 210 : 280
+    }
 
     var body: some View {
+        // Grouping walk is O(sessions x items) — compute once per render and
+        // hand the same array to everything below.
+        let summaries = state.orderedSessionSummaries
         // Dog pinned to the bottom; the bubble / dialog sits right above its
         // head. The Spacer soaks up the extra height so a tall dialog grows
         // upward instead of pushing the dog out of the panel.
         VStack(spacing: 4) {
             Spacer(minLength: 0)
-            // Scrollable so a long list of subagent/background/completed cards
-            // never gets clipped by or overlaps the panel — it scrolls inside
-            // its own bounds instead, anchored to the newest (bottom) card.
-            ScrollView(.vertical, showsIndicators: false) {
-                topContent
+            if dialogActive {
+                // Scrollable so a tall dialog never gets clipped by the
+                // panel; anchored to the bottom so it grows upward from the
+                // pet's head.
+                ScrollView(.vertical, showsIndicators: false) {
+                    topContent
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+                }
+                .defaultScrollAnchor(.bottom)
+                .frame(maxHeight: 420)
+            } else {
+                // The session-card list scrolls inside its own bounds (see
+                // SessionStackView) so the "Latest" card is always in view.
+                stackContent(summaries)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.runningTasks)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.subagentTasks)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.backgroundTasks)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.completedNotices)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: summaries)
+                    .frame(maxHeight: 300)
             }
-            .defaultScrollAnchor(.bottom)
-            .frame(maxHeight: dialogActive ? 420 : 340)
-            dog
+            dog(side: petSide(hasCards: !summaries.isEmpty))
                 .animation(.spring(response: 0.35, dampingFraction: 0.8), value: dialogActive)
             // Usage badge stays visible under the pet at all times.
             UsageBadgeView(usage: usage)
@@ -66,6 +80,7 @@ struct PetView: View {
         }
     }
 
+    /// The blocking dialog, when one is pending (dialog branch of `body`).
     @ViewBuilder
     private var topContent: some View {
         if let question = state.pendingQuestion {
@@ -81,23 +96,24 @@ struct PetView: View {
                 onAllow: { note in state.resolve("allow", text: note) },
                 onDeny: { note in state.resolve("deny", text: note) }
             )
-        } else {
-            TaskStackView(
-                running: state.runningTasks,
-                subagents: state.subagentTasks,
-                backgroundTasks: state.backgroundTasks,
-                completed: state.completedNotices,
-                settings: settings,
-                onDismiss: { id in state.dismissNotice(id: id) },
-                onDismissSubagent: { id in state.dismissSubagent(id: id) },
-                onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
-            )
         }
+    }
+
+    /// The per-conversation card stack (no-dialog branch of `body`), fed the
+    /// summaries `body` already computed.
+    private func stackContent(_ summaries: [PetState.SessionSummary]) -> some View {
+        SessionStackView(
+            summaries: summaries,
+            settings: settings,
+            onDismissNotice: { id in state.dismissNotice(id: id) },
+            onDismissSubagent: { id in state.dismissSubagent(id: id) },
+            onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
+        )
     }
 
     /// Uses sprite frames when available, otherwise the built-in vector dog.
     @ViewBuilder
-    private var dog: some View {
+    private func dog(side: CGFloat) -> some View {
         if let clip = resolvedClip {
             ZStack {
                 AnimatedSpriteView(clip: clip)
@@ -105,11 +121,11 @@ struct PetView: View {
                     .shadow(color: .black.opacity(0.16), radius: 12, y: 9)
                 hearts
             }
-            .frame(width: petSide, height: petSide)
+            .frame(width: side, height: side)
             .contentShape(Rectangle())
             .onTapGesture { celebrate() }
         } else {
-            vectorDog
+            vectorDog(side: side)
         }
     }
 
@@ -139,7 +155,7 @@ struct PetView: View {
         }
     }
 
-    private var vectorDog: some View {
+    private func vectorDog(side: CGFloat) -> some View {
         TimelineView(.animation) { _ in
             ZStack {
                 DogShape(eyesClosed: eyesClosed, isHappy: isHappy)
@@ -148,7 +164,7 @@ struct PetView: View {
                     .shadow(color: .black.opacity(0.16), radius: 12, y: 9)
                 hearts
             }
-            .frame(width: petSide, height: petSide)
+            .frame(width: side, height: side)
             .contentShape(Rectangle())
             .onTapGesture { celebrate() }
             .onAppear { animate() }

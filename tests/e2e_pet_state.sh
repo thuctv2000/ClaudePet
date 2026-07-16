@@ -1299,9 +1299,88 @@ else:
     print("PASS")
 ' "$STATE"
 
+# --- 20b. A custom-title line (the conversation's REAL name, as shown in the
+# Claude Code sidebar; appended on rename) must BEAT the first-prompt fallback,
+# and the LAST custom-title wins over earlier ones.
+python3 - "$DESKTOP_TRANSCRIPT" <<'PYEOF'
+import json, sys
+with open(sys.argv[1], "a") as f:
+    f.write(json.dumps({"type": "custom-title", "customTitle": "Old renamed title", "sessionId": "ignored"}) + "\n")
+    f.write(json.dumps({"type": "custom-title", "customTitle": "Desktop upload retry fixer", "sessionId": "ignored"}) + "\n")
+PYEOF
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$DESKTOP_SID\",\"cwd\":\"$DESKTOP_CWD\",\"tool_input\":{\"command\":\"echo hi\"},\"tool_response\":\"ok\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "20b. custom-title beats the first-prompt fallback, and the latest custom-title wins" '
+names=s.get("sessionNames") or []
+if any(n == "Desktop upload retry fixer" for n in names):
+    print("PASS")
+elif any(n == "Old renamed title" for n in names):
+    print("FAIL: an older custom-title was used instead of the latest one")
+else:
+    print("FAIL: custom-title not resolved (sessionNames: %s)" % names)
+' "$STATE"
+
 post_event "{\"hook_event_name\":\"SubagentStop\",\"session_id\":\"$DESKTOP_SID\",\"cwd\":\"$DESKTOP_CWD\",\"last_assistant_message\":\"done\"}"
 rm -rf "$TMP_PROJECTS_ROOT"
 restore_config
+
+# ============================================================================
+# TEST 21 — Per-conversation card ordering (`sessionOrder` in /debug/state):
+# the session with the NEWEST event must sit before older ones, and a fresh
+# event for an older session must roll it back to the front. Asserted as
+# RELATIVE order between this test's own two sessions (not absolute index 0),
+# so real concurrent sessions on this dev machine can't break it.
+# ============================================================================
+ORD_SID_X="ordsessX0000000000000000000000026"
+ORD_SID_Y="ordsessY0000000000000000000000027"
+CWD21="/tmp/e2eorder"
+
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$ORD_SID_X\",\"cwd\":\"$CWD21\",\"prompt\":\"e2e order X\"}"
+sleep 0.4
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$ORD_SID_Y\",\"cwd\":\"$CWD21\",\"prompt\":\"e2e order Y\"}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "21a. Session with the newest event orders before the older one (Y before X)" '
+order=s.get("sessionOrder", [])
+try:
+    ix = order.index("'"$ORD_SID_X"'")
+    iy = order.index("'"$ORD_SID_Y"'")
+except ValueError:
+    print("FAIL: one of the test sessions missing from sessionOrder: %s" % order)
+else:
+    if iy < ix:
+        print("PASS")
+    else:
+        print("FAIL: expected Y (newest event) before X, got order %s" % order)
+' "$STATE"
+
+# A fresh event for X must roll it back above Y.
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$ORD_SID_X\",\"cwd\":\"$CWD21\",\"tool_input\":{\"description\":\"e2e-21-newer\",\"command\":\"echo x\"}}"
+sleep 0.4
+
+STATE=$(get_state)
+assert "21b. A newer event for the older session rolls it back to the front (X before Y)" '
+order=s.get("sessionOrder", [])
+names=s.get("sessionNames", [])
+try:
+    ix = order.index("'"$ORD_SID_X"'")
+    iy = order.index("'"$ORD_SID_Y"'")
+except ValueError:
+    print("FAIL: one of the test sessions missing from sessionOrder: %s" % order)
+else:
+    if ix >= iy:
+        print("FAIL: expected X (newest event now) before Y, got order %s" % order)
+    elif len(names) != len(order):
+        print("FAIL: sessionNames (%d) not aligned with sessionOrder (%d)" % (len(names), len(order)))
+    else:
+        print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$ORD_SID_X\",\"cwd\":\"$CWD21\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$ORD_SID_Y\",\"cwd\":\"$CWD21\"}"
 
 # ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under

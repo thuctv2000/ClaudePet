@@ -47,13 +47,24 @@ final class SessionNameResolver {
     /// mix names from two different files.
     private var scannedPath: String?
 
-    /// Names resolved via the transcript fallback (see `transcriptName`),
-    /// keyed by sessionId. Only successful resolutions are cached here --
-    /// misses are cheap to recheck (the read is capped at ~100 lines) so they
-    /// are simply retried on the next lookup rather than tracked, matching
-    /// the "miss-retry until the file shows up" spirit of the history cache
-    /// above without needing a second offset/size bookkeeping scheme.
-    private var transcriptNames: [String: String] = [:]
+    /// Incremental per-session scan state for the transcript source (see
+    /// `transcriptInfo`). `offset` mirrors the history file's tail-after
+    /// strategy: only bytes appended since the last scan are read, so renames
+    /// (a new `custom-title` line appended later) are picked up cheaply on the
+    /// next lookup without re-parsing the whole file.
+    private struct TranscriptScan {
+        var offset: UInt64 = 0
+        /// Latest `custom-title` seen -- the conversation's real name as shown
+        /// in the Claude Code UI (renames append a new line; last one wins).
+        var title: String?
+        /// First usable user-typed text -- the fallback when no title exists.
+        var firstPrompt: String?
+    }
+    private var transcriptScans: [String: TranscriptScan] = [:]
+    /// The projects root last scanned -- mirrors `scannedPath` for the history
+    /// cache: a config-injected root change (tests) must not reuse offsets or
+    /// names that belong to files under the previous root.
+    private var scannedProjectsRoot: String?
 
     static let defaultPath = FileManager.default
         .homeDirectoryForCurrentUser
@@ -98,9 +109,15 @@ final class SessionNameResolver {
     /// under `~/.claude/projects` -- callers that can't supply it (none
     /// currently) simply don't get the fallback.
     func name(for sessionId: String, cwd: String? = nil) -> String? {
+        // The transcript's `custom-title` is the conversation's *actual* name
+        // (what the Claude Code UI shows in its sidebar; auto-generated or
+        // user-renamed) -- it beats every other source. The first prompt is
+        // only a stand-in when no title has been written yet.
+        let transcript = (cwd?.isEmpty == false)
+            ? transcriptInfo(for: sessionId, cwd: cwd!) : nil
+        if let title = transcript?.title { return title }
         if let historyName = historyName(for: sessionId) { return historyName }
-        guard let cwd, !cwd.isEmpty else { return nil }
-        return transcriptName(for: sessionId, cwd: cwd)
+        return transcript?.firstPrompt
     }
 
     /// The original `~/.claude/history.jsonl`-only lookup, unchanged. Returns
@@ -121,36 +138,65 @@ final class SessionNameResolver {
         return names[sessionId] ?? nil
     }
 
-    /// Resolves a name by reading the session's own transcript file directly:
-    /// `<projectsRoot>/<slug(cwd)>/<sessionId>.jsonl`. Only the first ~100
-    /// lines are read (the first user prompt is always at the very top of the
-    /// file), looking for the first `queue-operation`/`enqueue` line's
-    /// `content`, or failing that the first `user` message with extractable
-    /// text -- skipping lines whose text is a system/tool injection rather
-    /// than something the user actually typed (see `isNoise`).
-    private func transcriptName(for sessionId: String, cwd: String) -> String? {
-        if let cached = transcriptNames[sessionId] { return cached }
-        let path = "\(Self.configuredProjectsRoot())/\(Self.slug(cwd))/\(sessionId).jsonl"
-        guard FileManager.default.fileExists(atPath: path) else { return nil } // may not be written yet; retry next time
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { try? handle.close() }
-        // Read a generous chunk (a few hundred short lines is a few KB) rather
-        // than the whole file, then only look at the first ~100 *lines* of it.
-        guard let data = try? handle.read(upToCount: 64 * 1024), !data.isEmpty,
-              let text = String(data: data, encoding: .utf8)
-        else { return nil }
-
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(100) {
-            guard let lineData = line.data(using: .utf8),
-                  let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
-            else { continue }
-            guard let candidate = Self.extractCandidateText(from: object) else { continue }
-            guard !Self.isNoise(candidate) else { continue }
-            guard let cleaned = Self.cleanedName(from: candidate) else { continue }
-            transcriptNames[sessionId] = cleaned
-            return cleaned
+    /// Scans the session's own transcript (`<projectsRoot>/<slug(cwd)>/
+    /// <sessionId>.jsonl`) for the two name sources it can contain: the latest
+    /// `{"type":"custom-title","customTitle":...}` line (the conversation's
+    /// real name -- renames append a new line, so last occurrence wins) and
+    /// the first usable user-typed text (`queue-operation`/`enqueue` content,
+    /// or a `user` message) as a fallback. Incremental: only bytes appended
+    /// since the previous scan are read, so the first lookup pays for one full
+    /// pass and later lookups (including picking up renames) are cheap. The
+    /// substring pre-filter avoids JSON-parsing every appended line once the
+    /// first prompt is known.
+    private func transcriptInfo(for sessionId: String, cwd: String) -> TranscriptScan? {
+        let root = Self.configuredProjectsRoot()
+        if root != scannedProjectsRoot {
+            scannedProjectsRoot = root
+            transcriptScans.removeAll()
         }
-        return nil // nothing usable in the window yet; cheap to retry next lookup
+        let path = "\(root)/\(Self.slug(cwd))/\(sessionId).jsonl"
+        var state = transcriptScans[sessionId] ?? TranscriptScan()
+        let currentSize = PetState.fileSize(path: path)
+        guard currentSize > state.offset else { return transcriptScans[sessionId] }
+        guard let handle = FileHandle(forReadingAtPath: path) else { return transcriptScans[sessionId] }
+        defer { try? handle.close() }
+        guard (try? handle.seek(toOffset: state.offset)) != nil,
+              let data = try? handle.readToEnd(), !data.isEmpty,
+              let text = String(data: data, encoding: .utf8)
+        else { return transcriptScans[sessionId] }
+
+        // Leave an incomplete trailing line (still being written) for the next
+        // scan, exactly like `scan(path:)` below.
+        guard let lastNewline = text.range(of: "\n", options: .backwards) else {
+            return transcriptScans[sessionId]
+        }
+        let consumed = text[text.startIndex..<lastNewline.upperBound]
+        state.offset += UInt64(consumed.utf8.count)
+
+        for line in consumed.split(separator: "\n", omittingEmptySubsequences: true) {
+            if line.contains("custom-title") {
+                // Cheap substring pre-filter, deliberately loose (whitespace
+                // in the JSON varies by writer); the parse below rejects lines
+                // that merely *mention* custom-title inside message content.
+                guard let lineData = line.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      object["type"] as? String == "custom-title",
+                      let raw = object["customTitle"] as? String,
+                      let cleaned = Self.cleanedName(from: raw)
+                else { continue }
+                state.title = cleaned
+            } else if state.firstPrompt == nil {
+                guard let lineData = line.data(using: .utf8),
+                      let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                      let candidate = Self.extractCandidateText(from: object),
+                      !Self.isNoise(candidate),
+                      let cleaned = Self.cleanedName(from: candidate)
+                else { continue }
+                state.firstPrompt = cleaned
+            }
+        }
+        transcriptScans[sessionId] = state
+        return state
     }
 
     /// Pulls out the raw candidate text from one transcript line: a

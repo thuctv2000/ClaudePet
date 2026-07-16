@@ -65,8 +65,8 @@ enum TaskKind: Equatable {
     case background     // a Bash command launched with run_in_background
     /// A background task that ended in failure/kill, or whose outcome timed
     /// out unseen. Only ever appears on a *completed notice* (never a running
-    /// card) so it can get a visually distinct (red) border from `.done`
-    /// without a full card redesign -- see `CompletedCard` in TaskStackView.
+    /// card) so it can get a visually distinct (red) border from `.done` --
+    /// see `SessionCardView.borderStyle` in SessionStackView.
     case failed
 }
 
@@ -250,6 +250,135 @@ final class PetState {
     private var sessions: [String: SessionActivity] = [:]
     private static let noSessionKey = "_no-session_"
 
+    /// Display metadata remembered per session key (resolved conversation
+    /// name + "#tag" fallback), captured from every event that carries a
+    /// `session_id` so the per-session UI card can title itself even for
+    /// items whose own `context` caption is missing. Pruned on `SessionEnd`
+    /// when no card still references the session (see `pruneMetaIfUnused`).
+    private struct SessionMeta {
+        var name: String?
+        var tag: String?
+        var project: String?
+    }
+    private var sessionMeta: [String: SessionMeta] = [:]
+
+    /// Captures/refreshes the display metadata for the event's session. The
+    /// name is re-resolved on every event (cheap: `SessionNameResolver`
+    /// caches) so a session whose first prompt lands in `history.jsonl`
+    /// *after* its first hook event still picks up its real name later.
+    private func rememberSessionMeta(for event: HookEvent) {
+        guard let sid = event.sessionId else { return }
+        var meta = sessionMeta[sid] ?? SessionMeta()
+        if let name = sessionNames.name(for: sid, cwd: event.cwd) { meta.name = name }
+        if meta.tag == nil { meta.tag = event.sessionTag }
+        if let project = event.projectName { meta.project = project }
+        sessionMeta[sid] = meta
+    }
+
+    /// Drops a session's remembered metadata once nothing on screen needs it.
+    private func pruneMetaIfUnused(sessionId: String?) {
+        guard let sid = sessionId else { return }
+        let stillReferenced = sessions[sid] != nil
+            || runningTasks.contains { $0.sessionId == sid }
+            || subagentTasks.contains { $0.sessionId == sid }
+            || backgroundTasks.contains { $0.sessionId == sid }
+            || completedNotices.contains { $0.sessionId == sid }
+        if !stillReferenced { sessionMeta.removeValue(forKey: sid) }
+    }
+
+    // MARK: - Per-session UI summaries (one card per conversation)
+
+    /// Everything the per-conversation card UI needs about one session,
+    /// derived on the fly from the existing per-kind item lists.
+    struct SessionSummary: Identifiable, Equatable {
+        /// The session key (`session_id`, or `""` for the app-notice bucket).
+        let id: String
+        /// Header title: resolved conversation name, else "#tag", else a
+        /// generic app label for the no-session bucket.
+        let name: String
+        /// The project (cwd folder name) this conversation runs in, shown as
+        /// a small caption under the name; nil when never seen on an event.
+        let project: String?
+        /// This session's own mood (drives the card's status icon).
+        let mood: Mood
+        /// Ordering key: the session's own last hook event (or, for a
+        /// session already dropped from the live map, its newest item).
+        let lastEventAt: Date
+        /// Newest transient running task of this session, if any.
+        let latestRunning: TaskItem?
+        /// Newest persistent completed notice of this session, if any.
+        let latestCompleted: TaskItem?
+        /// This session's still-running subagents (oldest first).
+        let subagents: [TaskItem]
+        /// This session's still-running background Bash tasks (oldest first).
+        let backgrounds: [TaskItem]
+    }
+
+    /// One card per conversation, ordered so the session with the NEWEST
+    /// event sits first ("Latest"). Includes:
+    ///  - every live session that is either non-idle or has cards, and
+    ///  - any session that still owns cards (subagent finishing after
+    ///    SessionEnd, persistent completed notices...) even if it is no
+    ///    longer in the live mood map.
+    /// A live but completely idle/sleeping session with no cards is skipped —
+    /// hooks are installed globally, so `SessionStart`s from unrelated
+    /// sessions would otherwise spawn permanent empty cards.
+    var orderedSessionSummaries: [SessionSummary] {
+        var keys: [String] = []
+        var seen = Set<String>()
+        func add(_ raw: String?) {
+            let key = raw ?? Self.noSessionKey
+            if seen.insert(key).inserted { keys.append(key) }
+        }
+        for key in sessions.keys { add(key) }
+        for item in runningTasks { add(item.sessionId) }
+        for item in subagentTasks { add(item.sessionId) }
+        for item in backgroundTasks { add(item.sessionId) }
+        for item in completedNotices { add(item.sessionId) }
+
+        var result: [SessionSummary] = []
+        for key in keys {
+            func mine(_ items: [TaskItem]) -> [TaskItem] {
+                items.filter { ($0.sessionId ?? Self.noSessionKey) == key }
+            }
+            let running = mine(runningTasks)
+            let completed = mine(completedNotices)
+            let subs = mine(subagentTasks)
+            let bgs = mine(backgroundTasks)
+            let hasItems = !running.isEmpty || !completed.isEmpty || !subs.isEmpty || !bgs.isEmpty
+            let live = sessions[key]
+            let mood = live?.mood ?? ((!subs.isEmpty || !bgs.isEmpty) ? .working : .idle)
+            // Skip noise: a live session that is idle/asleep with nothing to show.
+            if !hasItems, mood == .idle || mood == .sleep { continue }
+            let newestItemDate = (running + completed + subs + bgs).map(\.startedAt).max()
+            let lastEventAt = live?.lastEventAt ?? newestItemDate ?? .distantPast
+            result.append(SessionSummary(
+                id: key == Self.noSessionKey ? "" : key,
+                name: displayName(forKey: key),
+                project: sessionMeta[key]?.project,
+                mood: mood,
+                lastEventAt: lastEventAt,
+                latestRunning: running.first,       // runningTasks is newest-first
+                latestCompleted: completed.first,   // completedNotices is newest-first
+                subagents: subs,
+                backgrounds: bgs
+            ))
+        }
+        return result.sorted { $0.lastEventAt > $1.lastEventAt }
+    }
+
+    /// Header title for one session card: resolved conversation name, else
+    /// "#tag", else a short prefix of the raw session id; the no-session
+    /// bucket (app notices) gets the app's own name.
+    private func displayName(forKey key: String) -> String {
+        if key == Self.noSessionKey { return "PetMacOS" }
+        if let meta = sessionMeta[key] {
+            if let name = meta.name { return name }
+            if let tag = meta.tag { return "#\(tag)" }
+        }
+        return "#\(String(key.prefix(6)))"
+    }
+
     /// asking > error > working > thinking > talking > sleep > idle, per spec.
     /// Lower index = higher priority.
     private static let moodPriority: [Mood] = [.asking, .error, .working, .thinking, .talking, .sleep, .idle]
@@ -382,9 +511,14 @@ final class PetState {
                 guard !Task.isCancelled else { return }
                 let now = Date()
                 let before = self.sessions.count
-                self.sessions = self.sessions.filter {
-                    now.timeIntervalSince($0.value.lastEventAt) < self.sessionTTLSeconds
-                }
+                let expired = self.sessions.filter {
+                    now.timeIntervalSince($0.value.lastEventAt) >= self.sessionTTLSeconds
+                }.map(\.key)
+                for key in expired { self.sessions.removeValue(forKey: key) }
+                // Also release the expired sessions' display metadata --
+                // without this, sessions that never send SessionEnd (crashed
+                // or abandoned) would accumulate meta entries forever.
+                for key in expired { self.pruneMetaIfUnused(sessionId: key) }
                 if self.sessions.count != before { self.recomputeAggregateMood() }
                 if self.sessions.isEmpty {
                     self.sessionExpiryTask = nil
@@ -853,6 +987,7 @@ final class PetState {
     /// Applies an incoming hook event to the pet's presentation.
     func apply(_ event: HookEvent) {
         logEvent(event, route: "event")
+        rememberSessionMeta(for: event)
         let context = contextLabel(for: event)
         let sid = event.sessionId
         switch event.hookEventName ?? "" {
@@ -966,6 +1101,7 @@ final class PetState {
             if let sid { sessions.removeValue(forKey: sid) } else { sessions.removeValue(forKey: Self.noSessionKey) }
             recomputeAggregateMood()
             clearRunning(sessionId: sid)
+            pruneMetaIfUnused(sessionId: sid)
         default:
             if let message = event.message {
                 pushRunning(TaskItem(title: message, kind: .session, context: context, sessionId: sid))
@@ -1036,6 +1172,7 @@ final class PetState {
     /// in line to be shown.
     func presentAsk(id: String, event: HookEvent) {
         logEvent(event, route: "ask")
+        rememberSessionMeta(for: event)
         // Launching a subagent? Remember its card so an "allow" can start
         // tracking it (in manual mode no separate PreToolUse /event arrives).
         let isSubagent = event.toolName == "Task" || event.toolName == "Agent"
@@ -1126,6 +1263,7 @@ final class PetState {
     /// the pre-existing single-slot behaviour is unchanged).
     func presentQuestion(id: String, event: HookEvent) {
         logEvent(event, route: "question")
+        rememberSessionMeta(for: event)
         let questions = event.askQuestions
         guard !questions.isEmpty else {
             // Nothing parseable to ask; let the terminal handle it.
@@ -1213,6 +1351,13 @@ final class PetState {
         let pendingAskSessionId: String?
         /// Every currently-live session's own mood + last-event timestamp.
         let sessions: [DebugSessionActivity]
+        /// Session ids in the exact order the per-conversation card stack
+        /// renders them (newest event first — see `orderedSessionSummaries`).
+        /// `""` stands for the no-session (app notice) bucket.
+        let sessionOrder: [String]
+        /// The display name each session card shows, aligned with
+        /// `sessionOrder` (resolved conversation name, else "#tag" fallback).
+        let sessionNames: [String]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1230,6 +1375,8 @@ final class PetState {
                 lastEventAt: activity.lastEventAt
             )
         }
+        // Computed once — the grouping walk is O(sessions x items).
+        let summaries = orderedSessionSummaries
         return DebugSnapshot(
             mood: String(describing: mood),
             runningTasks: runningTasks.map(card),
@@ -1240,7 +1387,9 @@ final class PetState {
             hasPendingQuestion: pendingQuestion != nil,
             pendingAskCount: pendingAskCount,
             pendingAskSessionId: pendingAsk?.sessionId,
-            sessions: sessionSnapshots
+            sessions: sessionSnapshots,
+            sessionOrder: summaries.map(\.id),
+            sessionNames: summaries.map(\.name)
         )
     }
 

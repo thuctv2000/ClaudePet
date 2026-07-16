@@ -13,6 +13,7 @@
 		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
 		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
+		37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */; };
 		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
 		878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DE56CC509FC11874D00027 /* SettingsStore.swift */; };
 		8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */; };
@@ -26,13 +27,12 @@
 		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
-		D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAD6C1596A1C653DA132297A /* TaskStackView.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
-		F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		121562265EDE7612187515DD /* QuestionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDialogView.swift; sourceTree = "<group>"; };
+		203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStackView.swift; sourceTree = "<group>"; };
 		21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeAvailability.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
@@ -45,10 +45,8 @@
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
 		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
 		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechBubbleView.swift; sourceTree = "<group>"; };
 		C6295BC37E9B655A219CE95D /* PetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetView.swift; sourceTree = "<group>"; };
 		CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowView.swift; sourceTree = "<group>"; };
-		DAD6C1596A1C653DA132297A /* TaskStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskStackView.swift; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
 		E46998C00ABB596885D703B7 /* UsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageMonitor.swift; sourceTree = "<group>"; };
 		E46A5EB32015467C559F4AC3 /* SessionNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNames.swift; sourceTree = "<group>"; };
@@ -82,9 +80,8 @@
 				CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */,
 				DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */,
 				121562265EDE7612187515DD /* QuestionDialogView.swift */,
+				203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */,
 				72959DA64EAE01980687BA1C /* SettingsWindowView.swift */,
-				BD5624BD66E39D6027897C83 /* SpeechBubbleView.swift */,
-				DAD6C1596A1C653DA132297A /* TaskStackView.swift */,
 				7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */,
 			);
 			path = Views;
@@ -243,12 +240,11 @@
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
 				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
 				AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */,
+				37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
 				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
-				F966BCA5C3A1D331BF8B15EE /* SpeechBubbleView.swift in Sources */,
 				96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */,
 				8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */,
-				D70F555FFD1A84B449C953CA /* TaskStackView.swift in Sources */,
 				3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */,
 				C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */,
 			);
