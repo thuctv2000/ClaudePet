@@ -80,8 +80,16 @@ enum SessionInjector {
             }
         }
 
-        // 3. Give the TUI a beat to consume the text, then submit.
-        usleep(150_000)
+        // 3. Give the TUI a beat to consume the text, then dismiss the
+        //    autocomplete popup with Escape BEFORE submitting: Claude Code's
+        //    Ink-based prompt intercepts a bare Enter while its suggestion
+        //    popup is open, so text lands in the field but never submits.
+        //    Escape-then-Enter is the field-proven sequence from
+        //    anthropics/claude-code#15553 (10-agent tmux systems rely on it).
+        //    Escape is harmless when no popup is open.
+        usleep(300_000)
+        _ = run(["tmux", "send-keys", "-t", pane, "Escape"])
+        usleep(100_000)
         let enter = run(["tmux", "send-keys", "-t", pane, "Enter"])
         guard enter.status == 0 else {
             return .failure(.sendFailed(trimmedStderr(enter) ?? "send-keys Enter lỗi"))

@@ -1043,7 +1043,12 @@ final class PetState {
         let now = Date()
         return channels.values.contains { info in
             guard now.timeIntervalSince(info.lastSeen) < Self.channelTTL else { return false }
-            return info.cwd == nil || info.cwd == cwd
+            // Strict cwd match only. A nil-cwd wildcard used to match EVERY
+            // session, which lit up reply boxes the channel can't actually
+            // reach (found live: a claudepet server spawned as a plain MCP
+            // server — not via --channels — polled the pet and made every
+            // test session claim canReply).
+            return info.cwd != nil && info.cwd == cwd
         }
     }
 
