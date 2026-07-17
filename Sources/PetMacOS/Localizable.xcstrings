@@ -1,738 +1,50 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Running command": {
+    "+%d more ˄": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running command"
+            "value": "+%d more ˄"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chạy lệnh"
+            "value": "+%d cũ hơn ˄"
           }
         }
       }
     },
-    "Editing %@": {
+    "5-hour window": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Editing %@"
+            "value": "5-hour window"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sửa %@"
+            "value": "Cửa sổ 5 giờ"
           }
         }
       }
     },
-    "Editing file": {
+    "A new version downloads, installs, and relaunches automatically.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Editing file"
+            "value": "A new version downloads, installs, and relaunches automatically."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chỉnh sửa tệp"
-          }
-        }
-      }
-    },
-    "Reading %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đọc %@"
-          }
-        }
-      }
-    },
-    "Reading file": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading file"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đọc tệp"
-          }
-        }
-      }
-    },
-    "Searching": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Searching"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tìm kiếm"
-          }
-        }
-      }
-    },
-    "Looking up the web": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Looking up the web"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tra cứu web"
-          }
-        }
-      }
-    },
-    "Updating plan": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Updating plan"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cập nhật kế hoạch"
-          }
-        }
-      }
-    },
-    "running": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "running"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "đang chạy"
-          }
-        }
-      }
-    },
-    "Subagent: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent: %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent: %@"
-          }
-        }
-      }
-    },
-    "Hide pet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide pet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ẩn pet"
-          }
-        }
-      }
-    },
-    "Show pet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show pet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hiển thị pet"
-          }
-        }
-      }
-    },
-    "Click-through": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Click-through"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chuột xuyên qua pet"
-          }
-        }
-      }
-    },
-    "Disconnect Claude Code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnect Claude Code"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ngắt kết nối Claude Code"
-          }
-        }
-      }
-    },
-    "Connect Claude Code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect Claude Code"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kết nối Claude Code"
-          }
-        }
-      }
-    },
-    "Open sprites folder": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open sprites folder"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mở thư mục sprites"
-          }
-        }
-      }
-    },
-    "Reload sprites": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reload sprites"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tải lại sprites"
-          }
-        }
-      }
-    },
-    "Settings…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cài đặt…"
-          }
-        }
-      }
-    },
-    "Loaded %d animations": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loaded %d animations"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã tải %d animation"
-          }
-        }
-      }
-    },
-    "No sprites yet — using the default dog": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sprites yet — using the default dog"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chưa có ảnh — đang dùng chó vẽ sẵn"
-          }
-        }
-      }
-    },
-    "Could not start the internal server: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not start the internal server: %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không khởi động được server nội bộ: %@"
-          }
-        }
-      }
-    },
-    "Connected Claude Code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connected Claude Code"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã kết nối Claude Code"
-          }
-        }
-      }
-    },
-    "Connection error: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connection error: %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lỗi kết nối: %@"
-          }
-        }
-      }
-    },
-    "Disconnected Claude Code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnected Claude Code"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã ngắt kết nối Claude Code"
-          }
-        }
-      }
-    },
-    "Pet isn't receiving signals from Claude Code — try restarting the app, or press Connect in Settings": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pet isn't receiving signals from Claude Code — try restarting the app, or press Connect in Settings"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pet không nhận được tín hiệu từ Claude Code — thử tắt mở lại app, hoặc bấm Kết nối trong Cài đặt"
-          }
-        }
-      }
-    },
-    "pet-hook.sh isn't installed yet — press \"Reinstall hook\" first.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "pet-hook.sh isn't installed yet — press \"Reinstall hook\" first."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chưa cài pet-hook.sh — bấm \"Cài lại hook\" trước."
-          }
-        }
-      }
-    },
-    "Testing pet-hook.sh connection": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Testing pet-hook.sh connection"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kiểm tra kết nối pet-hook.sh"
-          }
-        }
-      }
-    },
-    "Could not run pet-hook.sh: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not run pet-hook.sh: %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không chạy được pet-hook.sh: %@"
-          }
-        }
-      }
-    },
-    "Success — the pet received the event via pet-hook.sh.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Success — the pet received the event via pet-hook.sh."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thành công — pet đã nhận event qua pet-hook.sh."
-          }
-        }
-      }
-    },
-    "The script ran, but the pet didn't receive the event (check that hooks are installed, the server is running, or events.log).": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The script ran, but the pet didn't receive the event (check that hooks are installed, the server is running, or events.log)."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Script chạy xong nhưng pet không nhận được event (kiểm tra hooks đã cài, server đang chạy, hoặc events.log)."
-          }
-        }
-      }
-    },
-    "Desktop Pet Settings": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desktop Pet Settings"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cài đặt Desktop Pet"
-          }
-        }
-      }
-    },
-    "Drag me anywhere": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Drag me anywhere"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kéo tôi đi bất kỳ đâu"
-          }
-        }
-      }
-    },
-    "Couldn't read image: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn't read image: %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không đọc được ảnh: %@"
-          }
-        }
-      }
-    },
-    "No frames to import": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No frames to import"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không có frame nào để nhập"
-          }
-        }
-      }
-    },
-    "Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mỗi thư mục là một \"state\" (trạng thái). Thả các frame PNG trong suốt vào thư mục tương ứng, đặt tên theo thứ tự phát, ví dụ:"
-          }
-        }
-      }
-    },
-    "States": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "States"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Các state"
-          }
-        }
-      }
-    },
-    "when idle (should loop)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "when idle (should loop)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "khi rảnh (nên loop)"
-          }
-        }
-      }
-    },
-    "reaction when the pet is tapped (plays once)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "reaction when the pet is tapped (plays once)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "phản ứng khi bấm vào pet (chạy 1 lần)"
-          }
-        }
-      }
-    },
-    "Claude is thinking": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude is thinking"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude đang suy nghĩ"
-          }
-        }
-      }
-    },
-    "running a tool": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "running a tool"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "đang chạy tool"
-          }
-        }
-      }
-    },
-    "just replied": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "just replied"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "vừa trả lời"
-          }
-        }
-      }
-    },
-    "asking for permission (needs attention)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "asking for permission (needs attention)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "đang xin quyền (cần chú ý)"
-          }
-        }
-      }
-    },
-    "session ended": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "session ended"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "kết thúc phiên"
-          }
-        }
-      }
-    },
-    "a tool just failed (shows briefly, then clears itself)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "a tool just failed (shows briefly, then clears itself)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "một tool vừa thất bại (hiện một lúc ngắn rồi tự tắt)"
-          }
-        }
-      }
-    },
-    "reaction when Claude just finished cleanly (plays once; falls back to \"talking\" if you have no frames for it)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "reaction when Claude just finished cleanly (plays once; falls back to \"talking\" if you have no frames for it)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "phản ứng khi Claude vừa trả lời xong sạch sẽ (chạy 1 lần, nếu chưa có ảnh thì pet chỉ dùng \"talking\" như bình thường)"
-          }
-        }
-      }
-    },
-    "Optional: add a clip.json file inside a state folder to adjust speed/looping:": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Optional: add a clip.json file inside a state folder to adjust speed/looping:"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tùy chọn: thêm file clip.json trong thư mục state để chỉnh tốc độ/lặp:"
+            "value": "Có bản mới thì app tự tải, cài và mở lại."
           }
         }
       }
@@ -753,6 +65,22 @@
         }
       }
     },
+    "Allow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cho phép"
+          }
+        }
+      }
+    },
     "Any state with no images falls back to the \"idle\" frame, or the built-in vector dog if there are no images at all.": {
       "localizations": {
         "en": {
@@ -769,50 +97,50 @@
         }
       }
     },
-    "Subagent running": {
+    "Approving permissions on the pet": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Subagent running"
+            "value": "Approving permissions on the pet"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Subagent đang chạy"
+            "value": "Duyệt quyền trên pet"
           }
         }
       }
     },
-    "recovered": {
+    "Attention": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "recovered"
+            "value": "Attention"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "khôi phục"
+            "value": "Chú ý"
           }
         }
       }
     },
-    "Background: outcome unknown (tracking timed out)": {
+    "Background": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Background: outcome unknown (tracking timed out)"
+            "value": "Background"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chạy nền: không rõ kết quả (quá hạn theo dõi)"
+            "value": "Chạy nền"
           }
         }
       }
@@ -865,22 +193,6 @@
         }
       }
     },
-    "Thinking…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thinking…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đang suy nghĩ…"
-          }
-        }
-      }
-    },
     "Background: %@": {
       "localizations": {
         "en": {
@@ -897,290 +209,18 @@
         }
       }
     },
-    "Claude needs attention": {
+    "Background: outcome unknown (tracking timed out)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude needs attention"
+            "value": "Background: outcome unknown (tracking timed out)"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude cần chú ý"
-          }
-        }
-      }
-    },
-    "Subagent %@ finished": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent %@ finished"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent %@ hoàn thành"
-          }
-        }
-      }
-    },
-    "Subagent finished": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent finished"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Subagent hoàn thành"
-          }
-        }
-      }
-    },
-    "Completed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Completed"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hoàn thành"
-          }
-        }
-      }
-    },
-    "Claude replied": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude replied"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude đã trả lời"
-          }
-        }
-      }
-    },
-    "Couldn't find a Claude Code login token": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn't find a Claude Code login token"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không tìm thấy token đăng nhập Claude Code"
-          }
-        }
-      }
-    },
-    "Token expired — open Claude Code to refresh it": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Token expired — open Claude Code to refresh it"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Token hết hạn — mở Claude Code để tự làm mới"
-          }
-        }
-      }
-    },
-    "Server returned %d": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server returned %d"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Máy chủ trả về %d"
-          }
-        }
-      }
-    },
-    "Couldn't read the response data": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn't read the response data"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dữ liệu không đọc được"
-          }
-        }
-      }
-    },
-    "Skip": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Skip"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bỏ qua"
-          }
-        }
-      }
-    },
-    "Welcome to Desktop Pet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Welcome to Desktop Pet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chào mừng đến với Desktop Pet"
-          }
-        }
-      }
-    },
-    "Desktop Pet is a desktop dog that reflects what Claude Code is doing — thinking, running a tool, waiting on a permission decision, or just finished. Connecting only takes about a minute.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desktop Pet is a desktop dog that reflects what Claude Code is doing — thinking, running a tool, waiting on a permission decision, or just finished. Connecting only takes about a minute."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desktop Pet là một chú chó để bàn phản ánh trạng thái làm việc của Claude Code — đang suy nghĩ, đang chạy tool, đang chờ bạn quyết định quyền, hay vừa xong việc. Chỉ mất khoảng 1 phút để kết nối."
-          }
-        }
-      }
-    },
-    "The app is running from a temporary location (not yet in /Applications)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The app is running from a temporary location (not yet in /Applications)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App đang chạy từ nơi tạm (chưa ở /Applications)"
-          }
-        }
-      }
-    },
-    "Drag Desktop Pet into the Applications folder before connecting, so the install and hook aren't lost when you eject the DMG or restart your Mac.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Drag Desktop Pet into the Applications folder before connecting, so the install and hook aren't lost when you eject the DMG or restart your Mac."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nên kéo Desktop Pet vào thư mục Applications trước khi kết nối, để cài đặt và hook không bị mất khi bạn đóng ổ đĩa DMG hoặc khởi động lại máy."
-          }
-        }
-      }
-    },
-    "Checking for Claude Code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Checking for Claude Code"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kiểm tra Claude Code"
-          }
-        }
-      }
-    },
-    "Found Claude Code on this Mac. You can move on to the next step.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Found Claude Code on this Mac. You can move on to the next step."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã tìm thấy Claude Code trên máy này. Có thể qua bước tiếp theo."
-          }
-        }
-      }
-    },
-    "Claude Code wasn't found on this Mac (%@ or the claude command). Claude Code is the command-line tool running in Terminal that Desktop Pet watches — it needs to be installed before connecting.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude Code wasn't found on this Mac (%@ or the claude command). Claude Code is the command-line tool running in Terminal that Desktop Pet watches — it needs to be installed before connecting."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chưa tìm thấy Claude Code trên máy này (%@ hoặc lệnh claude). Claude Code là công cụ dòng lệnh chạy trong Terminal mà Desktop Pet theo dõi — cần cài nó trước khi kết nối."
-          }
-        }
-      }
-    },
-    "Claude Code install guide (claude.com/claude-code)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude Code install guide (claude.com/claude-code)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hướng dẫn cài Claude Code (claude.com/claude-code)"
+            "value": "Chạy nền: không rõ kết quả (quá hạn theo dõi)"
           }
         }
       }
@@ -1201,706 +241,18 @@
         }
       }
     },
-    "Press the button below to install the hook into ~/.claude/settings.json. This only adds a few hook entries — it doesn't touch any of your other settings.": {
+    "Check automatically": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Press the button below to install the hook into ~/.claude/settings.json. This only adds a few hook entries — it doesn't touch any of your other settings."
+            "value": "Check automatically"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bấm nút bên dưới để cài hook vào ~/.claude/settings.json. Việc này chỉ thêm một vài mục hook — không đụng tới cài đặt khác của bạn."
-          }
-        }
-      }
-    },
-    "Connected": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connected"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã kết nối"
-          }
-        }
-      }
-    },
-    "Testing connection…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Testing connection…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đang kiểm tra kết nối…"
-          }
-        }
-      }
-    },
-    "The hook is installed. Press \"Connect Claude Code\" again for the pet to confirm it, or move on to the next step.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The hook is installed. Press \"Connect Claude Code\" again for the pet to confirm it, or move on to the next step."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hook đã cài. Bấm \"Kết nối Claude Code\" một lần nữa để pet tự xác nhận, hoặc qua bước tiếp theo."
-          }
-        }
-      }
-    },
-    "Done! Now let's see the pet react": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Done! Now let's see the pet react"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xong! Giờ thử xem pet phản ứng"
-          }
-        }
-      }
-    },
-    "Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mở Terminal (hoặc IDE tích hợp), chạy \"claude\" để bắt đầu một phiên, rồi gõ thử một lệnh bất kỳ, ví dụ:"
-          }
-        }
-      }
-    },
-    "list the files in the current directory": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "list the files in the current directory"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "liệt kê các file trong thư mục hiện tại"
-          }
-        }
-      }
-    },
-    "The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chú chó trên màn hình sẽ đổi biểu cảm khi Claude Code bắt đầu suy nghĩ, chạy tool, hoặc cần bạn duyệt quyền. Nếu sau vài phút vẫn không thấy gì, mở Cài đặt → tab \"Chẩn đoán\" để kiểm tra."
-          }
-        }
-      }
-    },
-    "Done": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Done"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xong"
-          }
-        }
-      }
-    },
-    "Continue": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tiếp tục"
-          }
-        }
-      }
-    },
-    "Claude requests permission": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude requests permission"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude xin quyền"
-          }
-        }
-      }
-    },
-    "Deny": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deny"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Từ chối"
-          }
-        }
-      }
-    },
-    "Allow": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cho phép"
-          }
-        }
-      }
-    },
-    "Claude asks": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude asks"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude hỏi"
-          }
-        }
-      }
-    },
-    "Submit": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Submit"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gửi"
-          }
-        }
-      }
-    },
-    "Next": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Next"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tiếp"
-          }
-        }
-      }
-    },
-    "Skip (answer in the terminal)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Skip (answer in the terminal)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bỏ qua (trả lời trong terminal)"
-          }
-        }
-      }
-    },
-    "Your answer": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your answer"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Câu trả lời của bạn"
-          }
-        }
-      }
-    },
-    "Other…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Other…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Khác…"
-          }
-        }
-      }
-    },
-    "+%d more ˄": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "+%d more ˄"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "+%d cũ hơn ˄"
-          }
-        }
-      }
-    },
-    "Latest ˅": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Latest ˅"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mới nhất ˅"
-          }
-        }
-      }
-    },
-    "background": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "background"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "chạy nền"
-          }
-        }
-      }
-    },
-    "Status": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Status"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trạng thái"
-          }
-        }
-      }
-    },
-    "Pet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pet"
-          }
-        }
-      }
-    },
-    "Permissions": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Permissions"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quyền"
-          }
-        }
-      }
-    },
-    "Colors": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Colors"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Màu sắc"
-          }
-        }
-      }
-    },
-    "Click-through (mouse passes through the pet)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Click-through (mouse passes through the pet)"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Click-through (chuột xuyên qua pet)"
-          }
-        }
-      }
-    },
-    "Claude Code connection": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude Code connection"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kết nối Claude Code"
-          }
-        }
-      }
-    },
-    "Installed in ~/.claude/settings.json": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Installed in ~/.claude/settings.json"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đã cài vào ~/.claude/settings.json"
-          }
-        }
-      }
-    },
-    "Not connected": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not connected"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chưa kết nối"
-          }
-        }
-      }
-    },
-    "Internal server": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Internal server"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server nội bộ"
-          }
-        }
-      }
-    },
-    "Listening on port %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Listening on port %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đang nghe cổng %@"
-          }
-        }
-      }
-    },
-    "Not running": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not running"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Không chạy"
-          }
-        }
-      }
-    },
-    "Disconnect": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnect"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ngắt kết nối"
-          }
-        }
-      }
-    },
-    "Connect": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kết nối"
-          }
-        }
-      }
-    },
-    "Reopen the guide": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reopen the guide"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mở lại hướng dẫn"
-          }
-        }
-      }
-    },
-    "Claude usage": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Claude usage"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mức sử dụng Claude"
-          }
-        }
-      }
-    },
-    "5-hour window": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "5-hour window"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cửa sổ 5 giờ"
-          }
-        }
-      }
-    },
-    "Week": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Week"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tuần"
-          }
-        }
-      }
-    },
-    "Refresh": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Refresh"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Làm mới"
-          }
-        }
-      }
-    },
-    "Updated %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Updated %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cập nhật %@"
-          }
-        }
-      }
-    },
-    "Version": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Version"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Phiên bản"
-          }
-        }
-      }
-    },
-    "Current": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Current"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đang dùng"
-          }
-        }
-      }
-    },
-    "dev build": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "dev build"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "bản dev"
+            "value": "Tự động kiểm tra định kỳ"
           }
         }
       }
@@ -1921,162 +273,18 @@
         }
       }
     },
-    "A new version downloads, installs, and relaunches automatically.": {
+    "Checking for Claude Code": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "A new version downloads, installs, and relaunches automatically."
+            "value": "Checking for Claude Code"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Có bản mới thì app tự tải, cài và mở lại."
-          }
-        }
-      }
-    },
-    "Check automatically": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check automatically"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tự động kiểm tra định kỳ"
-          }
-        }
-      }
-    },
-    "Dev build — auto-update only works in the /Applications install.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dev build — auto-update only works in the /Applications install."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bản dev — tự cập nhật chỉ hoạt động ở bản cài trong /Applications."
-          }
-        }
-      }
-    },
-    "reset %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "reset %@"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "reset %@"
-          }
-        }
-      }
-    },
-    "no data yet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "no data yet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "chưa có dữ liệu"
-          }
-        }
-      }
-    },
-    "Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically."
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bấm Thay… để chọn ảnh PNG trong suốt hoặc GIF động — app tự tách frame, căn giữa và đặt tốc độ."
-          }
-        }
-      }
-    },
-    "frames": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "frames"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "frame"
-          }
-        }
-      }
-    },
-    "loops": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "loops"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "lặp"
-          }
-        }
-      }
-    },
-    "none yet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "none yet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "chưa có"
-          }
-        }
-      }
-    },
-    "Replace…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Replace…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Thay…"
+            "value": "Kiểm tra Claude Code"
           }
         }
       }
@@ -2097,146 +305,82 @@
         }
       }
     },
-    "Import": {
+    "Claude Code connection": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import"
+            "value": "Claude Code connection"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nhập"
+            "value": "Kết nối Claude Code"
           }
         }
       }
     },
-    "Imported %d frames for %@ (GIF, %@ fps).": {
+    "Claude Code install guide (claude.com/claude-code)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported %d frames for %@ (GIF, %@ fps)."
+            "value": "Claude Code install guide (claude.com/claude-code)"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Đã nhập %d frame cho %@ (GIF, %@ fps)."
+            "value": "Hướng dẫn cài Claude Code (claude.com/claude-code)"
           }
         }
       }
     },
-    "Imported %d frames for %@.": {
+    "Claude Code wasn't found on this Mac (%@ or the claude command). Claude Code is the command-line tool running in Terminal that Desktop Pet watches — it needs to be installed before connecting.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported %d frames for %@."
+            "value": "Claude Code wasn't found on this Mac (%@ or the claude command). Claude Code is the command-line tool running in Terminal that Desktop Pet watches — it needs to be installed before connecting."
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Đã nhập %d frame cho %@."
+            "value": "Chưa tìm thấy Claude Code trên máy này (%@ hoặc lệnh claude). Claude Code là công cụ dòng lệnh chạy trong Terminal mà Desktop Pet theo dõi — cần cài nó trước khi kết nối."
           }
         }
       }
     },
-    "Import error: %@": {
+    "Claude asks": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import error: %@"
+            "value": "Claude asks"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lỗi nhập ảnh: %@"
+            "value": "Claude hỏi"
           }
         }
       }
     },
-    "when idle": {
+    "Claude is thinking": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "when idle"
+            "value": "Claude is thinking"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "khi rảnh"
-          }
-        }
-      }
-    },
-    "tapping the pet": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "tapping the pet"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "bấm vào pet"
-          }
-        }
-      }
-    },
-    "thinking": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "thinking"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "đang suy nghĩ"
-          }
-        }
-      }
-    },
-    "asking for permission": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "asking for permission"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "đang xin quyền"
-          }
-        }
-      }
-    },
-    "a tool just failed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "a tool just failed"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "một tool vừa thất bại"
+            "value": "Claude đang suy nghĩ"
           }
         }
       }
@@ -2257,178 +401,114 @@
         }
       }
     },
-    "The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again.": {
+    "Claude needs attention": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again."
+            "value": "Claude needs attention"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pet hiển thị hộp thoại đúng những lúc Claude Code định hỏi bạn, và không thêm gì cả. Bấm Cho phép hoặc Từ chối trên pet là xong — terminal sẽ không hỏi lại."
+            "value": "Claude cần chú ý"
           }
         }
       }
     },
-    "Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically.": {
+    "Claude replied": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically."
+            "value": "Claude replied"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Muốn hỏi nhiều hay ít hơn, đổi chế độ quyền ngay trong Claude Code (phím Shift+Tab, hoặc cờ --permission-mode). Pet tự động theo."
+            "value": "Claude đã trả lời"
           }
         }
       }
     },
-    "Approving permissions on the pet": {
+    "Claude requests permission": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Approving permissions on the pet"
+            "value": "Claude requests permission"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Duyệt quyền trên pet"
+            "value": "Claude xin quyền"
           }
         }
       }
     },
-    "If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck.": {
+    "Claude usage": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck."
+            "value": "Claude usage"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nếu pet đang tắt hoặc bận, Claude Code hỏi ở terminal như bình thường — không có gì bị kẹt."
+            "value": "Mức sử dụng Claude"
           }
         }
       }
     },
-    "Running-task border": {
+    "Claude usage (5-hour / weekly)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running-task border"
+            "value": "Claude usage (5-hour / weekly)"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Border tác vụ đang chạy"
+            "value": "Mức sử dụng Claude (5 giờ / tuần)"
           }
         }
       }
     },
-    "Thinking": {
+    "Click-through": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Thinking"
+            "value": "Click-through"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suy nghĩ"
+            "value": "Chuột xuyên qua pet"
           }
         }
       }
     },
-    "Running tool": {
+    "Click-through (mouse passes through the pet)": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Running tool"
+            "value": "Click-through (mouse passes through the pet)"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chạy tool"
-          }
-        }
-      }
-    },
-    "Attention": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Attention"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chú ý"
-          }
-        }
-      }
-    },
-    "Session": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Session"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Phiên"
-          }
-        }
-      }
-    },
-    "Background": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Background"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chạy nền"
-          }
-        }
-      }
-    },
-    "Completed-task gradient": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Completed-task gradient"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gradient tác vụ hoàn thành"
+            "value": "Click-through (chuột xuyên qua pet)"
           }
         }
       }
@@ -2481,6 +561,902 @@
         }
       }
     },
+    "Colors": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Colors"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Màu sắc"
+          }
+        }
+      }
+    },
+    "Completed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hoàn thành"
+          }
+        }
+      }
+    },
+    "Completed-task gradient": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed-task gradient"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gradient tác vụ hoàn thành"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối"
+          }
+        }
+      }
+    },
+    "Connect Claude Code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Claude Code"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kết nối Claude Code"
+          }
+        }
+      }
+    },
+    "Connected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã kết nối"
+          }
+        }
+      }
+    },
+    "Connected Claude Code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected Claude Code"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã kết nối Claude Code"
+          }
+        }
+      }
+    },
+    "Connection error: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection error: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lỗi kết nối: %@"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiếp tục"
+          }
+        }
+      }
+    },
+    "Could not run pet-hook.sh: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not run pet-hook.sh: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không chạy được pet-hook.sh: %@"
+          }
+        }
+      }
+    },
+    "Could not start the internal server: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not start the internal server: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không khởi động được server nội bộ: %@"
+          }
+        }
+      }
+    },
+    "Couldn't find a Claude Code login token": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't find a Claude Code login token"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không tìm thấy token đăng nhập Claude Code"
+          }
+        }
+      }
+    },
+    "Couldn't read image: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't read image: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không đọc được ảnh: %@"
+          }
+        }
+      }
+    },
+    "Couldn't read the response data": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't read the response data"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dữ liệu không đọc được"
+          }
+        }
+      }
+    },
+    "Current": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang dùng"
+          }
+        }
+      }
+    },
+    "Deny": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deny"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Từ chối"
+          }
+        }
+      }
+    },
+    "Desktop Pet Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop Pet Settings"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cài đặt Desktop Pet"
+          }
+        }
+      }
+    },
+    "Desktop Pet is a desktop dog that reflects what Claude Code is doing — thinking, running a tool, waiting on a permission decision, or just finished. Connecting only takes about a minute.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop Pet is a desktop dog that reflects what Claude Code is doing — thinking, running a tool, waiting on a permission decision, or just finished. Connecting only takes about a minute."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desktop Pet là một chú chó để bàn phản ánh trạng thái làm việc của Claude Code — đang suy nghĩ, đang chạy tool, đang chờ bạn quyết định quyền, hay vừa xong việc. Chỉ mất khoảng 1 phút để kết nối."
+          }
+        }
+      }
+    },
+    "Dev build — auto-update only works in the /Applications install.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dev build — auto-update only works in the /Applications install."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bản dev — tự cập nhật chỉ hoạt động ở bản cài trong /Applications."
+          }
+        }
+      }
+    },
+    "Disconnect": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngắt kết nối"
+          }
+        }
+      }
+    },
+    "Disconnect Claude Code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect Claude Code"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngắt kết nối Claude Code"
+          }
+        }
+      }
+    },
+    "Disconnected Claude Code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnected Claude Code"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã ngắt kết nối Claude Code"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xong"
+          }
+        }
+      }
+    },
+    "Done! Now let's see the pet react": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done! Now let's see the pet react"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Xong! Giờ thử xem pet phản ứng"
+          }
+        }
+      }
+    },
+    "Drag Desktop Pet into the Applications folder before connecting, so the install and hook aren't lost when you eject the DMG or restart your Mac.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag Desktop Pet into the Applications folder before connecting, so the install and hook aren't lost when you eject the DMG or restart your Mac."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nên kéo Desktop Pet vào thư mục Applications trước khi kết nối, để cài đặt và hook không bị mất khi bạn đóng ổ đĩa DMG hoặc khởi động lại máy."
+          }
+        }
+      }
+    },
+    "Drag me anywhere": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Drag me anywhere"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kéo tôi đi bất kỳ đâu"
+          }
+        }
+      }
+    },
+    "Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mỗi thư mục là một \"state\" (trạng thái). Thả các frame PNG trong suốt vào thư mục tương ứng, đặt tên theo thứ tự phát, ví dụ:"
+          }
+        }
+      }
+    },
+    "Editing %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sửa %@"
+          }
+        }
+      }
+    },
+    "Editing file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing file"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉnh sửa tệp"
+          }
+        }
+      }
+    },
+    "Found Claude Code on this Mac. You can move on to the next step.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Found Claude Code on this Mac. You can move on to the next step."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã tìm thấy Claude Code trên máy này. Có thể qua bước tiếp theo."
+          }
+        }
+      }
+    },
+    "Hide pet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide pet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ẩn pet"
+          }
+        }
+      }
+    },
+    "If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nếu pet đang tắt hoặc bận, Claude Code hỏi ở terminal như bình thường — không có gì bị kẹt."
+          }
+        }
+      }
+    },
+    "Import": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhập"
+          }
+        }
+      }
+    },
+    "Import error: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import error: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lỗi nhập ảnh: %@"
+          }
+        }
+      }
+    },
+    "Imported %d frames for %@ (GIF, %@ fps).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported %d frames for %@ (GIF, %@ fps)."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã nhập %d frame cho %@ (GIF, %@ fps)."
+          }
+        }
+      }
+    },
+    "Imported %d frames for %@.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported %d frames for %@."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã nhập %d frame cho %@."
+          }
+        }
+      }
+    },
+    "Installed in ~/.claude/settings.json": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed in ~/.claude/settings.json"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã cài vào ~/.claude/settings.json"
+          }
+        }
+      }
+    },
+    "Internal server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Internal server"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server nội bộ"
+          }
+        }
+      }
+    },
+    "Latest ˅": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latest ˅"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mới nhất ˅"
+          }
+        }
+      }
+    },
+    "Listening on port %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listening on port %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang nghe cổng %@"
+          }
+        }
+      }
+    },
+    "Loaded %d animations": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loaded %d animations"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã tải %d animation"
+          }
+        }
+      }
+    },
+    "Looking up the web": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Looking up the web"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tra cứu web"
+          }
+        }
+      }
+    },
+    "Next": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tiếp"
+          }
+        }
+      }
+    },
+    "No frames to import": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No frames to import"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không có frame nào để nhập"
+          }
+        }
+      }
+    },
+    "No sprites yet — using the default dog": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No sprites yet — using the default dog"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa có ảnh — đang dùng chó vẽ sẵn"
+          }
+        }
+      }
+    },
+    "Not connected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa kết nối"
+          }
+        }
+      }
+    },
+    "Not running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not running"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không chạy"
+          }
+        }
+      }
+    },
+    "Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở Terminal (hoặc IDE tích hợp), chạy \"claude\" để bắt đầu một phiên, rồi gõ thử một lệnh bất kỳ, ví dụ:"
+          }
+        }
+      }
+    },
+    "Open sprites folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open sprites folder"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở thư mục sprites"
+          }
+        }
+      }
+    },
+    "Optional: add a clip.json file inside a state folder to adjust speed/looping:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional: add a clip.json file inside a state folder to adjust speed/looping:"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tùy chọn: thêm file clip.json trong thư mục state để chỉnh tốc độ/lặp:"
+          }
+        }
+      }
+    },
+    "Other…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khác…"
+          }
+        }
+      }
+    },
+    "Permissions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quyền"
+          }
+        }
+      }
+    },
+    "Pet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet"
+          }
+        }
+      }
+    },
+    "Pet isn't receiving signals from Claude Code — try restarting the app, or press Connect in Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet isn't receiving signals from Claude Code — try restarting the app, or press Connect in Settings"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet không nhận được tín hiệu từ Claude Code — thử tắt mở lại app, hoặc bấm Kết nối trong Cài đặt"
+          }
+        }
+      }
+    },
+    "Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bấm Thay… để chọn ảnh PNG trong suốt hoặc GIF động — app tự tách frame, căn giữa và đặt tốc độ."
+          }
+        }
+      }
+    },
+    "Press the button below to install the hook into ~/.claude/settings.json. This only adds a few hook entries — it doesn't touch any of your other settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press the button below to install the hook into ~/.claude/settings.json. This only adds a few hook entries — it doesn't touch any of your other settings."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bấm nút bên dưới để cài hook vào ~/.claude/settings.json. Việc này chỉ thêm một vài mục hook — không đụng tới cài đặt khác của bạn."
+          }
+        }
+      }
+    },
     "Preview": {
       "localizations": {
         "en": {
@@ -2493,6 +1469,112 @@
           "stringUnit": {
             "state": "translated",
             "value": "Xem trước"
+          }
+        }
+      }
+    },
+    "Rate limited — retrying automatically": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bị giới hạn tần suất — sẽ tự thử lại"
+          }
+        }
+      }
+    },
+    "Reading %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đọc %@"
+          }
+        }
+      }
+    },
+    "Reading file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading file"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đọc tệp"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Làm mới"
+          }
+        }
+      }
+    },
+    "Reload sprites": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload sprites"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tải lại sprites"
+          }
+        }
+      }
+    },
+    "Reopen the guide": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reopen the guide"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở lại hướng dẫn"
+          }
+        }
+      }
+    },
+    "Replace…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thay…"
           }
         }
       }
@@ -2513,18 +1595,946 @@
         }
       }
     },
-    "Claude usage (5-hour / weekly)": {
+    "Running command": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Claude usage (5-hour / weekly)"
+            "value": "Running command"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mức sử dụng Claude (5 giờ / tuần)"
+            "value": "Chạy lệnh"
+          }
+        }
+      }
+    },
+    "Running tool": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running tool"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chạy tool"
+          }
+        }
+      }
+    },
+    "Running-task border": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running-task border"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Border tác vụ đang chạy"
+          }
+        }
+      }
+    },
+    "Searching": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tìm kiếm"
+          }
+        }
+      }
+    },
+    "Server returned %d": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server returned %d"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máy chủ trả về %d"
+          }
+        }
+      }
+    },
+    "Session": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên"
+          }
+        }
+      }
+    },
+    "Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cài đặt…"
+          }
+        }
+      }
+    },
+    "Show pet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show pet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiển thị pet"
+          }
+        }
+      }
+    },
+    "Skip": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bỏ qua"
+          }
+        }
+      }
+    },
+    "Skip (answer in the terminal)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skip (answer in the terminal)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bỏ qua (trả lời trong terminal)"
+          }
+        }
+      }
+    },
+    "States": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "States"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Các state"
+          }
+        }
+      }
+    },
+    "Status": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trạng thái"
+          }
+        }
+      }
+    },
+    "Subagent %@ finished": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent %@ finished"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent %@ hoàn thành"
+          }
+        }
+      }
+    },
+    "Subagent finished": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent finished"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent hoàn thành"
+          }
+        }
+      }
+    },
+    "Subagent running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent running"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent đang chạy"
+          }
+        }
+      }
+    },
+    "Subagent: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent: %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagent: %@"
+          }
+        }
+      }
+    },
+    "Submit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submit"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gửi"
+          }
+        }
+      }
+    },
+    "Success — the pet received the event via pet-hook.sh.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Success — the pet received the event via pet-hook.sh."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thành công — pet đã nhận event qua pet-hook.sh."
+          }
+        }
+      }
+    },
+    "Testing connection…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Testing connection…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang kiểm tra kết nối…"
+          }
+        }
+      }
+    },
+    "Testing pet-hook.sh connection": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Testing pet-hook.sh connection"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kiểm tra kết nối pet-hook.sh"
+          }
+        }
+      }
+    },
+    "The app is running from a temporary location (not yet in /Applications)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app is running from a temporary location (not yet in /Applications)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App đang chạy từ nơi tạm (chưa ở /Applications)"
+          }
+        }
+      }
+    },
+    "The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chú chó trên màn hình sẽ đổi biểu cảm khi Claude Code bắt đầu suy nghĩ, chạy tool, hoặc cần bạn duyệt quyền. Nếu sau vài phút vẫn không thấy gì, mở Cài đặt → tab \"Chẩn đoán\" để kiểm tra."
+          }
+        }
+      }
+    },
+    "The hook is installed. Press \"Connect Claude Code\" again for the pet to confirm it, or move on to the next step.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The hook is installed. Press \"Connect Claude Code\" again for the pet to confirm it, or move on to the next step."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hook đã cài. Bấm \"Kết nối Claude Code\" một lần nữa để pet tự xác nhận, hoặc qua bước tiếp theo."
+          }
+        }
+      }
+    },
+    "The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet hiển thị hộp thoại đúng những lúc Claude Code định hỏi bạn, và không thêm gì cả. Bấm Cho phép hoặc Từ chối trên pet là xong — terminal sẽ không hỏi lại."
+          }
+        }
+      }
+    },
+    "The script ran, but the pet didn't receive the event (check that hooks are installed, the server is running, or events.log).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The script ran, but the pet didn't receive the event (check that hooks are installed, the server is running, or events.log)."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Script chạy xong nhưng pet không nhận được event (kiểm tra hooks đã cài, server đang chạy, hoặc events.log)."
+          }
+        }
+      }
+    },
+    "Thinking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suy nghĩ"
+          }
+        }
+      }
+    },
+    "Thinking…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang suy nghĩ…"
+          }
+        }
+      }
+    },
+    "Token expired — open Claude Code to refresh it": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token expired — open Claude Code to refresh it"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token hết hạn — mở Claude Code để tự làm mới"
+          }
+        }
+      }
+    },
+    "Updated %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updated %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cập nhật %@"
+          }
+        }
+      }
+    },
+    "Updating plan": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Updating plan"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cập nhật kế hoạch"
+          }
+        }
+      }
+    },
+    "Version": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên bản"
+          }
+        }
+      }
+    },
+    "Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muốn hỏi nhiều hay ít hơn, đổi chế độ quyền ngay trong Claude Code (phím Shift+Tab, hoặc cờ --permission-mode). Pet tự động theo."
+          }
+        }
+      }
+    },
+    "Week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Week"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tuần"
+          }
+        }
+      }
+    },
+    "Welcome to Desktop Pet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Desktop Pet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chào mừng đến với Desktop Pet"
+          }
+        }
+      }
+    },
+    "Your answer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your answer"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Câu trả lời của bạn"
+          }
+        }
+      }
+    },
+    "a tool just failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "a tool just failed"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "một tool vừa thất bại"
+          }
+        }
+      }
+    },
+    "a tool just failed (shows briefly, then clears itself)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "a tool just failed (shows briefly, then clears itself)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "một tool vừa thất bại (hiện một lúc ngắn rồi tự tắt)"
+          }
+        }
+      }
+    },
+    "asking for permission": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "asking for permission"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "đang xin quyền"
+          }
+        }
+      }
+    },
+    "asking for permission (needs attention)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "asking for permission (needs attention)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "đang xin quyền (cần chú ý)"
+          }
+        }
+      }
+    },
+    "background": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "background"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "chạy nền"
+          }
+        }
+      }
+    },
+    "dev build": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dev build"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bản dev"
+          }
+        }
+      }
+    },
+    "frames": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "frames"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "frame"
+          }
+        }
+      }
+    },
+    "just replied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "just replied"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vừa trả lời"
+          }
+        }
+      }
+    },
+    "list the files in the current directory": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "list the files in the current directory"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "liệt kê các file trong thư mục hiện tại"
+          }
+        }
+      }
+    },
+    "loops": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "loops"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lặp"
+          }
+        }
+      }
+    },
+    "no data yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "no data yet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "chưa có dữ liệu"
+          }
+        }
+      }
+    },
+    "none yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "none yet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "chưa có"
+          }
+        }
+      }
+    },
+    "pet-hook.sh isn't installed yet — press \"Reinstall hook\" first.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pet-hook.sh isn't installed yet — press \"Reinstall hook\" first."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa cài pet-hook.sh — bấm \"Cài lại hook\" trước."
+          }
+        }
+      }
+    },
+    "reaction when Claude just finished cleanly (plays once; falls back to \"talking\" if you have no frames for it)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reaction when Claude just finished cleanly (plays once; falls back to \"talking\" if you have no frames for it)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "phản ứng khi Claude vừa trả lời xong sạch sẽ (chạy 1 lần, nếu chưa có ảnh thì pet chỉ dùng \"talking\" như bình thường)"
+          }
+        }
+      }
+    },
+    "reaction when the pet is tapped (plays once)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reaction when the pet is tapped (plays once)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "phản ứng khi bấm vào pet (chạy 1 lần)"
+          }
+        }
+      }
+    },
+    "recovered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recovered"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "khôi phục"
+          }
+        }
+      }
+    },
+    "reset %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reset %@"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reset %@"
+          }
+        }
+      }
+    },
+    "running": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "running"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "đang chạy"
+          }
+        }
+      }
+    },
+    "running a tool": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "running a tool"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "đang chạy tool"
+          }
+        }
+      }
+    },
+    "session ended": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "session ended"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "kết thúc phiên"
+          }
+        }
+      }
+    },
+    "tapping the pet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tapping the pet"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bấm vào pet"
+          }
+        }
+      }
+    },
+    "thinking": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "thinking"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "đang suy nghĩ"
+          }
+        }
+      }
+    },
+    "when idle": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "when idle"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "khi rảnh"
+          }
+        }
+      }
+    },
+    "when idle (should loop)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "when idle (should loop)"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "khi rảnh (nên loop)"
           }
         }
       }

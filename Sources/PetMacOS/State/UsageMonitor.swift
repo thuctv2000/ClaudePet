@@ -10,7 +10,7 @@ import Observation
 @MainActor
 @Observable
 final class UsageMonitor {
-    struct Window: Equatable {
+    struct Window: Equatable, Codable {
         let utilization: Double   // 0–100
         let resetsAt: Date?
     }
@@ -24,8 +24,19 @@ final class UsageMonitor {
     private let pollInterval: TimeInterval = 180
     private var pollTask: Task<Void, Never>?
 
+    /// Snapshot persisted across launches, so the badge shows the last known
+    /// numbers right away instead of staying blank until the first successful
+    /// poll (the endpoint 429s easily — e.g. right after several restarts).
+    private struct CachedUsage: Codable {
+        let fiveHour: Window?
+        let sevenDay: Window?
+        let at: Date
+    }
+    private static let cacheKey = "usage.lastSnapshot"
+
     func start() {
         guard pollTask == nil else { return }
+        loadCache()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refresh()
@@ -55,9 +66,15 @@ final class UsageMonitor {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return }
             guard http.statusCode == 200 else {
-                lastError = http.statusCode == 401
-                    ? tr("Token expired — open Claude Code to refresh it")
-                    : String(format: tr("Server returned %d"), http.statusCode)
+                switch http.statusCode {
+                case 401:
+                    lastError = tr("Token expired — open Claude Code to refresh it")
+                case 429:
+                    // Keep showing the previous numbers; the next poll retries.
+                    lastError = tr("Rate limited — retrying automatically")
+                default:
+                    lastError = String(format: tr("Server returned %d"), http.statusCode)
+                }
                 return
             }
 
@@ -69,8 +86,30 @@ final class UsageMonitor {
             sevenDay = Self.window(from: object["seven_day"])
             lastUpdated = Date()
             lastError = nil
+            saveCache()
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Cross-launch snapshot
+
+    private func loadCache() {
+        guard fiveHour == nil, sevenDay == nil,
+              let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+              let cached = try? JSONDecoder().decode(CachedUsage.self, from: data)
+        else { return }
+        // Usage older than a day says nothing useful — start blank instead.
+        guard Date().timeIntervalSince(cached.at) < 24 * 60 * 60 else { return }
+        fiveHour = cached.fiveHour
+        sevenDay = cached.sevenDay
+        lastUpdated = cached.at
+    }
+
+    private func saveCache() {
+        let snapshot = CachedUsage(fiveHour: fiveHour, sevenDay: sevenDay, at: Date())
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
         }
     }
 
