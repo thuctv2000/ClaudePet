@@ -1473,12 +1473,12 @@
         }
       }
     },
-    "Rate limited — retrying automatically": {
+    "Rate limited — retrying in %d min": {
       "localizations": {
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Bị giới hạn tần suất — sẽ tự thử lại"
+            "value": "Bị giới hạn tần suất — thử lại sau %d phút"
           }
         }
       }

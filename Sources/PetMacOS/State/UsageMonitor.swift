@@ -20,9 +20,14 @@ final class UsageMonitor {
     private(set) var lastUpdated: Date?
     private(set) var lastError: String?
 
-    /// Endpoint is aggressively rate-limited; poll no faster than ~3 minutes.
-    private let pollInterval: TimeInterval = 180
+    /// Endpoint enforces an HOURLY quota and answers a breach with 429 +
+    /// Retry-After 3600 — a 10-minute cadence stays far under it while the
+    /// numbers are still fresh enough for a glanceable badge.
+    private let pollInterval: TimeInterval = 600
     private var pollTask: Task<Void, Never>?
+    /// Set from a 429's Retry-After: no request leaves before this instant,
+    /// or the continued polling would keep re-tripping the hourly ban.
+    private var pausedUntil: Date?
 
     /// Snapshot persisted across launches, so the badge shows the last known
     /// numbers right away instead of staying blank until the first successful
@@ -52,6 +57,14 @@ final class UsageMonitor {
 
     /// One fetch; keeps the previous values on any failure.
     func refresh() async {
+        if let until = pausedUntil {
+            guard Date() >= until else {
+                let minutes = max(1, Int(until.timeIntervalSinceNow / 60))
+                lastError = String(format: tr("Rate limited — retrying in %d min"), minutes)
+                return
+            }
+            pausedUntil = nil
+        }
         guard let token = await Task.detached(operation: { Self.readAccessToken() }).value else {
             lastError = tr("Couldn't find a Claude Code login token")
             return
@@ -70,8 +83,14 @@ final class UsageMonitor {
                 case 401:
                     lastError = tr("Token expired — open Claude Code to refresh it")
                 case 429:
-                    // Keep showing the previous numbers; the next poll retries.
-                    lastError = tr("Rate limited — retrying automatically")
+                    // Honour Retry-After (observed: 3600s) and go quiet until
+                    // then; keep showing the previous numbers meanwhile.
+                    let retryAfter = Double(http.value(forHTTPHeaderField: "Retry-After") ?? "")
+                        ?? 3600
+                    let wait = min(max(retryAfter, 60), 2 * 3600)
+                    pausedUntil = Date().addingTimeInterval(wait)
+                    lastError = String(
+                        format: tr("Rate limited — retrying in %d min"), Int(wait / 60))
                 default:
                     lastError = String(format: tr("Server returned %d"), http.statusCode)
                 }
