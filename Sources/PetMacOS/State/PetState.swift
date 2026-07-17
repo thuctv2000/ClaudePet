@@ -1162,7 +1162,7 @@ final class PetState {
                 ?? tr("Subagent finished")
             // Fall back to the launch card's purpose when the stop event carries
             // no final message, so the notice still says what the work was.
-            let detail = event.lastAssistantMessage.map { truncate($0, limit: 800) }
+            let detail = event.lastAssistantMessage.map { truncate($0, limit: Self.completedDetailLimit) }
                 ?? card?.title
             pushCompleted(TaskItem(
                 title: title,
@@ -1225,7 +1225,7 @@ final class PetState {
         func push(_ text: String?, context: String?) {
             pushCompleted(TaskItem(
                 title: tr("Completed"),
-                detail: truncate(text ?? tr("Claude replied"), limit: 800),
+                detail: truncate(text ?? tr("Claude replied"), limit: Self.completedDetailLimit),
                 kind: .done,
                 dedupeKey: key,
                 context: context,
@@ -1400,6 +1400,11 @@ final class PetState {
         onInteractiveNeeded?(false)
         updatePassthrough()
     }
+
+    /// Cap for a completed notice's message. The card shows the full stored
+    /// text when expanded, so this only guards against pathological transcripts
+    /// (a plain reply never gets near it).
+    private static let completedDetailLimit = 4000
 
     private func truncate(_ text: String, limit: Int = 200) -> String {
         text.count > limit ? String(text.prefix(limit)) + "…" : text
