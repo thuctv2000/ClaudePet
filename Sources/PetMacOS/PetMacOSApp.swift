@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @main
@@ -28,16 +29,6 @@ struct PetMacOSApp: App {
                         appDelegate.connectClaudeCode()
                     }
                 }
-
-                Toggle("Chỉ hỏi tool ghi/chạy", isOn: Binding(
-                    get: { appDelegate.writeToolsOnly },
-                    set: { appDelegate.setWriteToolsOnly($0) }
-                ))
-
-                Toggle("Tạm dừng duyệt quyền", isOn: Binding(
-                    get: { appDelegate.pauseApprovals },
-                    set: { appDelegate.pauseApprovals = $0 }
-                ))
 
                 Divider()
 
@@ -89,12 +80,16 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     let sprites = SpriteLibrary()
     let settings = SettingsStore()
     let usage = UsageMonitor()
+    /// Sparkle auto-updater (feed + EdDSA key in Info.plist). nil under
+    /// `swift run`: a bare executable has no bundle to update, and Sparkle
+    /// would otherwise assert on the missing Info.plist keys.
+    let updaterController: SPUStandardUpdaterController? = {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return nil }
+        return SPUStandardUpdaterController(
+            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    }()
+    private let focusMonitor = SessionFocusMonitor()
     private var hookServer: HookServer?
-
-    private(set) var writeToolsOnly = false
-    var pauseApprovals = false {
-        didSet { petState.autoAllow = pauseApprovals }
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -109,6 +104,13 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         let needsOnboarding = Self.shouldShowOnboarding()
         startHookServer()
         usage.start()
+        // Auto-retire a done card once the user opens that conversation in
+        // the Claude Code desktop app.
+        focusMonitor.onFocus = { [petState] sessionId, date in
+            petState.markConversationViewed(sessionId: sessionId, at: date)
+        }
+        focusMonitor.start()
+        startConnectionSelfHealing()
         if needsOnboarding {
             openOnboardingWindow()
         }
@@ -189,7 +191,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
 
     func connectClaudeCode() {
         do {
-            try HookInstaller.install(writeToolsOnly: writeToolsOnly)
+            try HookInstaller.install()
             petState.notify("Đã kết nối Claude Code", mood: .talking)
         } catch {
             let message = "Lỗi kết nối: \(error.localizedDescription)"
@@ -205,9 +207,50 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         refreshConnectionStatus()
     }
 
-    // MARK: - Diagnostics tab
+    // MARK: - Connection self-healing
 
-    /// Result of the last "Kiểm tra kết nối" test run from the Diagnostics tab.
+    /// There is no diagnostics UI: the app watches its own connection and
+    /// repairs it. Every few minutes, if hooks are installed but no event has
+    /// arrived for a long while, it silently re-installs the hook script
+    /// (idempotent) and runs the real end-to-end test below. Only when even
+    /// that fails does the user hear about it — as one plain pet card, not a
+    /// wall of ports and log paths.
+    private var healTimer: Timer?
+    private var lastHealAttemptAt: Date?
+    private static let healCheckInterval: TimeInterval = 180
+    private static let healRetryMinInterval: TimeInterval = 1800
+
+    private func startConnectionSelfHealing() {
+        guard healTimer == nil else { return }
+        let timer = Timer(timeInterval: Self.healCheckInterval, repeats: true) { _ in
+            Task { @MainActor [weak self] in self?.selfHealTick() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        healTimer = timer
+    }
+
+    private func selfHealTick() {
+        guard isConnected, serverPort != nil, !diagnosticTestRunning,
+              petState.isConnectionStale(hooksInstalled: true) else { return }
+        // Staleness usually just means the user isn't talking to Claude; the
+        // test settles it. Don't hammer: at most one attempt per half hour.
+        if let last = lastHealAttemptAt,
+           Date().timeIntervalSince(last) < Self.healRetryMinInterval { return }
+        lastHealAttemptAt = Date()
+        try? HookInstaller.install()   // silent refresh of script + entries
+        refreshConnectionStatus()
+        testHookConnection()
+        // The test flips diagnosticTestResult when its round-trip finishes.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, let result = self.diagnosticTestResult,
+                  !result.success, result.at >= self.lastHealAttemptAt! else { return }
+            self.petState.notify(
+                "Pet không nhận được tín hiệu từ Claude Code — thử tắt mở lại app, hoặc bấm Kết nối trong Cài đặt")
+        }
+    }
+
+    /// Result of the last hook connectivity test (also used by self-healing).
     struct DiagnosticTestResult {
         let success: Bool
         let message: String
@@ -279,11 +322,6 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-    }
-
-    func setWriteToolsOnly(_ enabled: Bool) {
-        writeToolsOnly = enabled
-        if isConnected { connectClaudeCode() }  // reinstall with new matcher
     }
 
     func togglePet() {

@@ -17,9 +17,6 @@ struct PendingAsk: Identifiable, Equatable {
     let id: String
     let toolName: String
     let summary: String?
-    /// When the request is for launching a subagent (Task/Agent tool), the card
-    /// to show as a running subagent once the user allows it.
-    let subagentCard: TaskItem?
     /// The `session_id` this ask came from, used to route its mood back to the
     /// right per-session bucket on resolve/cancel (see `PetState.sessions`).
     let sessionId: String?
@@ -28,12 +25,11 @@ struct PendingAsk: Identifiable, Equatable {
     /// conversation they're approving when several are running at once.
     let conversationName: String?
 
-    init(id: String, toolName: String, summary: String?, subagentCard: TaskItem? = nil,
+    init(id: String, toolName: String, summary: String?,
          sessionId: String? = nil, conversationName: String? = nil) {
         self.id = id
         self.toolName = toolName
         self.summary = summary
-        self.subagentCard = subagentCard
         self.sessionId = sessionId
         self.conversationName = conversationName
     }
@@ -91,9 +87,10 @@ struct TaskItem: Identifiable, Equatable {
     /// the completion signal.
     let transcriptPath: String?
     /// Present only for subagent cards: the `session_id` the launch (PreToolUse
-    /// Task/Agent, or an allowed `/ask`) came from. Used to reconcile a
-    /// not-yet-identified subagent card with a later `SubagentStart` event that
-    /// carries the real `agent_id` -- see `PetState.handleSubagentStart`.
+    /// Task/Agent) came from. Used to reconcile a not-yet-identified subagent
+    /// card with a later `SubagentStart` event that carries the real `agent_id`
+    /// -- see `PetState.handleSubagentStart` -- or to retire it if the launch is
+    /// denied (`PetState.resolve`).
     let sessionId: String?
     /// Present only for subagent cards once claimed by a `SubagentStart` event:
     /// the `agent_id` used to retire the *correct* card on `SubagentStop`,
@@ -180,9 +177,6 @@ final class PetState {
     /// Completed notices, newest first. These never auto-hide; the user closes them.
     private(set) var completedNotices: [TaskItem] = []
 
-    /// When true, `/ask` requests are auto-approved without showing a dialog.
-    var autoAllow = false
-
     /// Timestamp of the last hook event received on any route (`/event`,
     /// `/ask`, `/question`). Used by the Diagnostics tab to show "last seen"
     /// and to detect a silently broken hook pipeline (`pet-hook.sh` always
@@ -249,6 +243,12 @@ final class PetState {
     /// outright on `SessionEnd`.
     private var sessions: [String: SessionActivity] = [:]
     private static let noSessionKey = "_no-session_"
+
+    /// Sessions whose card the user closed (header ✕) or retired by viewing
+    /// the conversation in the Claude Code desktop app. The card stays hidden
+    /// until a hook event newer than the dismissal arrives (`setMood` clears
+    /// the entry on every new event, reviving the card with fresh items).
+    private var dismissedSessions: [String: Date] = [:]
 
     /// Display metadata remembered per session key (resolved conversation
     /// name + "#tag" fallback), captured from every event that carries a
@@ -352,6 +352,8 @@ final class PetState {
             if !hasItems, mood == .idle || mood == .sleep { continue }
             let newestItemDate = (running + completed + subs + bgs).map(\.startedAt).max()
             let lastEventAt = live?.lastEventAt ?? newestItemDate ?? .distantPast
+            // Dismissed and quiet since: stay hidden until a newer event.
+            if let dismissedAt = dismissedSessions[key], lastEventAt <= dismissedAt { continue }
             result.append(SessionSummary(
                 id: key == Self.noSessionKey ? "" : key,
                 name: displayName(forKey: key),
@@ -449,6 +451,8 @@ final class PetState {
         activity.decayTask = nil
         activity.mood = newMood
         activity.lastEventAt = Date()
+        // New activity revives a dismissed card.
+        dismissedSessions.removeValue(forKey: key)
         switch newMood {
         case .talking:
             activity.decayTask = scheduleSessionDecay(key: key, after: talkingDecaySeconds) { .idle }
@@ -612,19 +616,18 @@ final class PetState {
 
     /// Handles a `SubagentStart` event (agent_id + agent_type; Claude Code
     /// v2.1.177+). Reconciliation trade-off: `PreToolUse` for the `Task`/`Agent`
-    /// tool (and the manual "/ask" allow path) already create a subagent card
-    /// with a nice human-written title (from `description`), but *no*
-    /// `agent_id` -- the subagent hasn't been assigned one yet at that point.
-    /// `SubagentStart` arrives moments later with the real `agent_id` but only
-    /// `agent_type` (no free-text description) to title a card with. Rather than
-    /// show two cards for the same subagent, this "claims" the oldest
-    /// still-unclaimed card from the *same session* (FIFO within a session,
-    /// since parallel Task launches from one session can't be told apart any
-    /// other way) by stamping its `agent_id` on it. Only when no such card
-    /// exists (e.g. this Claude Code build sends `SubagentStart` without ever
-    /// having sent a matching `PreToolUse` event to us, or the event arrived
-    /// out of order) does it fall back to creating a fresh card titled from
-    /// `agent_type` alone.
+    /// tool already creates a subagent card with a nice human-written title
+    /// (from `description`), but *no* `agent_id` -- the subagent hasn't been
+    /// assigned one yet at that point. `SubagentStart` arrives moments later
+    /// with the real `agent_id` but only `agent_type` (no free-text
+    /// description) to title a card with. Rather than show two cards for the
+    /// same subagent, this "claims" the oldest still-unclaimed card from the
+    /// *same session* (FIFO within a session, since parallel Task launches from
+    /// one session can't be told apart any other way) by stamping its
+    /// `agent_id` on it. Only when no such card exists (e.g. this Claude Code
+    /// build sends `SubagentStart` without ever having sent a matching
+    /// `PreToolUse` event to us, or the event arrived out of order) does it fall
+    /// back to creating a fresh card titled from `agent_type` alone.
     private func handleSubagentStart(_ event: HookEvent) {
         guard let agentId = event.agentId else { return }
         guard !subagentTasks.contains(where: { $0.agentId == agentId }) else { return } // duplicate event
@@ -922,6 +925,83 @@ final class PetState {
         updatePassthrough()
     }
 
+    /// Dismisses one conversation's entire card (header ✕): every item of the
+    /// session goes away and the session stays hidden until a newer hook
+    /// event revives it. `key` is `SessionSummary.id` ("" = app-notice bucket).
+    func dismissSession(key: String) {
+        let sessionKey = key.isEmpty ? Self.noSessionKey : key
+        dismissedSessions[sessionKey] = Date()
+        func matches(_ item: TaskItem) -> Bool {
+            (item.sessionId ?? Self.noSessionKey) == sessionKey
+        }
+        runningTasks.removeAll(where: matches)
+        completedNotices.removeAll(where: matches)
+        subagentTasks.removeAll(where: matches)
+        backgroundTasks.removeAll(where: matches)
+        updatePassthrough()
+        persistInFlightSubagents()
+    }
+
+    /// Minimum time a completed card stays on screen before a focus event is
+    /// allowed to auto-retire it. Without this grace, the desktop app
+    /// refreshing `lastFocusedAt` the instant the user clicks into a
+    /// just-finished conversation (to read the answer) hid the card within one
+    /// 3s poll of it appearing — the "tasks are hidden" report. 12s is long
+    /// enough that the user always registers the result first.
+    private static let minCardOnScreenSeconds: TimeInterval = 12
+
+    /// Pending grace-delayed auto-dismiss, one per session (see
+    /// `markConversationViewed`). Cancelled/replaced when a newer focus for the
+    /// same session arrives, and re-validated before it actually dismisses.
+    private var pendingViewedDismiss: [String: Task<Void, Never>] = [:]
+
+    /// Whether a focus at `focusDate` should retire this session's card: it is
+    /// done (a completed notice is up, nothing still running) *and* the focus
+    /// happened after the session's last event. The latter guards against the
+    /// desktop app batch-bumping `lastFocusedAt` on its own restart, and means
+    /// the user genuinely looked at the conversation after it finished.
+    private func viewedDismissEligible(sessionId: String, focusDate: Date) -> Bool {
+        func mine(_ items: [TaskItem]) -> [TaskItem] {
+            items.filter { ($0.sessionId ?? Self.noSessionKey) == sessionId }
+        }
+        guard mine(runningTasks).isEmpty, mine(subagentTasks).isEmpty,
+              mine(backgroundTasks).isEmpty else { return false }
+        let completed = mine(completedNotices)
+        guard !completed.isEmpty else { return false }
+        let lastEventAt = sessions[sessionId]?.lastEventAt
+            ?? completed.map(\.startedAt).max() ?? .distantPast
+        return focusDate > lastEventAt
+    }
+
+    /// The user focused this conversation in the Claude Code desktop app.
+    /// Retires the session's card once it is done, but only after the card has
+    /// been on screen at least `minCardOnScreenSeconds`: a focus arriving
+    /// sooner schedules the dismiss for when the grace elapses instead of
+    /// firing immediately, so a completed card is never yanked away the instant
+    /// the user clicks into the conversation to read its result. The delayed
+    /// dismiss re-checks eligibility before acting, so a fresh event that
+    /// revived the card (or new work that started) cancels it.
+    func markConversationViewed(sessionId: String, at focusDate: Date) {
+        guard viewedDismissEligible(sessionId: sessionId, focusDate: focusDate) else { return }
+        func mine(_ items: [TaskItem]) -> [TaskItem] {
+            items.filter { ($0.sessionId ?? Self.noSessionKey) == sessionId }
+        }
+        let shownAt = mine(completedNotices).map(\.startedAt).max() ?? focusDate
+        let remaining = Self.minCardOnScreenSeconds - Date().timeIntervalSince(shownAt)
+        pendingViewedDismiss.removeValue(forKey: sessionId)?.cancel()
+        guard remaining > 0 else {
+            dismissSession(key: sessionId)
+            return
+        }
+        pendingViewedDismiss[sessionId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled, let self else { return }
+            self.pendingViewedDismiss.removeValue(forKey: sessionId)
+            guard self.viewedDismissEligible(sessionId: sessionId, focusDate: focusDate) else { return }
+            self.dismissSession(key: sessionId)
+        }
+    }
+
     /// Enables click passthrough while notices, subagent/background cards or
     /// an ask are on screen (their manual ✕ must be clickable).
     private func updatePassthrough() {
@@ -995,13 +1075,16 @@ final class PetState {
             setMood(.thinking, for: sid)
             pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context, sessionId: sid))
         case "PreToolUse":
-            // Reached here only in auto mode (manual mode blocks via /ask).
+            // Fires in every permission mode now that it is only a card feed;
+            // approval lives on the PermissionRequest hook.
             setMood(.working, for: sid)
             // Tools running inside a subagent are internal noise; the parent
             // subagent card already represents the work.
             if event.isFromSubagent { return }
             if event.toolName == "Task" || event.toolName == "Agent" {
-                // A subagent is starting: keep its card until SubagentStop.
+                // A subagent is starting: keep its card until SubagentStop. This
+                // runs before the permission check, so the launch could still be
+                // denied — `resolve` retires the card in that case.
                 startSubagent(subagentCard(for: event))
             } else {
                 pushRunning(TaskItem(
@@ -1060,9 +1143,9 @@ final class PetState {
             pushStopNotice(for: event)
         case "SubagentStart":
             // New in Claude Code v2.1.177+: carries the real agent_id/agent_type
-            // for a subagent that's about to start. See `handleSubagentStart` for
-            // how this reconciles with the card `PreToolUse`/allowed-`/ask`
-            // already created (title, but no id).
+            // for a subagent that's about to start, and creates its card — see
+            // `handleSubagentStart` for why the card is made here rather than at
+            // `PreToolUse`.
             setMood(.working, for: sid)
             handleSubagentStart(event)
         case "SubagentStop":
@@ -1110,10 +1193,10 @@ final class PetState {
     }
 
     /// Builds the persistent running card for a Task/Agent launch. No
-    /// `agent_id` is available yet at this point (`PreToolUse`/`/ask` precede
-    /// the subagent actually starting) — `sessionId` is stamped instead so a
-    /// later `SubagentStart` can claim this exact card (see
-    /// `handleSubagentStart`).
+    /// `agent_id` is available yet at this point (`PreToolUse` precedes the
+    /// subagent actually starting) — `sessionId` is stamped instead so a later
+    /// `SubagentStart` can claim this exact card (see `handleSubagentStart`),
+    /// or so `resolve` can retire it if the launch is denied.
     private func subagentCard(for event: HookEvent) -> TaskItem {
         TaskItem(
             title: event.intentTitle,
@@ -1162,7 +1245,9 @@ final class PetState {
 
     // MARK: - Permission requests (blocking, FIFO queue)
 
-    /// Presents a permission request, or auto-approves it when paused. When an
+    /// Presents a permission request. It arrives from the `PermissionRequest`
+    /// hook, which fires only when Claude Code was about to raise a dialog
+    /// itself, so anything reaching here genuinely needs a human. When an
     /// ask is already being shown, the new one is appended to `askQueue`
     /// instead of replacing it -- the old single-slot behaviour silently
     /// dropped/overwrote an earlier ask, leaving its hook blocked until the
@@ -1173,21 +1258,11 @@ final class PetState {
     func presentAsk(id: String, event: HookEvent) {
         logEvent(event, route: "ask")
         rememberSessionMeta(for: event)
-        // Launching a subagent? Remember its card so an "allow" can start
-        // tracking it (in manual mode no separate PreToolUse /event arrives).
-        let isSubagent = event.toolName == "Task" || event.toolName == "Agent"
-        let card = isSubagent ? subagentCard(for: event) : nil
-        if autoAllow {
-            if let card { startSubagent(card) }
-            resolver?.resolveAsk(id: id, decision: PetDecision(decision: "allow", text: nil))
-            return
-        }
         setMood(.asking, for: event.sessionId)
         let ask = PendingAsk(
             id: id,
             toolName: event.toolName ?? "Tool",
             summary: event.toolInputSummary.map { truncate($0) },
-            subagentCard: card,
             sessionId: event.sessionId,
             conversationName: conversationLabel(for: event)
         )
@@ -1218,15 +1293,33 @@ final class PetState {
 
     /// Sends the user's decision back to the waiting hook and clears the
     /// dialog, then shows the next queued ask (if any).
-    func resolve(_ decision: String, text: String? = nil) {
+    func resolve(_ decision: String) {
         guard let ask = askQueue.first else { return }
         askQueue.removeFirst()
-        resolver?.resolveAsk(id: ask.id, decision: PetDecision(decision: decision, text: text))
-        if decision == "allow", let card = ask.subagentCard {
-            startSubagent(card)
-        }
+        resolver?.resolveAsk(id: ask.id, decision: PetDecision(decision: decision))
+        if decision == "deny" { retireDeniedCard(for: ask) }
         setMood(.idle, for: ask.sessionId)
         presentNextAskOrDismiss()
+    }
+
+    /// Drops the card `PreToolUse` optimistically created for a launch the user
+    /// then denied. Only subagents need this: an ordinary tool card ages out on
+    /// its own TTL, but a subagent card lives until `SubagentStop` -- which
+    /// never comes for a subagent that was never allowed to run, so the card
+    /// would sit there forever.
+    ///
+    /// Matches the newest unclaimed card of the session (no `agent_id` yet, so
+    /// it never steals one a `SubagentStart` already claimed). Newest, because
+    /// the denied launch is the most recent one; with several parallel Task
+    /// launches from one session there is nothing finer to match on -- the same
+    /// limitation `handleSubagentStart` has going the other way.
+    private func retireDeniedCard(for ask: PendingAsk) {
+        guard ask.toolName == "Task" || ask.toolName == "Agent" else { return }
+        guard let index = subagentTasks.lastIndex(where: {
+            $0.agentId == nil && $0.sessionId == ask.sessionId
+        }) else { return }
+        subagentTasks.remove(at: index)
+        persistInFlightSubagents()
     }
 
     /// Called by the server if a request times out or the connection drops.

@@ -20,6 +20,7 @@
 		96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12CA287C7CACA340ABD108C /* SpriteImporter.swift */; };
 		995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */; };
 		9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6295BC37E9B655A219CE95D /* PetView.swift */; };
+		A9E4767FF89E80977C1A99C3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 9DF01D9569054E85E7FA8877 /* Sparkle */; };
 		AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46A5EB32015467C559F4AC3 /* SessionNames.swift */; };
 		AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */; };
 		B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A49E4A442ADFD5CD45C9582 /* PetState.swift */; };
@@ -27,6 +28,7 @@
 		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
+		F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
 /* End PBXBuildFile section */
 
@@ -53,7 +55,19 @@
 		EBF97BEB4B89A535444ADD4A /* PetConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetConfig.swift; sourceTree = "<group>"; };
 		F00DFE8DF50364DE0240C86F /* HookServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookServer.swift; sourceTree = "<group>"; };
 		F83020535917ED3CD4C35874 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionFocusMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C5833C7DE3D481BF0BC8AE89 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9E4767FF89E80977C1A99C3 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		2AD5AD954394A47B008E8B62 /* Sprites */ = {
@@ -126,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				7A49E4A442ADFD5CD45C9582 /* PetState.swift */,
+				FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */,
 				E46A5EB32015467C559F4AC3 /* SessionNames.swift */,
 				78DE56CC509FC11874D00027 /* SettingsStore.swift */,
 				E46998C00ABB596885D703B7 /* UsageMonitor.swift */,
@@ -166,6 +181,7 @@
 			buildPhases = (
 				AF764BEC39E891952C51A960 /* Sources */,
 				B2B0BE7522204E68E92BF4E3 /* Resources */,
+				C5833C7DE3D481BF0BC8AE89 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -173,6 +189,7 @@
 			);
 			name = PetMacOS;
 			packageProductDependencies = (
+				9DF01D9569054E85E7FA8877 /* Sparkle */,
 			);
 			productName = PetMacOS;
 			productReference = BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */;
@@ -201,6 +218,9 @@
 			);
 			mainGroup = 81291BD9D5096951F5A3326D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				5315A293B593C79D5E4E7BEF /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D2ABD055CCD03283D0A941A9 /* Products */;
 			projectDirPath = "";
@@ -239,6 +259,7 @@
 				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
 				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
+				F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */,
 				AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */,
 				37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
@@ -304,8 +325,6 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -325,6 +344,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Support/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -344,6 +364,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Support/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -401,8 +422,6 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_LSUIElement = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -436,6 +455,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		5315A293B593C79D5E4E7BEF /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9DF01D9569054E85E7FA8877 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5315A293B593C79D5E4E7BEF /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = ABDF8C2B893D12F01DF93439 /* Project object */;
 }

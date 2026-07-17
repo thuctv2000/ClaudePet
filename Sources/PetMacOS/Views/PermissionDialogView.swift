@@ -3,10 +3,8 @@ import SwiftUI
 /// Allow/Deny dialog shown above the dog when Claude Code requests permission.
 struct PermissionDialogView: View {
     let ask: PendingAsk
-    let onAllow: (String) -> Void
-    let onDeny: (String) -> Void
-
-    @State private var note = ""
+    let onAllow: () -> Void
+    let onDeny: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -42,17 +40,13 @@ struct PermissionDialogView: View {
                 )
             }
 
-            TextField("Ghi chú cho Claude (tùy chọn)", text: $note)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
-
             HStack(spacing: 8) {
-                Button { onDeny(note) } label: {
+                Button { onDeny() } label: {
                     Text("Từ chối").frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button { onAllow(note) } label: {
+                Button { onAllow() } label: {
                     Text("Cho phép").frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.defaultAction)

@@ -126,7 +126,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
             guard let self, let continuation = self.pending.removeValue(forKey: id) else { return }
             let petState = self.petState
             Task { @MainActor in petState.cancelAsk(id: id) }
-            continuation.resume(returning: PetDecision(decision: "deny", text: nil))
+            continuation.resume(returning: PetDecision(decision: "deny"))
         }
 
         // Present the request on the pet.

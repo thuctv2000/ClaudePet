@@ -16,31 +16,35 @@ enum HookInstaller {
             .appendingPathComponent(".claude/settings.json")
     }
 
-    /// Event → mode. `ask` blocks for a decision; `question` blocks for an
-    /// `AskUserQuestion` answer; `event` is fire-and-forget. `matcher` is only
-    /// meaningful for tool events; `timeout` (seconds) is written per-hook when set.
-    private static func plan(writeToolsOnly: Bool)
+    /// Event → mode. `permission` blocks for an allow/deny decision; `question`
+    /// blocks for an `AskUserQuestion` answer; `event` is fire-and-forget.
+    /// `matcher` is only meaningful for tool events; `timeout` (seconds) is
+    /// written per-hook when set.
+    private static func plan()
         -> [(event: String, mode: String, matcher: String?, timeout: Int?)] {
-        let toolMatcher = writeToolsOnly ? "Bash|Write|Edit|MultiEdit|NotebookEdit" : "*"
-        return [
+        [
             ("UserPromptSubmit", "event", nil, nil),
             // Interactive questions first, so they own the AskUserQuestion tool.
-            // The `ask` hook below also matches it under "*" but exits early.
+            // The `permission` hook may also see it and exits early.
             ("PreToolUse", "question", "AskUserQuestion", 600),
-            ("PreToolUse", "ask", toolMatcher, nil),
-            ("PostToolUse", "event", toolMatcher, nil),
+            // Approval runs on PermissionRequest, which fires only when Claude
+            // Code is about to show a permission dialog — i.e. exactly when the
+            // terminal would have asked. PreToolUse cannot do this job: it fires
+            // *before* the permission check, so it cannot tell whether a prompt
+            // was coming, and answering there suppresses the dialog and stops
+            // PermissionRequest from ever firing. The two are mutually exclusive.
+            ("PermissionRequest", "permission", "*", nil),
+            // PreToolUse now only feeds task cards. It used to double as the
+            // approval hook, which is why it also carried the /event POST for
+            // auto modes; that side of it lives on here.
+            ("PreToolUse", "event", "*", nil),
+            ("PostToolUse", "event", "*", nil),
             ("Notification", "event", nil, nil),
             ("Stop", "event", nil, nil),
             // SubagentStart is new in Claude Code v2.1.177+ (carries agent_id/
             // agent_type for a subagent that's about to run) and lets PetState
             // retire the *right* SubagentStop card instead of oldest-first
-            // (FIFO) guessing — see PetState.handleSubagentStart. There is no
-            // version-hash / auto-migrate mechanism for installed hooks in this
-            // app (`isInstalled` only checks presence of our marker, not which
-            // events are wired up), so an existing install won't pick this up
-            // on its own: the user must reconnect (Ngắt kết nối rồi Kết nối
-            // lại Claude Code, or "Cài lại hook" in Chẩn đoán) for it to take
-            // effect.
+            // (FIFO) guessing — see PetState.handleSubagentStart.
             ("SubagentStart", "event", nil, nil),
             ("SubagentStop", "event", nil, nil),
             ("SessionStart", "event", nil, nil),
@@ -50,13 +54,15 @@ enum HookInstaller {
 
     // MARK: - Install
 
-    static func install(writeToolsOnly: Bool) throws {
+    static func install() throws {
         try writeScript()
         var settings = try loadSettings()
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
 
         // Strip every existing entry of ours first, so re-adding multiple groups
         // for the same event (PreToolUse has two) doesn't clobber siblings.
+        // This is also what migrates an older install: the stale `ask` entry is
+        // removed here rather than left to fight the PermissionRequest hook.
         for event in hooks.keys {
             guard var groups = hooks[event] as? [[String: Any]] else { continue }
             groups.removeAll { group in
@@ -66,7 +72,7 @@ enum HookInstaller {
             hooks[event] = groups
         }
 
-        for entry in plan(writeToolsOnly: writeToolsOnly) {
+        for entry in plan() {
             var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
             var hook: [String: Any] = [
                 "type": "command", "command": "sh \(scriptURL.path) \(entry.mode)",
@@ -103,16 +109,27 @@ enum HookInstaller {
         try saveSettings(settings)
     }
 
-    /// True if our hooks are currently present in settings.json.
+    /// True if our hooks are present *and* current.
+    ///
+    /// Checked against `PermissionRequest` rather than just our marker: an
+    /// install from before the PermissionRequest migration still carries the
+    /// marker, so a marker-only check would report "connected" while its stale
+    /// `PreToolUse`/`ask` entry answers every permission check itself — no
+    /// dialog is ever raised, so `PermissionRequest` never fires and the pet is
+    /// never asked anything. Such an install reads as not-installed, and
+    /// connecting rewrites it.
     static var isInstalled: Bool {
         guard let settings = try? loadSettings(),
-              let hooks = settings["hooks"] as? [String: Any] else { return false }
-        return hooks.values.contains { value in
-            guard let groups = value as? [[String: Any]] else { return false }
-            return groups.contains { group in
-                guard let inner = group["hooks"] as? [[String: Any]] else { return false }
-                return inner.contains { ($0["command"] as? String)?.contains(marker) == true }
-            }
+              let hooks = settings["hooks"] as? [String: Any],
+              let permissionRequest = hooks["PermissionRequest"] else { return false }
+        return containsOurHook(permissionRequest)
+    }
+
+    private static func containsOurHook(_ value: Any) -> Bool {
+        guard let groups = value as? [[String: Any]] else { return false }
+        return groups.contains { group in
+            guard let inner = group["hooks"] as? [[String: Any]] else { return false }
+            return inner.contains { ($0["command"] as? String)?.contains(marker) == true }
         }
     }
 
@@ -165,28 +182,21 @@ enum HookInstaller {
         [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
         exit 0
     fi
-    if [ "$MODE" = "ask" ]; then
-        # AskUserQuestion is handled by the `question` hook; stay out of the way.
+    if [ "$MODE" = "permission" ]; then
+        # PermissionRequest fires only when a permission dialog is about to
+        # appear, so there is nothing to filter here. Must not be wired to
+        # PreToolUse: a decision there suppresses the dialog, and
+        # PermissionRequest would never fire.
         TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
         [ "$TOOL" = "AskUserQuestion" ] && exit 0
-        PMODE=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"permission_mode"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
-        if [ -n "$PMODE" ] && [ "$PMODE" != "default" ]; then
-            curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \\
-                -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
-                --data-binary "$PAYLOAD" >/dev/null 2>&1
-            exit 0
-        fi
         RESPONSE=$(curl -s -m 300 -X POST "http://127.0.0.1:$PORT/ask" \\
             -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
-        NOTE=$(printf '%s' "$RESPONSE" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' | tr -d '"\\\\')
         case "$RESPONSE" in
             *'"decision":"deny"'*)
-                REASON="Từ chối trên Pet"; [ -n "$NOTE" ] && REASON="$REASON: $NOTE"
-                printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\\n' "$REASON" ;;
+                printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}\\n' ;;
             *'"decision":"allow"'*)
-                REASON="Cho phép trên Pet"; [ -n "$NOTE" ] && REASON="$REASON: $NOTE"
-                printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","permissionDecisionReason":"%s"}}\\n' "$REASON" ;;
+                printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}\\n' ;;
             *) exit 0 ;;
         esac
         exit 0

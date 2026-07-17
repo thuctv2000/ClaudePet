@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sparkle update feed. Regenerated (and EdDSA-signed) by
+     scripts/build-release.sh; commit + push after each release.
+     Empty channel = clients report "you're up to date". -->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>PetMacOS</title>
+        <link>https://github.com/thuctv2000/ClaudePet</link>
+        <description>PetMacOS updates</description>
+    </channel>
+</rss>

@@ -93,8 +93,8 @@ struct PetView: View {
         } else if let ask = state.pendingAsk {
             PermissionDialogView(
                 ask: ask,
-                onAllow: { note in state.resolve("allow", text: note) },
-                onDeny: { note in state.resolve("deny", text: note) }
+                onAllow: { state.resolve("allow") },
+                onDeny: { state.resolve("deny") }
             )
         }
     }
@@ -105,7 +105,7 @@ struct PetView: View {
         SessionStackView(
             summaries: summaries,
             settings: settings,
-            onDismissNotice: { id in state.dismissNotice(id: id) },
+            onDismissCard: { key in state.dismissSession(key: key) },
             onDismissSubagent: { id in state.dismissSubagent(id: id) },
             onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
         )

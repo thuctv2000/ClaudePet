@@ -569,78 +569,132 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$START_SID\",\"
 sleep 0.3
 
 # ============================================================================
-# TEST 5 — Permission-mode gating via the REAL installed hook script.
+# TEST 5 — Approval via the REAL installed hook script (PermissionRequest).
 # We invoke ~/.petmacos/pet-hook.sh directly (not the /ask endpoint) so the
-# script's own permission_mode logic is exercised:
-#   - permission_mode "default"  -> script BLOCKS on /ask (pendingAsk=true).
-#   - plan / acceptEdits / dontAsk -> script does NOT block; it POSTs /event,
-#     producing an ordinary running card (kind "tool"). No pendingAsk.
-# (bypassPermissions is intentionally NOT tested.)
+# script's own routing is exercised:
+#   - `permission` BLOCKS on /ask and emits a PermissionRequest decision.
+#   - It blocks in EVERY permission_mode. The mode gate this used to test is
+#     gone on purpose: PermissionRequest only fires when Claude Code was
+#     already about to show a dialog, so there is nothing left to filter. If a
+#     mode is auto-approving, the event simply never reaches us.
+#   - AskUserQuestion stays with the `question` hook and is skipped here.
+#   - `PreToolUse`/`event` (no longer the approval hook) still makes tool cards.
 # ============================================================================
 PERM_CWD="/tmp/e2eperm"
 
-run_nonblocking_mode() {
-    local mode="$1" tag="$2"
-    local sid="${tag}00000000000000000000000000pm"
-    local desc="perm-$mode"
-    local payload="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"permission_mode\":\"$mode\",\"session_id\":\"$sid\",\"cwd\":\"$PERM_CWD\",\"tool_input\":{\"description\":\"$desc\",\"command\":\"echo hi\"}}"
-    # Compare pendingAsk before/after: a non-blocking mode must not NEWLY set it.
-    # (A pre-existing pendingAsk from an earlier 'default' run may linger — that
-    # is the documented limitation, so we check for a false->true transition,
-    # not the absolute value.)
-    local pending_before
-    pending_before=$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;print(json.load(sys.stdin)["hasPendingAsk"])')
-    printf '%s' "$payload" | "$HOOK" ask >/dev/null 2>&1
-    sleep 0.6
-    STATE=$(get_state)
-    assert "5. permission_mode=$mode does NOT block, creates a tool card" '
-run=s["runningTasks"]
-mine=[c for c in run if c.get("title")=="'"$desc"'" and c.get("kind")=="tool"]
-pending_before = ('"$pending_before"' == True)
-if s["hasPendingAsk"] and not pending_before:
-    print("FAIL: hasPendingAsk newly became true for non-default mode '"$mode"'")
-elif not mine:
-    print("FAIL: no tool card '"$desc"' created (got: %s)" % [(c.get("title"),c.get("kind")) for c in run])
-else:
-    print("PASS")
-' "$STATE"
+perm_payload() {  # <tag> <permission_mode> <tool_name>
+    printf '{"hook_event_name":"PermissionRequest","tool_name":"%s","permission_mode":"%s","session_id":"%s00000000000000000000000000pm","cwd":"%s","tool_input":{"description":"perm-%s","command":"echo hi"}}' \
+        "$3" "$2" "$1" "$PERM_CWD" "$2"
 }
 
-run_nonblocking_mode "plan"        "pmpln1"
-run_nonblocking_mode "acceptEdits" "pmacc2"
-run_nonblocking_mode "dontAsk"     "pmdna3"
-
-# permission_mode "default" -> the script blocks on /ask. Run it in the
-# background and confirm pendingAsk goes true, then explicitly resolve it via
-# the test-only /debug/resolveAsk route (see HookServer.handleDebugResolveAsk)
-# instead of just killing the hook and leaving the ask stuck open on the
-# server for its ~300s timeout. Before this pass'"'"'s FIFO queue (TASK 4), a
-# stray unresolved ask here was only a cosmetic annoyance (the single pendingAsk
-# slot would just show a stale dialog); now that asks QUEUE, an unresolved ask
-# left behind by this test would sit at the head of the queue and silently
-# swallow/misorder every ask TEST 18/19 posts afterwards -- so cleaning it up
-# here is required for correctness, not just hygiene.
-DEF_PAYLOAD="{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"permission_mode\":\"default\",\"session_id\":\"pmdef40000000000000000000000000pm\",\"cwd\":\"$PERM_CWD\",\"tool_input\":{\"description\":\"perm-default\",\"command\":\"echo hi\"}}"
-
-drain_all_asks # make sure nothing stray is already queued (see drain_all_asks doc)
-printf '%s' "$DEF_PAYLOAD" | "$HOOK" ask >/dev/null 2>&1 &
-HOOKPID=$!
-sleep 1.5
-STATE=$(get_state)
-assert "5. permission_mode=default BLOCKS (pendingAsk=true)" '
+# Blocks regardless of mode, and answers in the PermissionRequest shape.
+# `acceptEdits` is the telling case: under the old PreToolUse hook this mode
+# returned early and the prompt leaked to the terminal.
+run_blocking_mode() {
+    local mode="$1" tag="$2" decision="$3"
+    local out; out=$(mktemp)
+    drain_all_asks
+    perm_payload "$tag" "$mode" "Bash" | "$HOOK" permission >"$out" 2>/dev/null &
+    local pid=$!
+    sleep 1.5
+    STATE=$(get_state)
+    assert "5. permission_mode=$mode BLOCKS on the pet (pendingAsk=true)" '
 if s["hasPendingAsk"]:
     print("PASS")
 else:
-    print("FAIL: hasPendingAsk did not become true for default mode")
+    print("FAIL: hasPendingAsk did not become true for mode '"$mode"'")
 ' "$STATE"
-# Resolve it (deny) via the debug route so it does not linger in the FIFO
-# queue for later tests, then let the hook script'"'"'s own curl return and reap
-# the background job cleanly.
+
+    # Resolve via the debug route so nothing lingers at the head of the FIFO
+    # queue and swallows/misorders what TEST 18/19 post later; then let the
+    # script'"'"'s own curl return so we can read what it printed.
+    curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" \
+        -H "Content-Type: application/json" --data-binary "{\"decision\":\"$decision\"}" >/dev/null 2>&1
+    wait "$pid" 2>/dev/null
+    assert "5. $mode/$decision emits a PermissionRequest decision" '
+import json
+raw = open("'"$out"'").read().strip()
+try:
+    d = json.loads(raw)
+except Exception:
+    print("FAIL: not JSON: %r" % raw[:200]); raise SystemExit
+h = d.get("hookSpecificOutput", {})
+if h.get("hookEventName") != "PermissionRequest":
+    print("FAIL: wrong hookEventName: %r" % h.get("hookEventName"))
+elif h.get("decision", {}).get("behavior") != "'"$decision"'":
+    print("FAIL: wrong behavior: %r" % h.get("decision"))
+elif "permissionDecision" in h:
+    print("FAIL: still emitting the old PreToolUse permissionDecision")
+else:
+    print("PASS")
+' "{}"
+    rm -f "$out"
+    drain_all_asks
+}
+
+run_blocking_mode "default"     "pmdef1" "allow"
+run_blocking_mode "acceptEdits" "pmacc2" "deny"
+
+# AskUserQuestion belongs to the `question` hook; `permission` must not touch it
+# even though it matches "*". It must not block, and must print nothing.
 drain_all_asks
-wait "$HOOKPID" 2>/dev/null
-pkill -P "$HOOKPID" 2>/dev/null
-kill "$HOOKPID" 2>/dev/null
-wait "$HOOKPID" 2>/dev/null
+AUQ_OUT=$(mktemp)
+perm_payload "pmauq3" "default" "AskUserQuestion" | "$HOOK" permission >"$AUQ_OUT" 2>/dev/null
+sleep 0.4
+STATE=$(get_state)
+assert "5. permission hook ignores AskUserQuestion (no block, no output)" '
+out = open("'"$AUQ_OUT"'").read().strip()
+if out:
+    print("FAIL: printed a decision for AskUserQuestion: %r" % out[:120])
+elif s["hasPendingAsk"]:
+    print("FAIL: blocked on AskUserQuestion instead of leaving it to `question`")
+else:
+    print("PASS")
+' "$STATE"
+rm -f "$AUQ_OUT"
+
+# PreToolUse is now only a card feed, and fires in every mode.
+PTU_SID="pmptu50000000000000000000000000pm"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"permission_mode\":\"acceptEdits\",\"session_id\":\"$PTU_SID\",\"cwd\":\"$PERM_CWD\",\"tool_input\":{\"description\":\"perm-card\",\"command\":\"echo hi\"}}"
+sleep 0.6
+STATE=$(get_state)
+assert "5. PreToolUse still creates a tool card" '
+mine=[c for c in s["runningTasks"] if c.get("title")=="perm-card" and c.get("kind")=="tool"]
+print("PASS" if mine else "FAIL: no tool card perm-card (got: %s)" % [(c.get("title"),c.get("kind")) for c in s["runningTasks"]])
+' "$STATE"
+
+# ============================================================================
+# TEST 6 — Denying a Task retires the card PreToolUse optimistically created.
+# PreToolUse runs before the permission check, so it makes a subagent card for a
+# launch that may still be denied. Unlike a tool card (which ages out on TTL), a
+# subagent card lives until SubagentStop -- which never arrives for a subagent
+# that never ran, so without `retireDeniedCard` it would sit there forever.
+# ============================================================================
+DENY_TAG="pmden6"
+# Must match perm_payload's session_id exactly: retireDeniedCard matches on the
+# full session_id, not the 6-char tag the context shows.
+DENY_SID="${DENY_TAG}00000000000000000000000000pm"
+drain_all_asks
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Task\",\"session_id\":\"$DENY_SID\",\"cwd\":\"$PERM_CWD\",\"tool_input\":{\"description\":\"e2e denied subagent\",\"subagent_type\":\"general-purpose\"}}"
+sleep 0.5
+STATE=$(get_state)
+assert "6. PreToolUse Task creates the subagent card up front" '
+print("PASS" if ctx_has(s["subagentTasks"], "#'"$DENY_TAG"'") else "FAIL: no subagent card for #'"$DENY_TAG"'")
+' "$STATE"
+
+perm_payload "$DENY_TAG" "default" "Task" | "$HOOK" permission >/dev/null 2>&1 &
+DENY_PID=$!
+sleep 1.5
+curl -s -m 5 -X POST "$BASE/debug/resolveAsk" -H "X-Pet-Token: $TOKEN" \
+    -H "Content-Type: application/json" --data-binary '{"decision":"deny"}' >/dev/null 2>&1
+wait "$DENY_PID" 2>/dev/null
+sleep 0.3
+STATE=$(get_state)
+assert "6. denying the Task retires its card (no stuck subagent)" '
+left = ctx_has(s["subagentTasks"], "#'"$DENY_TAG"'")
+print("PASS" if not left else "FAIL: card survived the deny: %s" % [c.get("title") for c in left])
+' "$STATE"
+drain_all_asks
 
 # ============================================================================
 # TEST 7/8/9 — Mood decay (error, talking, and decay-cancellation-by-new-event).

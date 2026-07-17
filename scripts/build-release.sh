@@ -356,7 +356,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Verify
+# 6. Sparkle appcast (EdDSA-signed update feed)
+# ---------------------------------------------------------------------------
+#
+# generate_appcast signs the DMG with the private EdDSA key from the login
+# Keychain ("Private key for signing Sparkle updates") and writes appcast.xml
+# at the repo root. The app's SUFeedURL points at that file on the `main`
+# branch via raw.githubusercontent.com, so shipping an update is: upload the
+# DMG to the GitHub release, then commit + push appcast.xml.
+
+SPARKLE_BIN="$ROOT_DIR/.build/artifacts/sparkle/Sparkle/bin"
+if [[ -x "$SPARKLE_BIN/generate_appcast" ]]; then
+  APPCAST_STAGING="$BUILD_DIR/appcast"
+  rm -rf "$APPCAST_STAGING"
+  mkdir -p "$APPCAST_STAGING"
+  cp "$DMG_PATH" "$APPCAST_STAGING/"
+  log "Generating Sparkle appcast -> $ROOT_DIR/appcast.xml"
+  "$SPARKLE_BIN/generate_appcast" "$APPCAST_STAGING" \
+    --download-url-prefix "https://github.com/thuctv2000/ClaudePet/releases/download/v${VERSION}/" \
+    --link "https://github.com/thuctv2000/ClaudePet" \
+    -o "$ROOT_DIR/appcast.xml"
+  log "appcast.xml updated. To ship this update:"
+  echo "  1. Create GitHub release v${VERSION} and upload: $DMG_PATH"
+  echo "  2. Commit & push appcast.xml (apps read it from raw.githubusercontent.com/main)"
+else
+  warn "Sparkle tools not found at $SPARKLE_BIN — run 'swift build' once to fetch them. Skipping appcast generation."
+fi
+
+# ---------------------------------------------------------------------------
+# 7. Verify
 # ---------------------------------------------------------------------------
 
 log "Verifying code signature (codesign --verify)"

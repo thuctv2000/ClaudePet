@@ -10,24 +10,55 @@ struct SettingsWindowView: View {
     var usage: UsageMonitor
 
     @State private var importMessage: String?
-    @State private var logCopyMessage: String?
     /// Ticks periodically so the "last event" relative time and the stale-
     /// connection warning stay fresh while the tab is open (they depend on
     /// `Date()`, which SwiftUI has no other reason to recompute).
     @State private var now = Date()
+    /// Currently selected tab. Drives our custom top strip instead of a native
+    /// `TabView`, so the tabs can never collapse into the macOS overflow menu.
+    @State private var selectedTab: Tab = .status
+
+    /// The settings tabs, in display order. Each carries its Vietnamese label so
+    /// the strip and the content switch stay in sync.
+    private enum Tab: String, CaseIterable, Identifiable {
+        case status, pet, permissions, colors
+        var id: Self { self }
+        var label: String {
+            switch self {
+            case .status: return "Trạng thái"
+            case .pet: return "Pet"
+            case .permissions: return "Quyền"
+            case .colors: return "Màu sắc"
+            }
+        }
+    }
 
     var body: some View {
-        TabView {
-            statusTab
-                .tabItem { Text("Trạng thái") }
-            petTab
-                .tabItem { Text("Pet") }
-            permissionsTab
-                .tabItem { Text("Quyền") }
-            colorsTab
-                .tabItem { Text("Màu sắc") }
-            diagnosticsTab
-                .tabItem { Text("Chẩn đoán") }
+        // A custom top tab strip (a segmented picker) rather than `TabView`.
+        // The native macOS tab bar moves the tabs into the window's title area
+        // and collapses them behind a "»" overflow menu when it decides the row
+        // is too wide, hiding every tab. A segmented control always lays all the
+        // tabs out in one row regardless of width or macOS version.
+        VStack(spacing: 0) {
+            Picker("", selection: $selectedTab) {
+                ForEach(Tab.allCases) { tab in
+                    Text(tab.label).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            // Only the selected tab's content is shown.
+            switch selectedTab {
+            case .status: statusTab
+            case .pet: petTab
+            case .permissions: permissionsTab
+            case .colors: colorsTab
+            }
         }
         .frame(width: 480, height: 540)
         .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { date in
@@ -92,8 +123,38 @@ struct SettingsWindowView: View {
                     }
                 }
             }
+
+            updateSection
         }
         .formStyle(.grouped)
+    }
+
+    /// App update via Sparkle: the button opens Sparkle's own update window,
+    /// which downloads, verifies (EdDSA), installs and relaunches by itself.
+    private var updateSection: some View {
+        Section("Phiên bản") {
+            LabeledContent("Đang dùng") {
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+                        as? String ?? "bản dev")
+                    .foregroundStyle(.secondary)
+            }
+            if let controller = delegate.updaterController {
+                HStack {
+                    Button("Kiểm tra bản mới") { controller.checkForUpdates(nil) }
+                    Text("Có bản mới thì app tự tải, cài và mở lại.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Toggle("Tự động kiểm tra định kỳ", isOn: Binding(
+                    get: { controller.updater.automaticallyChecksForUpdates },
+                    set: { controller.updater.automaticallyChecksForUpdates = $0 }
+                ))
+            } else {
+                Text("Bản dev — tự cập nhật chỉ hoạt động ở bản cài trong /Applications.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     @ViewBuilder
@@ -223,21 +284,21 @@ struct SettingsWindowView: View {
 
     // MARK: - Quyền
 
+    /// Deliberately has no switches. The pet holds no permission policy of its
+    /// own: it shows the dialog exactly when Claude Code would have shown one,
+    /// and nothing more. Anything that decides *whether* to ask -- the
+    /// permission mode, the allow rules -- belongs to Claude Code, and keeping a
+    /// second copy here is what used to let the two drift apart.
     private var permissionsTab: some View {
         Form {
             Section {
-                Toggle("Chỉ hỏi tool ghi/chạy", isOn: Binding(
-                    get: { delegate.writeToolsOnly },
-                    set: { delegate.setWriteToolsOnly($0) }
-                ))
-                Toggle("Tạm dừng duyệt quyền (tự cho phép)", isOn: Binding(
-                    get: { delegate.pauseApprovals },
-                    set: { delegate.pauseApprovals = $0 }
-                ))
+                Text("Pet hiển thị hộp thoại đúng những lúc Claude Code định hỏi bạn, và không thêm gì cả. Bấm Cho phép hoặc Từ chối trên pet là xong — terminal sẽ không hỏi lại.")
+                Text("Muốn hỏi nhiều hay ít hơn, đổi chế độ quyền ngay trong Claude Code (phím Shift+Tab, hoặc cờ --permission-mode). Pet tự động theo.")
+                    .foregroundStyle(.secondary)
             } header: {
                 Text("Duyệt quyền trên pet")
             } footer: {
-                Text("Chỉ áp dụng ở chế độ quyền thủ công của Claude Code. Các chế độ auto sẽ chỉ hiển thị thông báo.")
+                Text("Nếu pet đang tắt hoặc bận, Claude Code hỏi ở terminal như bình thường — không có gì bị kẹt.")
             }
         }
         .formStyle(.grouped)
@@ -283,97 +344,4 @@ struct SettingsWindowView: View {
         }
     }
 
-    // MARK: - Chẩn đoán
-
-    private var diagnosticsTab: some View {
-        Form {
-            Section("Trạng thái") {
-                LabeledContent("Hooks") {
-                    Text(delegate.isConnected ? "Đã cài vào ~/.claude/settings.json" : "Chưa cài")
-                        .foregroundStyle(delegate.isConnected ? .green : .red)
-                }
-                LabeledContent("Server nội bộ") {
-                    if let port = delegate.serverPort {
-                        Text("Đang nghe cổng \(String(port))").foregroundStyle(.green)
-                    } else {
-                        Text("Không chạy").foregroundStyle(.red)
-                    }
-                }
-                LabeledContent("Event cuối cùng") {
-                    if let lastEventAt = state.lastEventAt {
-                        Text(lastEventAt.formatted(date: .omitted, time: .standard))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("chưa nhận event nào").foregroundStyle(.tertiary)
-                    }
-                }
-
-                if state.isConnectionStale(hooksInstalled: delegate.isConnected, now: now) {
-                    Text("Cảnh báo: đã cài hook nhưng lâu rồi không nhận được event nào — pet-hook.sh có thể đang không kết nối được tới app. Bấm \"Kiểm tra kết nối\" để xác nhận, hoặc \"Cài lại hook\" để ghi lại script.")
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            Section("Lỗi gần nhất") {
-                if let error = state.lastErrorMessage {
-                    Text(error)
-                        .font(.callout)
-                        .foregroundStyle(.orange)
-                } else {
-                    Text("Không có lỗi nào được ghi nhận.")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-
-            Section {
-                HStack {
-                    Button("Copy log") { copyEventsLog() }
-                    Button("Cài lại hook") { delegate.connectClaudeCode() }
-                    Button(delegate.diagnosticTestRunning ? "Đang kiểm tra…" : "Kiểm tra kết nối") {
-                        delegate.testHookConnection()
-                    }
-                    .disabled(delegate.diagnosticTestRunning)
-                }
-
-                if let message = logCopyMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let result = delegate.diagnosticTestResult {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(result.message)
-                            .font(.callout)
-                            .foregroundStyle(result.success ? .green : .orange)
-                        Text(result.at.formatted(date: .omitted, time: .standard))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } header: {
-                Text("Hành động")
-            } footer: {
-                Text("\"Kiểm tra kết nối\" chạy chính script pet-hook.sh đã cài với một event thử, đúng đường đi thật Claude Code dùng — không gọi thẳng server qua HTTP.")
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    /// Copies the contents of `~/.petmacos/events.log` to the clipboard so the
-    /// user can paste it into a support request without using the terminal.
-    private func copyEventsLog() {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".petmacos/events.log")
-        guard let content = try? String(contentsOf: url, encoding: .utf8), !content.isEmpty else {
-            logCopyMessage = "Chưa có log (events.log trống hoặc chưa tồn tại)."
-            return
-        }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(content, forType: .string)
-        logCopyMessage = "Đã copy events.log (\(content.utf8.count) byte) vào clipboard."
-    }
 }

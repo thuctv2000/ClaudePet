@@ -220,10 +220,11 @@ struct HookEvent: Decodable {
     }
 }
 
-/// Decision the pet sends back for a blocking `/ask` request (Phase 2).
+/// Decision the pet sends back for a blocking `/ask` request. Mirrors what a
+/// `PermissionRequest` decision can express, which is only allow or deny --
+/// there is no field to carry a reason back to Claude Code.
 struct PetDecision: Codable {
     let decision: String   // "allow" | "deny"
-    let text: String?
 }
 
 // MARK: - AskUserQuestion
