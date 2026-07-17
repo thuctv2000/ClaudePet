@@ -107,7 +107,8 @@ struct PetView: View {
             settings: settings,
             onDismissNotice: { id in state.dismissNotice(id: id) },
             onDismissSubagent: { id in state.dismissSubagent(id: id) },
-            onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
+            onDismissBackground: { id in state.dismissBackgroundTask(id: id) },
+            onSendReply: { sessionId, text in state.sendReply(text, forSession: sessionId) }
         )
     }
 

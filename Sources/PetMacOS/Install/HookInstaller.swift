@@ -156,6 +156,12 @@ enum HookInstaller {
     TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$CONFIG")
     [ -n "$PORT" ] || exit 0
     PAYLOAD=$(cat)
+    # Reply v1: forward the tmux pane ($TMUX_PANE, e.g. "%12") on EVERY event so
+    # the pet can send messages back via `tmux send-keys`. Pane ids are %digits,
+    # safe to splice verbatim; guarded on '{"' so "{}" never becomes invalid JSON.
+    case "$PAYLOAD" in
+        "{\\""*) [ -n "${TMUX_PANE:-}" ] && PAYLOAD="{\\"tmux_pane\\":\\"$TMUX_PANE\\",${PAYLOAD#\\{}" ;;
+    esac
     if [ "$MODE" = "question" ]; then
         # AskUserQuestion: block for the user's answer regardless of permission
         # mode. Server returns the full hookSpecificOutput JSON; print verbatim.

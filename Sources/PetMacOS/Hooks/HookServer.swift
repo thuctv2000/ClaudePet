@@ -101,6 +101,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugState(on: connection)
         case "/debug/resolveAsk":
             handleDebugResolveAsk(request, on: connection)
+        case "/debug/sendReply":
+            handleDebugSendReply(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -198,6 +200,43 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in
             petState.resolve(decision)
             self.respond(connection)
+        }
+    }
+
+    /// Test-only route that drives Reply v1 end-to-end the same way the card's
+    /// send button would (same rationale as `/debug/resolveAsk`: no
+    /// computer-use access to this accessory app's borderless panel). Body:
+    /// `{"sessionId":"...","text":"..."}`. Responds with the injection
+    /// outcome as JSON — `{"ok":true}` or `{"ok":false,"error":"<reason>"}` —
+    /// so the e2e suite can assert on the exact failure mode (noPane /
+    /// tmuxMissing / paneGone) without scraping UI state.
+    private func handleDebugSendReply(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        guard let sessionId = object?["sessionId"] as? String,
+              let text = object?["text"] as? String else {
+            respond(connection, status: "400 Bad Request",
+                    body: Data(#"{"ok":false,"error":"badRequest"}"#.utf8))
+            return
+        }
+        let petState = self.petState
+        Task { @MainActor in
+            guard let pane = petState.tmuxPane(forSession: sessionId) else {
+                self.respond(connection, body: Data(#"{"ok":false,"error":"noPane"}"#.utf8))
+                return
+            }
+            let result = await SessionInjector.send(text, toPane: pane)
+            switch result {
+            case .success:
+                self.respond(connection, body: Data(#"{"ok":true}"#.utf8))
+            case .failure(let error):
+                let name: String
+                switch error {
+                case .tmuxMissing: name = "tmuxMissing"
+                case .paneGone: name = "paneGone"
+                case .sendFailed: name = "sendFailed"
+                }
+                self.respond(connection, body: Data("{\"ok\":false,\"error\":\"\(name)\"}".utf8))
+            }
         }
     }
 

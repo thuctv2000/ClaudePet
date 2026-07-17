@@ -1398,6 +1398,87 @@ else
     report "6. events.log stays under ~1.1MB" "FAIL: $LOG does not exist"
 fi
 
+# ============================================================================
+# TEST 22 — Reply v1: hook events carry tmux_pane -> the session's card offers
+# a reply box (canReply/pane exposed in /debug/state); no pane -> no reply box.
+# Full send path (tmux send-keys into a live pane) runs only when tmux exists
+# on this machine (conditional SKIP otherwise).
+# ============================================================================
+RPL_SID="replysess000000000000000000000030"
+NOP_SID="noreplysess0000000000000000000031"
+CWD22="/tmp/e2ereply"
+
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$RPL_SID\",\"cwd\":\"$CWD22\",\"prompt\":\"e2e reply pane\",\"tmux_pane\":\"%99\"}"
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$NOP_SID\",\"cwd\":\"$CWD22\",\"prompt\":\"e2e no pane\"}"
+sleep 0.5
+
+STATE=$(get_state)
+assert "22a. Event with tmux_pane exposes canReply=true + the pane; without stays false" '
+order = s.get("sessionOrder") or []
+panes = s.get("sessionTmuxPanes") or []
+can = s.get("sessionCanReply") or []
+try:
+    ir = order.index("'"$RPL_SID"'")
+    io = order.index("'"$NOP_SID"'")
+except ValueError:
+    print("FAIL: test sessions missing from sessionOrder: %s" % order)
+else:
+    if panes[ir] != "%99":
+        print("FAIL: expected pane %%99 for reply session, got %r" % panes[ir])
+    elif not can[ir]:
+        print("FAIL: canReply should be true for the session with a pane")
+    elif can[io]:
+        print("FAIL: canReply should be false for the session without a pane")
+    else:
+        print("PASS")
+' "$STATE"
+
+# 22b — sendReply to a session with a pane but no live tmux/pane must fail
+# CLEANLY (structured error, server keeps answering), never crash the app.
+SENDRES=$(curl -s -m 10 -X POST "$BASE/debug/sendReply" \
+    -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "{\"sessionId\":\"$RPL_SID\",\"text\":\"e2e reply text\"}")
+STATE=$(get_state)
+assert "22b. sendReply without a live pane fails cleanly and the server keeps answering" '
+import os
+res = '"'"'"$SENDRES"'"'"'
+if not res:
+    print("FAIL: /debug/sendReply returned nothing")
+elif "\"ok\":true" in res.replace(" ", ""):
+    print("FAIL: send unexpectedly claimed success with no live tmux pane (res=%s)" % res)
+elif s.get("mood") is None:
+    print("FAIL: /debug/state broken after sendReply")
+else:
+    print("PASS")
+' "$STATE"
+
+# 22c — full path through a REAL tmux pane, only when tmux is available.
+if command -v tmux >/dev/null 2>&1; then
+    TMUX_SESSION="petmacos_e2e_$$"
+    SINK="/tmp/petmacos_reply_sink_$$"
+    : > "$SINK"
+    tmux new-session -d -s "$TMUX_SESSION" "cat > $SINK"
+    REAL_PANE=$(tmux list-panes -t "$TMUX_SESSION" -F "#{pane_id}" | head -1)
+    post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$RPL_SID\",\"cwd\":\"$CWD22\",\"prompt\":\"e2e reply pane update\",\"tmux_pane\":\"$REAL_PANE\"}"
+    sleep 0.4
+    curl -s -m 10 -X POST "$BASE/debug/sendReply" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "{\"sessionId\":\"$RPL_SID\",\"text\":\"xin chào tiếng Việt\"}" >/dev/null
+    sleep 1
+    if grep -q "xin chào tiếng Việt" "$SINK"; then
+        report "22c. Reply text (tiếng Việt) lands in the real tmux pane" "PASS"
+    else
+        report "22c. Reply text (tiếng Việt) lands in the real tmux pane" "FAIL: sink does not contain the sent text: $(cat "$SINK" | head -c 120)"
+    fi
+    tmux kill-session -t "$TMUX_SESSION" 2>/dev/null
+    rm -f "$SINK"
+else
+    report "22c. Reply text lands in the real tmux pane" "SKIP: tmux is not installed on this machine"
+fi
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$RPL_SID\",\"cwd\":\"$CWD22\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$NOP_SID\",\"cwd\":\"$CWD22\"}"
+
 # ----------------------------------------------------------------------------
 # Summary
 # ----------------------------------------------------------------------------

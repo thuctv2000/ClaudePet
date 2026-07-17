@@ -24,6 +24,16 @@ TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG
 
 PAYLOAD=$(cat)
 
+# Reply v1: forward the tmux pane this Claude Code session runs in (env
+# $TMUX_PANE, e.g. "%12" — absent when not under tmux) on EVERY event, so the
+# pet can send messages back into the session via `tmux send-keys`. The pane id
+# only ever contains %digits, so splicing it into the JSON verbatim is safe.
+# Guarded on the payload starting with '{"' so we never produce invalid JSON
+# from an empty "{}" body.
+case "$PAYLOAD" in
+    "{\""*) [ -n "${TMUX_PANE:-}" ] && PAYLOAD="{\"tmux_pane\":\"$TMUX_PANE\",${PAYLOAD#\{}" ;;
+esac
+
 if [ "$MODE" = "question" ]; then
     # AskUserQuestion: block for the user's answer regardless of permission mode
     # (a real question needs a human, even in auto modes). The server returns the

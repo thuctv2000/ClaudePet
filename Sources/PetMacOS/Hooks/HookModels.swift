@@ -68,6 +68,10 @@ struct HookEvent: Decodable {
     let agentId: String?
     let agentType: String?
     let lastAssistantMessage: String?
+    /// tmux pane the session's Claude Code process runs in (e.g. "%12"),
+    /// spliced into the payload by pet-hook.sh from `$TMUX_PANE`. Absent when
+    /// the session doesn't run under tmux. Powers Reply v1 (`tmux send-keys`).
+    let tmuxPane: String?
 
     enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
@@ -82,13 +86,14 @@ struct HookEvent: Decodable {
         case agentId = "agent_id"
         case agentType = "agent_type"
         case lastAssistantMessage = "last_assistant_message"
+        case tmuxPane = "tmux_pane"
     }
 
     /// Placeholder used when a request body fails to decode.
     static let empty = HookEvent(
         hookEventName: nil, sessionId: nil, transcriptPath: nil, cwd: nil,
         toolName: nil, toolInput: nil, toolResponse: nil, message: nil, prompt: nil,
-        agentId: nil, agentType: nil, lastAssistantMessage: nil)
+        agentId: nil, agentType: nil, lastAssistantMessage: nil, tmuxPane: nil)
 
     /// Last path component of `cwd` — the project folder the session runs in.
     var projectName: String? {

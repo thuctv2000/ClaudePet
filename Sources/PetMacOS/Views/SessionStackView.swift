@@ -22,6 +22,8 @@ struct SessionStackView: View {
     let onDismissNotice: (UUID) -> Void
     let onDismissSubagent: (UUID) -> Void
     let onDismissBackground: (UUID) -> Void
+    /// Reply v1: (sessionId, text) — send `text` into the session's tmux pane.
+    let onSendReply: (String, String) -> Void
 
     /// Session ids whose task-count line is expanded into the task list.
     @State private var expandedTasks: Set<String> = []
@@ -85,7 +87,8 @@ struct SessionStackView: View {
                                 onToggleExpand: { toggleExpand(summary.id) },
                                 onDismissNotice: onDismissNotice,
                                 onDismissSubagent: onDismissSubagent,
-                                onDismissBackground: onDismissBackground
+                                onDismissBackground: onDismissBackground,
+                                onSendReply: { text in onSendReply(summary.id, text) }
                             )
                             .id(summary.id)
                             .contentShape(Rectangle())
@@ -186,6 +189,11 @@ private struct SessionCardView: View {
     let onDismissNotice: (UUID) -> Void
     let onDismissSubagent: (UUID) -> Void
     let onDismissBackground: (UUID) -> Void
+    /// Reply v1: send the typed text into this session's tmux pane.
+    let onSendReply: (String) -> Void
+
+    /// Text typed into this card's reply box (Reply v1).
+    @State private var replyText = ""
 
     private static let maxListedTasks = 5
 
@@ -195,6 +203,8 @@ private struct SessionCardView: View {
             taskCountLine
             if isExpanded { taskList }
             messageLine
+            replyStatusLine
+            replyBox
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -265,6 +275,76 @@ private struct SessionCardView: View {
     private func joined(_ title: String, _ detail: String?) -> String {
         guard let detail, !detail.isEmpty else { return title }
         return "\(title) — \(detail)"
+    }
+
+    // MARK: Reply v1 (tmux send-keys)
+
+    /// Outcome of the most recent reply sent from this card — auto-clears in
+    /// PetState (~20s, or on the session's next UserPromptSubmit).
+    @ViewBuilder
+    private var replyStatusLine: some View {
+        if let status = summary.replyStatus {
+            Group {
+                switch status {
+                case .sent:
+                    Text("Đã gửi")
+                        .foregroundStyle(.green)
+                case .queued:
+                    Text("Đã xếp hàng — Claude đang bận")
+                        .foregroundStyle(.orange)
+                case .failed(let reason):
+                    Text("Không gửi được: \(reason)")
+                        .foregroundStyle(.red)
+                }
+            }
+            .font(.system(size: 9, weight: .medium))
+            .lineLimit(1)
+        }
+    }
+
+    /// One-line reply field, shown only when the session has a live tmux
+    /// pane. Disabled (with an explanatory placeholder) while this session's
+    /// own permission/question dialog is pending so a stray Enter can never
+    /// land in the TUI's dialog.
+    @ViewBuilder
+    private var replyBox: some View {
+        if summary.canReply {
+            HStack(spacing: 6) {
+                TextField(
+                    summary.isAwaitingApproval ? "Đang chờ duyệt quyền…" : "Nhắn cho session…",
+                    text: $replyText
+                )
+                .textFieldStyle(.plain)
+                .font(.caption2)
+                .disabled(summary.isAwaitingApproval)
+                .onSubmit(sendReply)
+                Button(action: sendReply) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(canSend ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(0.5))
+            )
+            .padding(.top, 2)
+        }
+    }
+
+    private var canSend: Bool {
+        !summary.isAwaitingApproval
+            && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func sendReply() {
+        guard canSend else { return }
+        onSendReply(replyText.trimmingCharacters(in: .whitespacesAndNewlines))
+        replyText = ""
     }
 
     // MARK: Task count + expandable list

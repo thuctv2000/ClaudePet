@@ -259,8 +259,18 @@ final class PetState {
         var name: String?
         var tag: String?
         var project: String?
+        /// tmux pane the session runs in (e.g. "%12"), captured from the
+        /// latest event that carried one. Refreshed on EVERY event (the pane
+        /// can change when the user resumes the session in another terminal).
+        /// Powers Reply v1 (`SessionInjector` / `tmux send-keys`).
+        var tmuxPane: String?
     }
     private var sessionMeta: [String: SessionMeta] = [:]
+
+    /// The tmux pane remembered for a session, if any (Reply v1).
+    func tmuxPane(forSession sessionId: String) -> String? {
+        sessionMeta[sessionId]?.tmuxPane
+    }
 
     /// Captures/refreshes the display metadata for the event's session. The
     /// name is re-resolved on every event (cheap: `SessionNameResolver`
@@ -272,6 +282,7 @@ final class PetState {
         if let name = sessionNames.name(for: sid, cwd: event.cwd) { meta.name = name }
         if meta.tag == nil { meta.tag = event.sessionTag }
         if let project = event.projectName { meta.project = project }
+        if let pane = event.tmuxPane, !pane.isEmpty { meta.tmuxPane = pane }
         sessionMeta[sid] = meta
     }
 
@@ -312,6 +323,25 @@ final class PetState {
         let subagents: [TaskItem]
         /// This session's still-running background Bash tasks (oldest first).
         let backgrounds: [TaskItem]
+        /// tmux pane the session runs in (Reply v1), nil when not under tmux.
+        let tmuxPane: String?
+        /// This session has a blocking /ask or /question of its OWN pending
+        /// on the pet — sending a reply is blocked so a stray Enter can never
+        /// land in the TUI's permission dialog.
+        let isAwaitingApproval: Bool
+        /// Outcome of the most recent reply sent from this card, if any.
+        let replyStatus: ReplyStatus?
+        /// The card shows a reply box when the session has a live tmux pane.
+        var canReply: Bool { tmuxPane != nil }
+    }
+
+    /// Outcome of a reply sent from a session card (Reply v1). Shown as a
+    /// small status line on the card; cleared when the session's next
+    /// UserPromptSubmit arrives (the TUI accepted the message) or after ~20s.
+    enum ReplyStatus: Equatable {
+        case sent            // delivered while the session was idle/talking
+        case queued          // delivered while Claude was busy (TUI enqueues)
+        case failed(String)  // short Vietnamese reason
     }
 
     /// One card per conversation, ordered so the session with the NEWEST
@@ -361,7 +391,11 @@ final class PetState {
                 latestRunning: running.first,       // runningTasks is newest-first
                 latestCompleted: completed.first,   // completedNotices is newest-first
                 subagents: subs,
-                backgrounds: bgs
+                backgrounds: bgs,
+                tmuxPane: sessionMeta[key]?.tmuxPane,
+                isAwaitingApproval: askQueue.contains { $0.sessionId == key }
+                    || pendingQuestion?.sessionId == key,
+                replyStatus: replyStatuses[key]
             ))
         }
         return result.sorted { $0.lastEventAt > $1.lastEventAt }
@@ -923,11 +957,14 @@ final class PetState {
     }
 
     /// Enables click passthrough while notices, subagent/background cards or
-    /// an ask are on screen (their manual ✕ must be clickable).
+    /// an ask are on screen (their manual ✕ must be clickable), or while any
+    /// visible session card offers a reply box (Reply v1 — the TextField must
+    /// be clickable/focusable).
     private func updatePassthrough() {
+        let hasReplyableCard = orderedSessionSummaries.contains { $0.canReply }
         onMousePassthroughNeeded?(
             !completedNotices.isEmpty || !subagentTasks.isEmpty
-                || !backgroundTasks.isEmpty || pendingAsk != nil)
+                || !backgroundTasks.isEmpty || pendingAsk != nil || hasReplyableCard)
     }
 
     /// Shows a short-lived app notice (connection, sprites) as a session card.
@@ -936,6 +973,67 @@ final class PetState {
     func notify(_ title: String, mood: Mood = .idle) {
         setMood(mood, for: nil)
         pushRunning(TaskItem(title: title, kind: .session))
+    }
+
+    // MARK: - Reply v1 (tmux send-keys)
+
+    /// sessionId -> outcome of the latest reply sent from that session's card.
+    private var replyStatuses: [String: ReplyStatus] = [:]
+    /// Per-session auto-clear timers for `replyStatuses` (~20s), cancelled and
+    /// replaced whenever a newer status lands for the same session.
+    private var replyStatusClearTasks: [String: Task<Void, Never>] = [:]
+    /// How long a reply status line stays on the card before auto-hiding.
+    private static let replyStatusTTL: TimeInterval = 20
+
+    /// Sends `text` into the session's tmux pane (Reply v1). Fire-and-forget
+    /// from the UI's point of view: the outcome lands in `replyStatuses` (and
+    /// therefore on the session card) when the injection finishes.
+    func sendReply(_ text: String, forSession sessionId: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard let pane = sessionMeta[sessionId]?.tmuxPane else {
+            setReplyStatus(.failed("không có tmux pane"), forSession: sessionId)
+            return
+        }
+        // Belt-and-braces: the UI already disables the field, but never let a
+        // reply race a pending permission dialog of the same session (the
+        // trailing Enter would land in the TUI's dialog).
+        guard !(askQueue.contains { $0.sessionId == sessionId })
+            && pendingQuestion?.sessionId != sessionId else {
+            setReplyStatus(.failed("đang chờ duyệt quyền"), forSession: sessionId)
+            return
+        }
+        // Snapshot the session's busyness NOW (mood may change while sending).
+        let mood = sessions[sessionId]?.mood ?? .idle
+        let busy = mood == .working || mood == .thinking || mood == .asking
+        Task { [weak self] in
+            let result = await SessionInjector.send(trimmed, toPane: pane)
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.setReplyStatus(busy ? .queued : .sent, forSession: sessionId)
+            case .failure(let error):
+                self.setReplyStatus(.failed(error.shortReason), forSession: sessionId)
+            }
+        }
+    }
+
+    /// Writes a reply status for the session and arms its ~20s auto-clear.
+    private func setReplyStatus(_ status: ReplyStatus, forSession sessionId: String) {
+        replyStatuses[sessionId] = status
+        replyStatusClearTasks[sessionId]?.cancel()
+        replyStatusClearTasks[sessionId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.replyStatusTTL))
+            guard !Task.isCancelled else { return }
+            self?.clearReplyStatus(forSession: sessionId)
+        }
+    }
+
+    /// Drops the session's reply status line (auto-clear timer, or the
+    /// session's own UserPromptSubmit confirming the TUI accepted the text).
+    private func clearReplyStatus(forSession sessionId: String) {
+        replyStatuses.removeValue(forKey: sessionId)
+        replyStatusClearTasks.removeValue(forKey: sessionId)?.cancel()
     }
 
     // MARK: - Hook events
@@ -993,6 +1091,9 @@ final class PetState {
         switch event.hookEventName ?? "" {
         case "UserPromptSubmit":
             setMood(.thinking, for: sid)
+            // The TUI accepted a prompt for this session — a "Đã gửi/Đã xếp
+            // hàng" reply status line has served its purpose, hide it.
+            if let sid { clearReplyStatus(forSession: sid) }
             pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context, sessionId: sid))
         case "PreToolUse":
             // Reached here only in auto mode (manual mode blocks via /ask).
@@ -1107,6 +1208,9 @@ final class PetState {
                 pushRunning(TaskItem(title: message, kind: .session, context: context, sessionId: sid))
             }
         }
+        // A session may just have become replyable (first event carrying a
+        // tmux pane) — refresh passthrough so its reply box is clickable.
+        updatePassthrough()
     }
 
     /// Builds the persistent running card for a Task/Agent launch. No
@@ -1358,6 +1462,12 @@ final class PetState {
         /// The display name each session card shows, aligned with
         /// `sessionOrder` (resolved conversation name, else "#tag" fallback).
         let sessionNames: [String]
+        /// Each session card's remembered tmux pane, aligned with
+        /// `sessionOrder`; nil when the session doesn't run under tmux.
+        let sessionTmuxPanes: [String?]
+        /// Whether each session card offers the Reply box (pane present),
+        /// aligned with `sessionOrder`.
+        let sessionCanReply: [Bool]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1389,7 +1499,9 @@ final class PetState {
             pendingAskSessionId: pendingAsk?.sessionId,
             sessions: sessionSnapshots,
             sessionOrder: summaries.map(\.id),
-            sessionNames: summaries.map(\.name)
+            sessionNames: summaries.map(\.name),
+            sessionTmuxPanes: summaries.map(\.tmuxPane),
+            sessionCanReply: summaries.map(\.canReply)
         )
     }
 

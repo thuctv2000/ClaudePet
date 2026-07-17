@@ -15,6 +15,7 @@
 		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
 		37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */; };
 		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
+		5317A9AA9F8E70BD6E8AE89D /* SessionInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 721D314C5A25B8C487095433 /* SessionInjector.swift */; };
 		878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DE56CC509FC11874D00027 /* SettingsStore.swift */; };
 		8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */; };
 		96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12CA287C7CACA340ABD108C /* SpriteImporter.swift */; };
@@ -36,6 +37,7 @@
 		21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeAvailability.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
+		721D314C5A25B8C487095433 /* SessionInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionInjector.swift; sourceTree = "<group>"; };
 		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
 		78DE56CC509FC11874D00027 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		7A49E4A442ADFD5CD45C9582 /* PetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetState.swift; sourceTree = "<group>"; };
@@ -95,6 +97,7 @@
 				60DBE02103BE5B9DEE670B5C /* Hooks */,
 				4756521A0DCCC4E29BF9949C /* Install */,
 				DD860E2F098D2F09F110AB1B /* Onboarding */,
+				C726105966D96E4486DD9578 /* Reply */,
 				B005A15F5E555D278AB9C085 /* Resources */,
 				2AD5AD954394A47B008E8B62 /* Sprites */,
 				932F9248A5EB563281B49789 /* State */,
@@ -139,6 +142,14 @@
 				F83020535917ED3CD4C35874 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		C726105966D96E4486DD9578 /* Reply */ = {
+			isa = PBXGroup;
+			children = (
+				721D314C5A25B8C487095433 /* SessionInjector.swift */,
+			);
+			path = Reply;
 			sourceTree = "<group>";
 		};
 		D2ABD055CCD03283D0A941A9 /* Products */ = {
@@ -239,6 +250,7 @@
 				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
 				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
+				5317A9AA9F8E70BD6E8AE89D /* SessionInjector.swift in Sources */,
 				AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */,
 				37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
