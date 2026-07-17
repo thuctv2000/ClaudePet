@@ -9,11 +9,11 @@ struct PetMacOSApp: App {
     var body: some Scene {
         MenuBarExtra("Desktop Pet", systemImage: "pawprint.fill") {
             Group {
-                Button(appDelegate.isVisible ? "Hide pet" : "Show pet") {
+                Button(appDelegate.isVisible ? tr("Hide pet") : tr("Show pet")) {
                     appDelegate.togglePet()
                 }
 
-                Toggle("Click-through", isOn: Binding(
+                Toggle(tr("Click-through"), isOn: Binding(
                     get: { appDelegate.isClickThrough },
                     set: { appDelegate.setClickThrough($0) }
                 ))
@@ -21,27 +21,27 @@ struct PetMacOSApp: App {
                 Divider()
 
                 if appDelegate.isConnected {
-                    Button("Ngắt kết nối Claude Code") {
+                    Button(tr("Disconnect Claude Code")) {
                         appDelegate.disconnectClaudeCode()
                     }
                 } else {
-                    Button("Kết nối Claude Code") {
+                    Button(tr("Connect Claude Code")) {
                         appDelegate.connectClaudeCode()
                     }
                 }
 
                 Divider()
 
-                Button("Mở thư mục sprites") {
+                Button(tr("Open sprites folder")) {
                     appDelegate.openSpritesFolder()
                 }
-                Button("Tải lại sprites") {
+                Button(tr("Reload sprites")) {
                     appDelegate.reloadSprites()
                 }
 
                 Divider()
 
-                Button("Cài đặt…") {
+                Button(tr("Settings…")) {
                     appDelegate.openSettingsWindow()
                 }
 
@@ -139,7 +139,9 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     func reloadSprites() {
         sprites.reload()
         let count = sprites.clips.count
-        petState.notify(count > 0 ? "Đã tải \(count) animation" : "Chưa có ảnh — đang dùng chó vẽ sẵn")
+        petState.notify(count > 0
+            ? String(format: tr("Loaded %d animations"), count)
+            : tr("No sprites yet — using the default dog"))
     }
 
     func openSpritesFolder() {
@@ -183,7 +185,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             NSLog("PetMacOS: failed to start hook server: \(error)")
-            petState.recordError("Không khởi động được server nội bộ: \(error.localizedDescription)")
+            petState.recordError(String(format: tr("Could not start the internal server: %@"), error.localizedDescription))
         }
     }
 
@@ -192,9 +194,9 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     func connectClaudeCode() {
         do {
             try HookInstaller.install()
-            petState.notify("Đã kết nối Claude Code", mood: .talking)
+            petState.notify(tr("Connected Claude Code"), mood: .talking)
         } catch {
-            let message = "Lỗi kết nối: \(error.localizedDescription)"
+            let message = String(format: tr("Connection error: %@"), error.localizedDescription)
             petState.notify(message)
             petState.recordError(message)
         }
@@ -203,7 +205,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
 
     func disconnectClaudeCode() {
         try? HookInstaller.uninstall()
-        petState.notify("Đã ngắt kết nối Claude Code")
+        petState.notify(tr("Disconnected Claude Code"))
         refreshConnectionStatus()
     }
 
@@ -246,7 +248,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let result = self.diagnosticTestResult,
                   !result.success, result.at >= self.lastHealAttemptAt! else { return }
             self.petState.notify(
-                "Pet không nhận được tín hiệu từ Claude Code — thử tắt mở lại app, hoặc bấm Kết nối trong Cài đặt")
+                tr("Pet isn't receiving signals from Claude Code — try restarting the app, or press Connect in Settings"))
         }
     }
 
@@ -270,14 +272,15 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         guard !diagnosticTestRunning else { return }
         guard FileManager.default.fileExists(atPath: HookInstaller.scriptURL.path) else {
             diagnosticTestResult = DiagnosticTestResult(
-                success: false, message: "Chưa cài pet-hook.sh — bấm \"Cài lại hook\" trước.", at: Date())
+                success: false, message: tr("pet-hook.sh isn't installed yet — press \"Reinstall hook\" first."), at: Date())
             return
         }
         diagnosticTestRunning = true
         diagnosticTestResult = nil
         let scriptPath = HookInstaller.scriptURL.path
+        let diagnosticMessage = tr("Testing pet-hook.sh connection")
         let payload = Data("""
-        {"hook_event_name":"PetDiagnostic","session_id":"diagnostic","message":"Kiểm tra kết nối pet-hook.sh"}
+        {"hook_event_name":"PetDiagnostic","session_id":"diagnostic","message":"\(diagnosticMessage)"}
         """.utf8)
         let start = Date()
         let petState = petState
@@ -307,16 +310,16 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             await MainActor.run {
                 self.diagnosticTestRunning = false
                 if let launchError {
-                    let message = "Không chạy được pet-hook.sh: \(launchError)"
+                    let message = String(format: tr("Could not run pet-hook.sh: %@"), launchError)
                     self.diagnosticTestResult = DiagnosticTestResult(success: false, message: message, at: Date())
                     petState.recordError(message)
                     return
                 }
                 if let lastEventAt = petState.lastEventAt, lastEventAt >= start {
                     self.diagnosticTestResult = DiagnosticTestResult(
-                        success: true, message: "Thành công — pet đã nhận event qua pet-hook.sh.", at: Date())
+                        success: true, message: tr("Success — the pet received the event via pet-hook.sh."), at: Date())
                 } else {
-                    let message = "Script chạy xong nhưng pet không nhận được event (kiểm tra hooks đã cài, server đang chạy, hoặc events.log)."
+                    let message = tr("The script ran, but the pet didn't receive the event (check that hooks are installed, the server is running, or events.log).")
                     self.diagnosticTestResult = DiagnosticTestResult(success: false, message: message, at: Date())
                     petState.recordError(message)
                 }
@@ -377,7 +380,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Cài đặt Desktop Pet"
+            window.title = tr("Desktop Pet Settings")
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: SettingsWindowView(
@@ -404,7 +407,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = "Kết nối Claude Code"
+            window.title = tr("Connect Claude Code")
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: OnboardingWindowView(delegate: self) { [weak self] in

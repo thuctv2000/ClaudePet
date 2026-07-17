@@ -42,7 +42,7 @@ final class UsageMonitor {
     /// One fetch; keeps the previous values on any failure.
     func refresh() async {
         guard let token = await Task.detached(operation: { Self.readAccessToken() }).value else {
-            lastError = "Không tìm thấy token đăng nhập Claude Code"
+            lastError = tr("Couldn't find a Claude Code login token")
             return
         }
         do {
@@ -56,13 +56,13 @@ final class UsageMonitor {
             guard let http = response as? HTTPURLResponse else { return }
             guard http.statusCode == 200 else {
                 lastError = http.statusCode == 401
-                    ? "Token hết hạn — mở Claude Code để tự làm mới"
-                    : "Máy chủ trả về \(http.statusCode)"
+                    ? tr("Token expired — open Claude Code to refresh it")
+                    : String(format: tr("Server returned %d"), http.statusCode)
                 return
             }
 
             guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                lastError = "Dữ liệu không đọc được"
+                lastError = tr("Couldn't read the response data")
                 return
             }
             fiveHour = Self.window(from: object["five_hour"])

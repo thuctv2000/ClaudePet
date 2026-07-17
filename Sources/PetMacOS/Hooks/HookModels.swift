@@ -165,27 +165,27 @@ struct HookEvent: Decodable {
         URL(fileURLWithPath: path).lastPathComponent
     }
 
-    /// A Vietnamese description of *what* the tool is doing, preferred over the
+    /// A localized description of *what* the tool is doing, preferred over the
     /// raw tool name so cards read as intent rather than mechanism.
     var intentTitle: String {
         switch toolName {
         case "Bash":
-            return inputString("description") ?? "Chạy lệnh"
+            return inputString("description") ?? tr("Running command")
         case "Edit", "Write", "MultiEdit", "NotebookEdit":
-            if let path = inputString("file_path") { return "Sửa \(basename(path))" }
-            return "Chỉnh sửa tệp"
+            if let path = inputString("file_path") { return String(format: tr("Editing %@"), basename(path)) }
+            return tr("Editing file")
         case "Read":
-            if let path = inputString("file_path") { return "Đọc \(basename(path))" }
-            return "Đọc tệp"
+            if let path = inputString("file_path") { return String(format: tr("Reading %@"), basename(path)) }
+            return tr("Reading file")
         case "Grep", "Glob":
-            return "Tìm kiếm"
+            return tr("Searching")
         case "WebFetch", "WebSearch":
-            return "Tra cứu web"
+            return tr("Looking up the web")
         case "TodoWrite", "TaskCreate", "TaskUpdate", "ExitPlanMode":
-            return "Cập nhật kế hoạch"
+            return tr("Updating plan")
         case "Task", "Agent":
-            let purpose = inputString("description") ?? inputString("subagent_type") ?? "đang chạy"
-            return "Subagent: \(purpose)"
+            let purpose = inputString("description") ?? inputString("subagent_type") ?? tr("running")
+            return String(format: tr("Subagent: %@"), purpose)
         default:
             // MCP tools are named "mcp__<server>__<tool>" (e.g.
             // "mcp__computer-use__request_access") — that raw string is noisy

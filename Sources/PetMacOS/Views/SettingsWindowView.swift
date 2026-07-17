@@ -25,10 +25,10 @@ struct SettingsWindowView: View {
         var id: Self { self }
         var label: String {
             switch self {
-            case .status: return "Trạng thái"
-            case .pet: return "Pet"
-            case .permissions: return "Quyền"
-            case .colors: return "Màu sắc"
+            case .status: return tr("Status")
+            case .pet: return tr("Pet")
+            case .permissions: return tr("Permissions")
+            case .colors: return tr("Colors")
             }
         }
     }
@@ -70,54 +70,54 @@ struct SettingsWindowView: View {
 
     private var statusTab: some View {
         Form {
-            Section("Pet") {
-                Toggle("Hiển thị pet", isOn: Binding(
+            Section(tr("Pet")) {
+                Toggle(tr("Show pet"), isOn: Binding(
                     get: { delegate.isVisible },
                     set: { delegate.setPetVisible($0) }
                 ))
-                Toggle("Click-through (chuột xuyên qua pet)", isOn: Binding(
+                Toggle(tr("Click-through (mouse passes through the pet)"), isOn: Binding(
                     get: { delegate.isClickThrough },
                     set: { delegate.setClickThrough($0) }
                 ))
             }
 
-            Section("Kết nối Claude Code") {
+            Section(tr("Claude Code connection")) {
                 LabeledContent("Hooks") {
-                    Text(delegate.isConnected ? "Đã cài vào ~/.claude/settings.json" : "Chưa kết nối")
+                    Text(delegate.isConnected ? tr("Installed in ~/.claude/settings.json") : tr("Not connected"))
                         .foregroundStyle(delegate.isConnected ? .green : .secondary)
                 }
-                LabeledContent("Server nội bộ") {
+                LabeledContent(tr("Internal server")) {
                     if let port = delegate.serverPort {
-                        Text("Đang nghe cổng \(String(port))")
+                        Text(String(format: tr("Listening on port %@"), String(port)))
                             .foregroundStyle(.green)
                     } else {
-                        Text("Không chạy")
+                        Text(tr("Not running"))
                             .foregroundStyle(.red)
                     }
                 }
                 HStack {
                     if delegate.isConnected {
-                        Button("Ngắt kết nối") { delegate.disconnectClaudeCode() }
+                        Button(tr("Disconnect")) { delegate.disconnectClaudeCode() }
                     } else {
-                        Button("Kết nối") { delegate.connectClaudeCode() }
+                        Button(tr("Connect")) { delegate.connectClaudeCode() }
                     }
-                    Button("Kiểm tra lại") { delegate.refreshConnectionStatus() }
-                    Button("Mở lại hướng dẫn") { delegate.openOnboardingWindow() }
+                    Button(tr("Check again")) { delegate.refreshConnectionStatus() }
+                    Button(tr("Reopen the guide")) { delegate.openOnboardingWindow() }
                 }
             }
 
-            Section("Mức sử dụng Claude") {
-                usageRow("Cửa sổ 5 giờ", usage.fiveHour)
-                usageRow("Tuần", usage.sevenDay)
+            Section(tr("Claude usage")) {
+                usageRow(tr("5-hour window"), usage.fiveHour)
+                usageRow(tr("Week"), usage.sevenDay)
                 if let error = usage.lastError {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
                 HStack {
-                    Button("Làm mới") { Task { await usage.refresh() } }
+                    Button(tr("Refresh")) { Task { await usage.refresh() } }
                     if let updated = usage.lastUpdated {
-                        Text("Cập nhật \(updated.formatted(date: .omitted, time: .shortened))")
+                        Text(String(format: tr("Updated %@"), updated.formatted(date: .omitted, time: .shortened)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -132,25 +132,25 @@ struct SettingsWindowView: View {
     /// App update via Sparkle: the button opens Sparkle's own update window,
     /// which downloads, verifies (EdDSA), installs and relaunches by itself.
     private var updateSection: some View {
-        Section("Phiên bản") {
-            LabeledContent("Đang dùng") {
+        Section(tr("Version")) {
+            LabeledContent(tr("Current")) {
                 Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                        as? String ?? "bản dev")
+                        as? String ?? tr("dev build"))
                     .foregroundStyle(.secondary)
             }
             if let controller = delegate.updaterController {
                 HStack {
-                    Button("Kiểm tra bản mới") { controller.checkForUpdates(nil) }
-                    Text("Có bản mới thì app tự tải, cài và mở lại.")
+                    Button(tr("Check for updates")) { controller.checkForUpdates(nil) }
+                    Text(tr("A new version downloads, installs, and relaunches automatically."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Toggle("Tự động kiểm tra định kỳ", isOn: Binding(
+                Toggle(tr("Check automatically"), isOn: Binding(
                     get: { controller.updater.automaticallyChecksForUpdates },
                     set: { controller.updater.automaticallyChecksForUpdates = $0 }
                 ))
             } else {
-                Text("Bản dev — tự cập nhật chỉ hoạt động ở bản cài trong /Applications.")
+                Text(tr("Dev build — auto-update only works in the /Applications install."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -164,13 +164,13 @@ struct SettingsWindowView: View {
                 HStack(spacing: 6) {
                     Text("\(Int(window.utilization.rounded()))%").bold().monospacedDigit()
                     if let resets = window.resetsAt {
-                        Text("reset \(resets.formatted(date: .abbreviated, time: .shortened))")
+                        Text(String(format: tr("reset %@"), resets.formatted(date: .abbreviated, time: .shortened)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             } else {
-                Text("chưa có dữ liệu").foregroundStyle(.tertiary)
+                Text(tr("no data yet")).foregroundStyle(.tertiary)
             }
         }
     }
@@ -186,7 +186,7 @@ struct SettingsWindowView: View {
             } header: {
                 Text("Sprites")
             } footer: {
-                Text("Bấm Thay… để chọn ảnh PNG trong suốt hoặc GIF động — app tự tách frame, căn giữa và đặt tốc độ.")
+                Text(tr("Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically."))
             }
 
             if let message = importMessage {
@@ -199,8 +199,8 @@ struct SettingsWindowView: View {
 
             Section {
                 HStack {
-                    Button("Mở thư mục sprites") { delegate.openSpritesFolder() }
-                    Button("Tải lại sprites") { delegate.reloadSprites() }
+                    Button(tr("Open sprites folder")) { delegate.openSpritesFolder() }
+                    Button(tr("Reload sprites")) { delegate.reloadSprites() }
                 }
             }
         }
@@ -225,11 +225,11 @@ struct SettingsWindowView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label(for: stateName))
                 if let clip = sprites.clip(named: stateName) {
-                    Text("\(clip.frames.count) frame, \(trimmed(clip.fps)) fps\(clip.loops ? ", lặp" : "")")
+                    Text("\(clip.frames.count) \(tr("frames")), \(trimmed(clip.fps)) fps" + (clip.loops ? ", \(tr("loops"))" : ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("chưa có")
+                    Text(tr("none yet"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -237,7 +237,7 @@ struct SettingsWindowView: View {
 
             Spacer()
 
-            Button("Thay…") { importSprites(for: stateName) }
+            Button(tr("Replace…")) { importSprites(for: stateName) }
         }
     }
 
@@ -246,34 +246,34 @@ struct SettingsWindowView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .gif, .jpeg]
         panel.allowsMultipleSelection = true
-        panel.message = "Chọn ảnh PNG trong suốt (nhiều frame) hoặc một file GIF cho \"\(stateName)\""
-        panel.prompt = "Nhập"
+        panel.message = String(format: tr("Choose a transparent PNG sequence or a GIF file for \"%@\""), stateName)
+        panel.prompt = tr("Import")
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
 
         do {
             let result = try SpriteImporter.replaceFrames(of: stateName, with: panel.urls)
             delegate.reloadSprites()
             if let fps = result.gifFPS {
-                importMessage = "Đã nhập \(result.frameCount) frame cho \(stateName) (GIF, \(trimmed(fps)) fps)."
+                importMessage = String(format: tr("Imported %d frames for %@ (GIF, %@ fps)."), result.frameCount, stateName, trimmed(fps))
             } else {
-                importMessage = "Đã nhập \(result.frameCount) frame cho \(stateName)."
+                importMessage = String(format: tr("Imported %d frames for %@."), result.frameCount, stateName)
             }
         } catch {
-            importMessage = "Lỗi nhập ảnh: \(error.localizedDescription)"
+            importMessage = String(format: tr("Import error: %@"), error.localizedDescription)
         }
     }
 
     private func label(for state: String) -> String {
         switch state {
-        case "idle": return "idle — khi rảnh"
-        case "click": return "click — bấm vào pet"
-        case "thinking": return "thinking — đang suy nghĩ"
-        case "working": return "working — đang chạy tool"
-        case "talking": return "talking — vừa trả lời"
-        case "asking": return "asking — đang xin quyền"
-        case "sleep": return "sleep — kết thúc phiên"
-        case "error": return "error — một tool vừa thất bại"
-        case "happy": return "happy — Claude vừa trả lời xong sạch sẽ"
+        case "idle": return "idle — \(tr("when idle"))"
+        case "click": return "click — \(tr("tapping the pet"))"
+        case "thinking": return "thinking — \(tr("thinking"))"
+        case "working": return "working — \(tr("running a tool"))"
+        case "talking": return "talking — \(tr("just replied"))"
+        case "asking": return "asking — \(tr("asking for permission"))"
+        case "sleep": return "sleep — \(tr("session ended"))"
+        case "error": return "error — \(tr("a tool just failed"))"
+        case "happy": return "happy — \(tr("Claude just finished cleanly"))"
         default: return state
         }
     }
@@ -292,36 +292,36 @@ struct SettingsWindowView: View {
     private var permissionsTab: some View {
         Form {
             Section {
-                Text("Pet hiển thị hộp thoại đúng những lúc Claude Code định hỏi bạn, và không thêm gì cả. Bấm Cho phép hoặc Từ chối trên pet là xong — terminal sẽ không hỏi lại.")
-                Text("Muốn hỏi nhiều hay ít hơn, đổi chế độ quyền ngay trong Claude Code (phím Shift+Tab, hoặc cờ --permission-mode). Pet tự động theo.")
+                Text(tr("The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again."))
+                Text(tr("Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically."))
                     .foregroundStyle(.secondary)
             } header: {
-                Text("Duyệt quyền trên pet")
+                Text(tr("Approving permissions on the pet"))
             } footer: {
-                Text("Nếu pet đang tắt hoặc bận, Claude Code hỏi ở terminal như bình thường — không có gì bị kẹt.")
+                Text(tr("If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck."))
             }
         }
         .formStyle(.grouped)
     }
 
-    // MARK: - Màu sắc
+    // MARK: - Colors
 
     private var colorsTab: some View {
         Form {
-            Section("Border tác vụ đang chạy") {
-                colorRow("Suy nghĩ", $settings.thinking)
-                colorRow("Chạy tool", $settings.tool)
-                colorRow("Chú ý", $settings.notification)
-                colorRow("Phiên", $settings.session)
+            Section(tr("Running-task border")) {
+                colorRow(tr("Thinking"), $settings.thinking)
+                colorRow(tr("Running tool"), $settings.tool)
+                colorRow(tr("Attention"), $settings.notification)
+                colorRow(tr("Session"), $settings.session)
                 colorRow("Subagent", $settings.subagent)
-                colorRow("Chạy nền", $settings.background)
+                colorRow(tr("Background"), $settings.background)
             }
 
-            Section("Gradient tác vụ hoàn thành") {
-                colorRow("Màu 1", $settings.gradient1)
-                colorRow("Màu 2", $settings.gradient2)
-                colorRow("Màu 3", $settings.gradient3)
-                LabeledContent("Xem trước") {
+            Section(tr("Completed-task gradient")) {
+                colorRow(tr("Color 1"), $settings.gradient1)
+                colorRow(tr("Color 2"), $settings.gradient2)
+                colorRow(tr("Color 3"), $settings.gradient3)
+                LabeledContent(tr("Preview")) {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .stroke(settings.completedGradient, lineWidth: 3)
                         .frame(width: 120, height: 28)
@@ -329,7 +329,7 @@ struct SettingsWindowView: View {
             }
 
             Section {
-                Button("Khôi phục mặc định") { settings.resetToDefaults() }
+                Button(tr("Restore defaults")) { settings.resetToDefaults() }
             }
         }
         .formStyle(.grouped)

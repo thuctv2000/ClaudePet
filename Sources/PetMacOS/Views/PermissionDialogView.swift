@@ -11,7 +11,7 @@ struct PermissionDialogView: View {
             HStack(spacing: 6) {
                 Image(systemName: "hand.raised.fill")
                     .foregroundStyle(.orange)
-                Text("Claude xin quyền")
+                Text(tr("Claude requests permission"))
                     .font(.system(size: 13, weight: .semibold))
             }
 
@@ -42,12 +42,12 @@ struct PermissionDialogView: View {
 
             HStack(spacing: 8) {
                 Button { onDeny() } label: {
-                    Text("Từ chối").frame(maxWidth: .infinity)
+                    Text(tr("Deny")).frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Button { onAllow() } label: {
-                    Text("Cho phép").frame(maxWidth: .infinity)
+                    Text(tr("Allow")).frame(maxWidth: .infinity)
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)

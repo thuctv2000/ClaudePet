@@ -19,8 +19,8 @@ enum SpriteImporter {
 
         var errorDescription: String? {
             switch self {
-            case .unreadable(let name): return "Không đọc được ảnh: \(name)"
-            case .noFrames: return "Không có frame nào để nhập"
+            case .unreadable(let name): return String(format: tr("Couldn't read image: %@"), name)
+            case .noFrames: return tr("No frames to import")
             }
         }
     }

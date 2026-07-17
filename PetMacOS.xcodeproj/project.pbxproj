@@ -24,19 +24,23 @@
 		AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46A5EB32015467C559F4AC3 /* SessionNames.swift */; };
 		AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */; };
 		B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A49E4A442ADFD5CD45C9582 /* PetState.swift */; };
+		B997E9BA9EBD99022AA5314C /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 138F5150AE1102DD27B7D5F1 /* Localizable.xcstrings */; };
 		BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF97BEB4B89A535444ADD4A /* PetConfig.swift */; };
 		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
 		F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
+		FAC5DF96ED0EEBB59EFBA97B /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CE15D8703CA77D630E924A /* L10n.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		121562265EDE7612187515DD /* QuestionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDialogView.swift; sourceTree = "<group>"; };
+		138F5150AE1102DD27B7D5F1 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStackView.swift; sourceTree = "<group>"; };
 		21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeAvailability.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
+		33CE15D8703CA77D630E924A /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
 		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
 		78DE56CC509FC11874D00027 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
@@ -104,6 +108,8 @@
 		59DD222D736A3B7BCA601D8F /* PetMacOS */ = {
 			isa = PBXGroup;
 			children = (
+				33CE15D8703CA77D630E924A /* L10n.swift */,
+				138F5150AE1102DD27B7D5F1 /* Localizable.xcstrings */,
 				93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */,
 				C6295BC37E9B655A219CE95D /* PetView.swift */,
 				60DBE02103BE5B9DEE670B5C /* Hooks */,
@@ -215,6 +221,7 @@
 			knownRegions = (
 				Base,
 				en,
+				vi,
 			);
 			mainGroup = 81291BD9D5096951F5A3326D;
 			minimizedProjectReferenceProxies = 1;
@@ -237,6 +244,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				16910DCDF23C4D0B37308E0F /* Assets.xcassets in Resources */,
+				B997E9BA9EBD99022AA5314C /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -252,6 +260,7 @@
 				2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */,
 				1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */,
 				2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */,
+				FAC5DF96ED0EEBB59EFBA97B /* L10n.swift in Sources */,
 				CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */,
 				AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */,
 				BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */,

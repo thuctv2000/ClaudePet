@@ -12,14 +12,14 @@ struct UsageBadgeView: View {
             Rectangle()
                 .fill(.white.opacity(0.25))
                 .frame(width: 1, height: 12)
-            meter(label: "Tuần", window: usage.sevenDay)
+            meter(label: tr("Week"), window: usage.sevenDay)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(Capsule().fill(.black.opacity(0.62)))
         .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
         .shadow(color: .black.opacity(0.3), radius: 5, y: 2)
-        .help(usage.lastError ?? "Mức sử dụng Claude (5 giờ / tuần)")
+        .help(usage.lastError ?? tr("Claude usage (5-hour / weekly)"))
     }
 
     @ViewBuilder

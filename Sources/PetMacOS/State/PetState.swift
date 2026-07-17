@@ -641,7 +641,7 @@ final class PetState {
             persistInFlightSubagents()
             return
         }
-        let title = event.agentType.map { "Subagent: \($0)" } ?? "Subagent đang chạy"
+        let title = event.agentType.map { String(format: tr("Subagent: %@"), $0) } ?? tr("Subagent running")
         startSubagent(TaskItem(
             title: title, kind: .subagent, context: contextLabel(for: event),
             sessionId: event.sessionId, agentId: agentId
@@ -695,7 +695,7 @@ final class PetState {
         else { return }
         let cutoff = Date().addingTimeInterval(-600)
         for record in records where record.startedAt > cutoff {
-            let context = [record.context, "khôi phục"].compactMap { $0 }.joined(separator: " · ")
+            let context = [record.context, tr("recovered")].compactMap { $0 }.joined(separator: " · ")
             subagentTasks.append(TaskItem(
                 title: record.title, detail: record.detail, kind: .subagent,
                 context: context, startedAt: record.startedAt,
@@ -874,7 +874,7 @@ final class PetState {
         if let path = item.transcriptPath { retireWatcherIfUnused(path: path) }
         updatePassthrough()
         pushCompleted(TaskItem(
-            title: "Chạy nền: không rõ kết quả (quá hạn theo dõi)",
+            title: tr("Background: outcome unknown (tracking timed out)"),
             detail: item.title,
             kind: .failed,
             dedupeKey: "bg-\(taskId)",
@@ -893,9 +893,9 @@ final class PetState {
         updatePassthrough()
         let (title, kind): (String, TaskKind) = {
             switch status {
-            case .completed: return ("Chạy nền xong", .done)
-            case .failed: return ("Chạy nền lỗi", .failed)
-            case .killed: return ("Chạy nền bị dừng", .failed)
+            case .completed: return (tr("Background task done"), .done)
+            case .failed: return (tr("Background task failed"), .failed)
+            case .killed: return (tr("Background task stopped"), .failed)
             }
         }()
         pushCompleted(TaskItem(
@@ -1073,7 +1073,7 @@ final class PetState {
         switch event.hookEventName ?? "" {
         case "UserPromptSubmit":
             setMood(.thinking, for: sid)
-            pushRunning(TaskItem(title: "Đang suy nghĩ…", kind: .thinking, context: context, sessionId: sid))
+            pushRunning(TaskItem(title: tr("Thinking…"), kind: .thinking, context: context, sessionId: sid))
         case "PreToolUse":
             // Fires in every permission mode now that it is only a card feed;
             // approval lives on the PermissionRequest hook.
@@ -1113,7 +1113,7 @@ final class PetState {
             if let launch = event.backgroundLaunch, let path = event.transcriptPath {
                 startBackgroundTask(
                     taskId: launch.taskId,
-                    title: "Chạy nền: \(event.intentTitle)",
+                    title: String(format: tr("Background: %@"), event.intentTitle),
                     detail: event.intentDetail.map { truncate($0) },
                     context: context,
                     transcriptPath: path,
@@ -1122,7 +1122,7 @@ final class PetState {
             }
         case "Notification":
             setMood(.asking, for: sid)
-            pushRunning(TaskItem(title: event.message ?? "Claude cần chú ý",
+            pushRunning(TaskItem(title: event.message ?? tr("Claude needs attention"),
                                  kind: .notification, context: context, sessionId: sid))
         case "Stop":
             // Subagents/background tasks may still be working (globally,
@@ -1151,8 +1151,8 @@ final class PetState {
         case "SubagentStop":
             setMood(subagentTasks.count > 1 ? .working : .talking, for: sid)
             let card = finishSubagent(agentId: event.agentId)
-            let title = event.agentType.map { "Subagent \($0) hoàn thành" }
-                ?? "Subagent hoàn thành"
+            let title = event.agentType.map { String(format: tr("Subagent %@ finished"), $0) }
+                ?? tr("Subagent finished")
             // Fall back to the launch card's purpose when the stop event carries
             // no final message, so the notice still says what the work was.
             let detail = event.lastAssistantMessage.map { truncate($0, limit: 800) }
@@ -1217,8 +1217,8 @@ final class PetState {
 
         func push(_ text: String?, context: String?) {
             pushCompleted(TaskItem(
-                title: "Hoàn thành",
-                detail: truncate(text ?? "Claude đã trả lời", limit: 800),
+                title: tr("Completed"),
+                detail: truncate(text ?? tr("Claude replied"), limit: 800),
                 kind: .done,
                 dedupeKey: key,
                 context: context,

@@ -65,7 +65,7 @@ struct PetView: View {
         .frame(width: 320, height: 500)
         .background(Color.clear)
         .contextMenu {
-            Text("Drag me anywhere")
+            Text(tr("Drag me anywhere"))
         }
         .onChange(of: state.happyID) { _, newValue in
             // A clean Stop just happened. Play "happy" once if the user has

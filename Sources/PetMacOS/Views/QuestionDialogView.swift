@@ -26,7 +26,7 @@ struct QuestionDialogView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Text("Claude hỏi")
+                Text(tr("Claude asks"))
                     .font(.system(size: 13, weight: .semibold))
                 Spacer()
                 if total > 1 {
@@ -61,13 +61,13 @@ struct QuestionDialogView: View {
             Button {
                 submitCurrent()
             } label: {
-                Text(isLast ? "Gửi" : "Tiếp").frame(maxWidth: .infinity)
+                Text(isLast ? tr("Submit") : tr("Next")).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(!hasAnswer)
 
             Button { onSkip() } label: {
-                Text("Bỏ qua (trả lời trong terminal)").frame(maxWidth: .infinity)
+                Text(tr("Skip (answer in the terminal)")).frame(maxWidth: .infinity)
             }
             .keyboardShortcut(.cancelAction)
             .font(.system(size: 11))
@@ -130,7 +130,7 @@ struct QuestionDialogView: View {
     @ViewBuilder
     private var customRow: some View {
         if showCustom {
-            TextField("Câu trả lời của bạn", text: $customText)
+            TextField(tr("Your answer"), text: $customText)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
                 .padding(.top, 2)
@@ -139,7 +139,7 @@ struct QuestionDialogView: View {
                 showCustom = true
                 if !current.multiSelect { selected = [] }
             } label: {
-                Text("Khác…")
+                Text(tr("Other…"))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)

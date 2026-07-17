@@ -26,7 +26,7 @@ struct OnboardingWindowView: View {
             Divider()
 
             HStack {
-                Button("Bỏ qua") { finish() }
+                Button(tr("Skip")) { finish() }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
 
@@ -58,17 +58,17 @@ struct OnboardingWindowView: View {
 
     private var introStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Chào mừng đến với Desktop Pet")
+            Text(tr("Welcome to Desktop Pet"))
                 .font(.title2).bold()
-            Text("Desktop Pet là một chú chó để bàn phản ánh trạng thái làm việc của Claude Code — đang suy nghĩ, đang chạy tool, đang chờ bạn quyết định quyền, hay vừa xong việc. Chỉ mất khoảng 1 phút để kết nối.")
+            Text(tr("Desktop Pet is a desktop dog that reflects what Claude Code is doing — thinking, running a tool, waiting on a permission decision, or just finished. Connecting only takes about a minute."))
                 .fixedSize(horizontal: false, vertical: true)
 
             if ClaudeCodeAvailability.isRunningOutsideApplications() {
                 calloutBox(tone: .orange) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("App đang chạy từ nơi tạm (chưa ở /Applications)")
+                        Text(tr("The app is running from a temporary location (not yet in /Applications)"))
                             .bold()
-                        Text("Nên kéo Desktop Pet vào thư mục Applications trước khi kết nối, để cài đặt và hook không bị mất khi bạn đóng ổ đĩa DMG hoặc khởi động lại máy.")
+                        Text(tr("Drag Desktop Pet into the Applications folder before connecting, so the install and hook aren't lost when you eject the DMG or restart your Mac."))
                             .font(.callout)
                     }
                 }
@@ -78,34 +78,34 @@ struct OnboardingWindowView: View {
 
     private var claudeCodeCheckStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Kiểm tra Claude Code")
+            Text(tr("Checking for Claude Code"))
                 .font(.title2).bold()
 
             if claudeCodeInstalled {
                 calloutBox(tone: .green) {
-                    Text("Đã tìm thấy Claude Code trên máy này. Có thể qua bước tiếp theo.")
+                    Text(tr("Found Claude Code on this Mac. You can move on to the next step."))
                 }
             } else {
-                Text("Chưa tìm thấy Claude Code trên máy này (\(HomeDirCaption.claudeDir) hoặc lệnh claude). Claude Code là công cụ dòng lệnh chạy trong Terminal mà Desktop Pet theo dõi — cần cài nó trước khi kết nối.")
+                Text(String(format: tr("Claude Code wasn't found on this Mac (%@ or the claude command). Claude Code is the command-line tool running in Terminal that Desktop Pet watches — it needs to be installed before connecting."), HomeDirCaption.claudeDir))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Link("Hướng dẫn cài Claude Code (claude.com/claude-code)",
+                Link(tr("Claude Code install guide (claude.com/claude-code)"),
                      destination: URL(string: "https://claude.com/claude-code")!)
 
-                Button("Kiểm tra lại") { refreshChecks() }
+                Button(tr("Check again")) { refreshChecks() }
             }
         }
     }
 
     private var connectStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Kết nối Claude Code")
+            Text(tr("Connect Claude Code"))
                 .font(.title2).bold()
-            Text("Bấm nút bên dưới để cài hook vào ~/.claude/settings.json. Việc này chỉ thêm một vài mục hook — không đụng tới cài đặt khác của bạn.")
+            Text(tr("Press the button below to install the hook into ~/.claude/settings.json. This only adds a few hook entries — it doesn't touch any of your other settings."))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                Button(delegate.isConnected ? "Đã kết nối" : "Kết nối Claude Code") {
+                Button(delegate.isConnected ? tr("Connected") : tr("Connect Claude Code")) {
                     delegate.connectClaudeCode()
                     delegate.testHookConnection()
                 }
@@ -114,7 +114,7 @@ struct OnboardingWindowView: View {
 
                 if delegate.diagnosticTestRunning {
                     ProgressView().controlSize(.small)
-                    Text("Đang kiểm tra kết nối…").foregroundStyle(.secondary)
+                    Text(tr("Testing connection…")).foregroundStyle(.secondary)
                 }
             }
 
@@ -124,7 +124,7 @@ struct OnboardingWindowView: View {
                 }
             } else if delegate.isConnected {
                 calloutBox(tone: .green) {
-                    Text("Hook đã cài. Bấm \"Kết nối Claude Code\" một lần nữa để pet tự xác nhận, hoặc qua bước tiếp theo.")
+                    Text(tr("The hook is installed. Press \"Connect Claude Code\" again for the pet to confirm it, or move on to the next step."))
                 }
             }
         }
@@ -132,15 +132,15 @@ struct OnboardingWindowView: View {
 
     private var doneStep: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Xong! Giờ thử xem pet phản ứng")
+            Text(tr("Done! Now let's see the pet react"))
                 .font(.title2).bold()
-            Text("Mở Terminal (hoặc IDE tích hợp), chạy \"claude\" để bắt đầu một phiên, rồi gõ thử một lệnh bất kỳ, ví dụ:")
+            Text(tr("Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:"))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("liệt kê các file trong thư mục hiện tại")
+            Text(tr("list the files in the current directory"))
                 .font(.system(.body, design: .monospaced))
                 .padding(8)
                 .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-            Text("Chú chó trên màn hình sẽ đổi biểu cảm khi Claude Code bắt đầu suy nghĩ, chạy tool, hoặc cần bạn duyệt quyền. Nếu sau vài phút vẫn không thấy gì, mở Cài đặt → tab \"Chẩn đoán\" để kiểm tra.")
+            Text(tr("The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check."))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -160,10 +160,10 @@ struct OnboardingWindowView: View {
     @ViewBuilder
     private var navigationButton: some View {
         if step == .done {
-            Button("Xong") { finish() }
+            Button(tr("Done")) { finish() }
                 .buttonStyle(.borderedProminent)
         } else {
-            Button("Tiếp tục") { advance() }
+            Button(tr("Continue")) { advance() }
                 .buttonStyle(.borderedProminent)
                 .disabled(step == .claudeCodeCheck && !claudeCodeInstalled)
         }

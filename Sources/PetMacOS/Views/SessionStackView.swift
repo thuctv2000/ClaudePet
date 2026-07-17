@@ -57,7 +57,7 @@ struct SessionStackView: View {
             scrollBody(proxy)
                 .overlay(alignment: .top) {
                     if hiddenAboveCount > 0 {
-                        pill("+\(hiddenAboveCount) more ˄") {
+                        pill(String(format: tr("+%d more ˄"), hiddenAboveCount)) {
                             guard let oldest = summaries.last?.id else { return }
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 proxy.scrollTo(oldest, anchor: .top)
@@ -68,7 +68,7 @@ struct SessionStackView: View {
                 }
                 .overlay(alignment: .bottom) {
                     if hiddenBelowCount > 0 {
-                        pill("Latest ˅") { scrollToLatest(proxy) }
+                        pill(tr("Latest ˅")) { scrollToLatest(proxy) }
                             .padding(.bottom, 2)
                     }
                 }
@@ -366,7 +366,7 @@ private struct SessionCardView: View {
     private var countText: String {
         var parts: [String] = []
         if !summary.subagents.isEmpty { parts.append("\(summary.subagents.count) subagent") }
-        if !summary.backgrounds.isEmpty { parts.append("\(summary.backgrounds.count) chạy nền") }
+        if !summary.backgrounds.isEmpty { parts.append("\(summary.backgrounds.count) \(tr("background"))") }
         return parts.joined(separator: " · ")
     }
 

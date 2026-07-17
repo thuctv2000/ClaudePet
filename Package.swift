@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PetMacOS",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "PetMacOS", targets: ["PetMacOS"])
@@ -15,6 +16,9 @@ let package = Package(
             name: "PetMacOS",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
+            ],
+            resources: [
+                .process("Localizable.xcstrings")
             ]
         )
     ]

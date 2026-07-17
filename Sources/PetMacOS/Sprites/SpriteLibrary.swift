@@ -82,30 +82,27 @@ final class SpriteLibrary {
         // before "error"/"happy" existed still see them listed.
         let readme = root.appendingPathComponent("README.txt")
         let text = """
-        SPRITES CHO DESKTOP PET
-        =======================
-        Mỗi thư mục là một "state" (trạng thái). Thả các frame PNG trong suốt vào
-        thư mục tương ứng, đặt tên theo thứ tự phát, ví dụ:
+        SPRITES FOR DESKTOP PET
+        ========================
+        \(tr("Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:"))
             idle/idle_000.png, idle/idle_001.png, idle/idle_002.png ...
 
-        Các state: \(states.joined(separator: ", ")).
-          - idle     : khi rảnh (nên loop)
-          - click    : phản ứng khi bấm vào pet (chạy 1 lần)
-          - thinking : Claude đang suy nghĩ
-          - working  : đang chạy tool
-          - talking  : vừa trả lời xong
-          - asking   : đang xin quyền (cần chú ý)
-          - sleep    : kết thúc phiên
-          - error    : một tool vừa thất bại (hiện một lúc ngắn rồi tự tắt)
-          - happy    : phản ứng khi Claude vừa trả lời xong sạch sẽ (chạy 1 lần,
-                       nếu chưa có ảnh thì pet chỉ dùng "talking" như bình thường)
+        \(tr("States")): \(states.joined(separator: ", ")).
+          - idle     : \(tr("when idle (should loop)"))
+          - click    : \(tr("reaction when the pet is tapped (plays once)"))
+          - thinking : \(tr("Claude is thinking"))
+          - working  : \(tr("running a tool"))
+          - talking  : \(tr("just replied"))
+          - asking   : \(tr("asking for permission (needs attention)"))
+          - sleep    : \(tr("session ended"))
+          - error    : \(tr("a tool just failed (shows briefly, then clears itself)"))
+          - happy    : \(tr("reaction when Claude just finished cleanly (plays once; falls back to \"talking\" if you have no frames for it)"))
 
-        Tùy chọn: thêm file clip.json trong thư mục state để chỉnh tốc độ/lặp:
+        \(tr("Optional: add a clip.json file inside a state folder to adjust speed/looping:"))
             {"fps": 12, "loop": true}
 
-        Sau khi thêm/đổi ảnh, dùng menu bar > "Tải lại sprites".
-        State nào chưa có ảnh sẽ tự dùng frame "idle", hoặc con chó vẽ sẵn nếu
-        chưa có ảnh nào cả.
+        \(tr("After adding or changing images, use the menu bar > \"Reload sprites\"."))
+        \(tr("Any state with no images falls back to the \"idle\" frame, or the built-in vector dog if there are no images at all."))
         """
         try? text.write(to: readme, atomically: true, encoding: .utf8)
     }
