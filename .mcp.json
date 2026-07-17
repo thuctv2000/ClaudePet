@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claudepet": {
+      "command": "node",
+      "args": ["channels/claudepet-channel.mjs"]
+    }
+  }
+}
