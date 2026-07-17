@@ -302,8 +302,9 @@ private struct SessionCardView: View {
         }
     }
 
-    /// One-line reply field, shown only when the session has a live tmux
-    /// pane. Disabled (with an explanatory placeholder) while this session's
+    /// One-line reply field, shown only when the session is reachable — via a
+    /// live tmux pane (Reply v1) or a live channel bridge (Reply v1.1).
+    /// Disabled (with an explanatory placeholder) while this session's
     /// own permission/question dialog is pending so a stray Enter can never
     /// land in the TUI's dialog.
     @ViewBuilder

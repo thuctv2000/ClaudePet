@@ -1480,6 +1480,73 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$RPL_SID\",\"cw
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$NOP_SID\",\"cwd\":\"$CWD22\"}"
 
 # ----------------------------------------------------------------------------
+# TEST 23 — Reply v1.1 (Channels transport): a channel MCP server announces
+# itself (POST /channel/hello with its cwd), so the session card whose cwd
+# matches offers a reply box even with NO tmux pane; a reply typed from the
+# card is delivered to the channel's long-poll (GET /channel/poll); Claude's
+# reply back (POST /channel/reply) shows on the card. This is the full pet-side
+# channel path exercised over pure HTTP -- no real `claude` process needed (see
+# tests/channel_smoke.sh for the real-session attempt).
+# ----------------------------------------------------------------------------
+CHAN_SID="chansess0000000000000000000000023"
+CHAN_ID="e2echan_$$"
+CWD23="/tmp/e2echan_$$"
+
+# 23a — hello + a hook event with matching cwd (no pane) -> channelConnected.
+curl -s -m 5 -X POST "$BASE/channel/hello" -H "X-Pet-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary "{\"channelId\":\"$CHAN_ID\",\"cwd\":\"$CWD23\"}" >/dev/null
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$CHAN_SID\",\"cwd\":\"$CWD23\",\"prompt\":\"e2e channel\"}"
+sleep 0.4
+STATE=$(get_state)
+assert "23a. Channel hello makes the (pane-less) session's card channelConnected + canReply" '
+order=s.get("sessionOrder") or []
+chan=s.get("sessionChannelConnected") or []
+can=s.get("sessionCanReply") or []
+panes=s.get("sessionTmuxPanes") or []
+sid="'"$CHAN_SID"'"
+if sid not in order:
+    print("FAIL: channel session card not present: %r" % order)
+else:
+    i=order.index(sid)
+    if not chan[i]:
+        print("FAIL: channelConnected should be true for the channel session")
+    elif not can[i]:
+        print("FAIL: canReply should be true via channel even with no tmux pane")
+    elif panes[i] is not None:
+        print("FAIL: channel session should have no tmux pane, got %r" % panes[i])
+    else:
+        print("PASS")
+' "$STATE"
+
+# 23b — a reply from the card routes over the channel transport and lands in
+# the channel's poll.
+SENDRES=$(curl -s -m 10 -X POST "$BASE/debug/sendReply" -H "X-Pet-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary "{\"sessionId\":\"$CHAN_SID\",\"text\":\"tin nhắn kênh tiếng Việt\"}")
+POLLRES=$(curl -s -m 30 "$BASE/channel/poll?channelId=$CHAN_ID&since=0" -H "X-Pet-Token: $TOKEN")
+if printf '%s' "$SENDRES" | grep -q '"transport":"channel"' \
+    && printf '%s' "$POLLRES" | grep -q 'tin nhắn kênh tiếng Việt'; then
+    report "23b. Card reply routes over channel transport and reaches the poll" "PASS"
+else
+    report "23b. Card reply routes over channel transport and reaches the poll" \
+        "FAIL: send=$SENDRES poll=$POLLRES"
+fi
+
+# 23c — Claude's reply back through the channel shows as a completed notice.
+curl -s -m 5 -X POST "$BASE/channel/reply" -H "X-Pet-Token: $TOKEN" \
+    -H "Content-Type: application/json" \
+    --data-binary "{\"channelId\":\"$CHAN_ID\",\"cwd\":\"$CWD23\",\"text\":\"trả lời từ Claude qua kênh\"}" >/dev/null
+sleep 0.4
+STATE=$(get_state)
+assert "23c. A channel reply (POST /channel/reply) appears as a completed notice" '
+hit=[c for c in s["completedNotices"] if c.get("detail") and "trả lời từ Claude qua kênh" in c["detail"]]
+print("PASS" if hit else "FAIL: no completed notice carried the channel reply")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$CHAN_SID\",\"cwd\":\"$CWD23\"}"
+
+# ----------------------------------------------------------------------------
 # Summary
 # ----------------------------------------------------------------------------
 echo

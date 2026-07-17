@@ -12,6 +12,15 @@ protocol AskResolver: AnyObject, Sendable {
     func resolveQuestion(id: String, answers: [String: PetAnswer]?)
 }
 
+/// Something that can push a reply into a live channel MCP server (implemented
+/// by `HookServer`). Used as the second Reply transport, alongside tmux.
+protocol ChannelSink: AnyObject, Sendable {
+    /// Enqueues `text` to every live channel whose cwd matches (`cwd == nil`
+    /// broadcasts to all). Fire-and-forget: delivery happens on the channel's
+    /// next long-poll.
+    func deliverToChannels(text: String, cwd: String?)
+}
+
 /// A pending permission request awaiting the user's Allow/Deny on the pet.
 struct PendingAsk: Identifiable, Equatable {
     let id: String
@@ -259,6 +268,9 @@ final class PetState {
         var name: String?
         var tag: String?
         var project: String?
+        /// Full working directory of the session, used to match a live channel
+        /// (whose process cwd is the session's cwd) to this conversation card.
+        var cwd: String?
         /// tmux pane the session runs in (e.g. "%12"), captured from the
         /// latest event that carried one. Refreshed on EVERY event (the pane
         /// can change when the user resumes the session in another terminal).
@@ -282,6 +294,7 @@ final class PetState {
         if let name = sessionNames.name(for: sid, cwd: event.cwd) { meta.name = name }
         if meta.tag == nil { meta.tag = event.sessionTag }
         if let project = event.projectName { meta.project = project }
+        if let cwd = event.cwd, !cwd.isEmpty { meta.cwd = cwd }
         if let pane = event.tmuxPane, !pane.isEmpty { meta.tmuxPane = pane }
         sessionMeta[sid] = meta
     }
@@ -325,14 +338,17 @@ final class PetState {
         let backgrounds: [TaskItem]
         /// tmux pane the session runs in (Reply v1), nil when not under tmux.
         let tmuxPane: String?
+        /// A live channel MCP server is bridging this session (Reply v1.1).
+        let channelConnected: Bool
         /// This session has a blocking /ask or /question of its OWN pending
         /// on the pet — sending a reply is blocked so a stray Enter can never
         /// land in the TUI's permission dialog.
         let isAwaitingApproval: Bool
         /// Outcome of the most recent reply sent from this card, if any.
         let replyStatus: ReplyStatus?
-        /// The card shows a reply box when the session has a live tmux pane.
-        var canReply: Bool { tmuxPane != nil }
+        /// The card shows a reply box when the session can be reached — via a
+        /// live tmux pane (Reply v1) or a live channel bridge (Reply v1.1).
+        var canReply: Bool { tmuxPane != nil || channelConnected }
     }
 
     /// Outcome of a reply sent from a session card (Reply v1). Shown as a
@@ -393,6 +409,7 @@ final class PetState {
                 subagents: subs,
                 backgrounds: bgs,
                 tmuxPane: sessionMeta[key]?.tmuxPane,
+                channelConnected: channelConnected(forCwd: sessionMeta[key]?.cwd),
                 isAwaitingApproval: askQueue.contains { $0.sessionId == key }
                     || pendingQuestion?.sessionId == key,
                 replyStatus: replyStatuses[key]
@@ -985,16 +1002,74 @@ final class PetState {
     /// How long a reply status line stays on the card before auto-hiding.
     private static let replyStatusTTL: TimeInterval = 20
 
+    // MARK: - Reply v1.1 (Channels transport)
+
+    /// The sink that pushes replies into live channel MCP servers (HookServer).
+    @ObservationIgnored weak var channelSink: ChannelSink?
+
+    /// One live channel (a `claudepet-channel.mjs` process) known to the pet.
+    private struct ChannelInfo {
+        /// The channel process's cwd = the session's cwd; used to match a
+        /// channel to the right conversation card.
+        var cwd: String?
+        /// Last time this channel said hello or polled — a channel is only
+        /// treated as live within `channelTTL` of this.
+        var lastSeen: Date
+    }
+    /// channelId -> its liveness/cwd. A channel long-polls every <=25s, well
+    /// within `channelTTL`, so an entry going stale means the session closed.
+    private var channels: [String: ChannelInfo] = [:]
+    /// How long a channel is considered live after its last hello/poll.
+    private static let channelTTL: TimeInterval = 90
+
+    /// Records a channel heartbeat (hello or poll). Bumps the reply box on any
+    /// card whose cwd matches, so the box appears as soon as a channel connects.
+    func noteChannelHeartbeat(channelId: String, cwd: String?) {
+        channels[channelId] = ChannelInfo(cwd: cwd, lastSeen: Date())
+        pruneStaleChannels()
+        updatePassthrough()
+    }
+
+    /// Drops channels not heard from within `channelTTL`.
+    private func pruneStaleChannels() {
+        let now = Date()
+        channels = channels.filter { now.timeIntervalSince($0.value.lastSeen) < Self.channelTTL }
+    }
+
+    /// True when a live channel exists for `cwd` (exact cwd match, or a channel
+    /// that hasn't reported a cwd yet — treated as the single session under
+    /// test). Drives `SessionSummary.channelConnected`.
+    private func channelConnected(forCwd cwd: String?) -> Bool {
+        let now = Date()
+        return channels.values.contains { info in
+            guard now.timeIntervalSince(info.lastSeen) < Self.channelTTL else { return false }
+            return info.cwd == nil || info.cwd == cwd
+        }
+    }
+
+    /// Shows Claude's channel reply on the matching conversation card as a
+    /// completed notice. Falls back to the no-session bucket when no card's cwd
+    /// matches (e.g. the session hasn't sent a hook event yet).
+    func presentChannelReply(channelId: String?, cwd: String?, text: String) {
+        // Refresh liveness: a reply is proof the channel is alive.
+        if let channelId { channels[channelId] = ChannelInfo(cwd: cwd, lastSeen: Date()) }
+        let sessionId = sessionMeta.first { $0.value.cwd != nil && $0.value.cwd == cwd }?.key
+        pushCompleted(TaskItem(
+            title: "Trả lời từ session",
+            detail: truncate(text, limit: 800),
+            kind: .done,
+            dedupeKey: nil,
+            context: sessionId.flatMap { displayName(forKey: $0) },
+            sessionId: sessionId
+        ))
+    }
+
     /// Sends `text` into the session's tmux pane (Reply v1). Fire-and-forget
     /// from the UI's point of view: the outcome lands in `replyStatuses` (and
     /// therefore on the session card) when the injection finishes.
     func sendReply(_ text: String, forSession sessionId: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        guard let pane = sessionMeta[sessionId]?.tmuxPane else {
-            setReplyStatus(.failed("không có tmux pane"), forSession: sessionId)
-            return
-        }
         // Belt-and-braces: the UI already disables the field, but never let a
         // reply race a pending permission dialog of the same session (the
         // trailing Enter would land in the TUI's dialog).
@@ -1006,16 +1081,56 @@ final class PetState {
         // Snapshot the session's busyness NOW (mood may change while sending).
         let mood = sessions[sessionId]?.mood ?? .idle
         let busy = mood == .working || mood == .thinking || mood == .asking
-        Task { [weak self] in
-            let result = await SessionInjector.send(trimmed, toPane: pane)
-            guard let self else { return }
-            switch result {
-            case .success:
-                self.setReplyStatus(busy ? .queued : .sent, forSession: sessionId)
-            case .failure(let error):
-                self.setReplyStatus(.failed(error.shortReason), forSession: sessionId)
+        let cwd = sessionMeta[sessionId]?.cwd
+
+        // Transport 1: a live tmux pane (Reply v1) wins when present.
+        if let pane = sessionMeta[sessionId]?.tmuxPane {
+            Task { [weak self] in
+                let result = await SessionInjector.send(trimmed, toPane: pane)
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.setReplyStatus(busy ? .queued : .sent, forSession: sessionId)
+                case .failure(let error):
+                    self.setReplyStatus(.failed(error.shortReason), forSession: sessionId)
+                }
             }
+            return
         }
+
+        // Transport 2: a live channel bridge (Reply v1.1). The channel enqueues
+        // the message; when Claude is busy the session auto-queues it, so the
+        // busy/idle status wording matches the tmux path.
+        if channelConnected(forCwd: cwd) {
+            channelSink?.deliverToChannels(text: trimmed, cwd: cwd)
+            setReplyStatus(busy ? .queued : .sent, forSession: sessionId)
+            return
+        }
+
+        setReplyStatus(.failed("không có kênh gửi (tmux/channel)"), forSession: sessionId)
+    }
+
+    /// Outcome of `debugSendReply`, mirroring `sendReply`'s transport choice so
+    /// the `/debug/sendReply` route can assert on the exact path taken.
+    enum DebugReplyOutcome {
+        case tmux(Result<Void, SessionInjector.InjectorError>)
+        case channel
+        case none
+    }
+
+    /// Test-only twin of `sendReply` used by `/debug/sendReply`: makes the same
+    /// transport choice (tmux pane, else live channel, else nothing) and
+    /// reports which path ran, so the e2e suite can assert without UI access.
+    func debugSendReply(_ text: String, forSession sessionId: String) async -> DebugReplyOutcome {
+        let cwd = sessionMeta[sessionId]?.cwd
+        if let pane = sessionMeta[sessionId]?.tmuxPane {
+            return .tmux(await SessionInjector.send(text, toPane: pane))
+        }
+        if channelConnected(forCwd: cwd) {
+            channelSink?.deliverToChannels(text: text, cwd: cwd)
+            return .channel
+        }
+        return .none
     }
 
     /// Writes a reply status for the session and arms its ~20s auto-clear.
@@ -1468,6 +1583,9 @@ final class PetState {
         /// Whether each session card offers the Reply box (pane present),
         /// aligned with `sessionOrder`.
         let sessionCanReply: [Bool]
+        /// Whether each session card is bridged by a live channel (Reply
+        /// v1.1), aligned with `sessionOrder`.
+        let sessionChannelConnected: [Bool]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1501,7 +1619,8 @@ final class PetState {
             sessionOrder: summaries.map(\.id),
             sessionNames: summaries.map(\.name),
             sessionTmuxPanes: summaries.map(\.tmuxPane),
-            sessionCanReply: summaries.map(\.canReply)
+            sessionCanReply: summaries.map(\.canReply),
+            sessionChannelConnected: summaries.map(\.channelConnected)
         )
     }
 

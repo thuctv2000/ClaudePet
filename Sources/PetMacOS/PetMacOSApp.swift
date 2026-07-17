@@ -150,6 +150,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         let server = HookServer(petState: petState, token: token)
         hookServer = server
         petState.resolver = server
+        petState.channelSink = server
         petState.onInteractiveNeeded = { [weak self] needed in
             guard let self, let panel = self.panel else { return }
             if needed {

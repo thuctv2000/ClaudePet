@@ -4,7 +4,7 @@ import Network
 /// Minimal loopback HTTP server that receives hook events from `pet-hook.sh`
 /// and forwards them to `PetState`. Bound to the loopback interface only and
 /// gated by a per-launch token, so no other machine can reach it.
-final class HookServer: AskResolver, @unchecked Sendable {
+final class HookServer: AskResolver, ChannelSink, @unchecked Sendable {
     private let petState: PetState
     private let token: String
     private let queue = DispatchQueue(label: "com.desktoppet.hookserver")
@@ -22,6 +22,31 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// Raw `tool_input.questions` JSON per pending question id, kept so the
     /// answer response can echo the questions back verbatim. Touched on `queue`.
     private var pendingQuestionPayloads: [String: Data] = [:]
+
+    // MARK: - Channels (research-preview transport)
+
+    /// One registered channel MCP server (`claudepet-channel.mjs`). A channel
+    /// long-polls `/channel/poll`; messages typed from a session card are
+    /// enqueued here and handed to the next poll. Only touched on `queue`.
+    private struct Channel {
+        /// The session's working directory (this channel process's cwd),
+        /// used to match a channel to the right conversation card.
+        var cwd: String?
+        /// Monotonic sequence for messages delivered to this channel, so a
+        /// poll can ack with `since` and never re-receive an old message.
+        var nextSeq: Int = 0
+        /// Messages queued for the next poll: (seq, text).
+        var pending: [(seq: Int, text: String)] = []
+        /// The in-flight long-poll waiting for a message, if any. Keyed by a
+        /// per-poll id so a stale timeout can't resume a newer poll.
+        var waiter: (pollId: String, connection: NWConnection)?
+    }
+    /// channelId -> its queue/waiter. Only touched on `queue`.
+    private var channels: [String: Channel] = [:]
+
+    /// How long a `/channel/poll` is held open before returning empty (below
+    /// the channel client's own ~35s request timeout).
+    private let channelPollTimeout: TimeInterval = 25
 
     /// How long to wait for the user before defaulting to deny.
     private let askTimeout: TimeInterval = 300
@@ -86,7 +111,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
             return
         }
 
-        switch request.path {
+        switch request.pathOnly {
         case "/event":
             if let event = try? JSONDecoder().decode(HookEvent.self, from: request.body) {
                 let petState = self.petState
@@ -97,6 +122,12 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleAsk(request, on: connection)
         case "/question":
             handleQuestion(request, on: connection)
+        case "/channel/hello":
+            handleChannelHello(request, on: connection)
+        case "/channel/poll":
+            handleChannelPoll(request, on: connection)
+        case "/channel/reply":
+            handleChannelReply(request, on: connection)
         case "/debug/state":
             handleDebugState(on: connection)
         case "/debug/resolveAsk":
@@ -220,15 +251,11 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
         let petState = self.petState
         Task { @MainActor in
-            guard let pane = petState.tmuxPane(forSession: sessionId) else {
-                self.respond(connection, body: Data(#"{"ok":false,"error":"noPane"}"#.utf8))
-                return
-            }
-            let result = await SessionInjector.send(text, toPane: pane)
-            switch result {
-            case .success:
-                self.respond(connection, body: Data(#"{"ok":true}"#.utf8))
-            case .failure(let error):
+            let outcome = await petState.debugSendReply(text, forSession: sessionId)
+            switch outcome {
+            case .tmux(.success):
+                self.respond(connection, body: Data(#"{"ok":true,"transport":"tmux"}"#.utf8))
+            case .tmux(.failure(let error)):
                 let name: String
                 switch error {
                 case .tmuxMissing: name = "tmuxMissing"
@@ -236,6 +263,130 @@ final class HookServer: AskResolver, @unchecked Sendable {
                 case .sendFailed: name = "sendFailed"
                 }
                 self.respond(connection, body: Data("{\"ok\":false,\"error\":\"\(name)\"}".utf8))
+            case .channel:
+                self.respond(connection, body: Data(#"{"ok":true,"transport":"channel"}"#.utf8))
+            case .none:
+                self.respond(connection, body: Data(#"{"ok":false,"error":"noPane"}"#.utf8))
+            }
+        }
+    }
+
+    // MARK: - Channels
+
+    /// A channel server announcing itself (POST `/channel/hello`). Registers
+    /// the channel and its cwd so the pet can offer a reply box on the matching
+    /// conversation card. Body: `{"channelId":"...","cwd":"..."}`.
+    private func handleChannelHello(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        guard let channelId = object?["channelId"] as? String else {
+            respond(connection, status: "400 Bad Request",
+                    body: Data(#"{"ok":false}"#.utf8))
+            return
+        }
+        let cwd = object?["cwd"] as? String
+        queue.async { [weak self] in
+            guard let self else { return }
+            var channel = self.channels[channelId] ?? Channel()
+            channel.cwd = cwd
+            self.channels[channelId] = channel
+            self.noteHeartbeat(channelId: channelId, cwd: cwd)
+            self.respond(connection, body: Data(#"{"ok":true}"#.utf8))
+        }
+    }
+
+    /// A channel server long-polling for messages (GET
+    /// `/channel/poll?channelId=..&since=..`). Returns immediately with any
+    /// messages newer than `since`, otherwise holds the connection open until a
+    /// message arrives or `channelPollTimeout` elapses.
+    private func handleChannelPoll(_ request: HTTPRequest, on connection: NWConnection) {
+        guard let channelId = request.query["channelId"] else {
+            respond(connection, status: "400 Bad Request", body: Data(#"{"messages":[]}"#.utf8))
+            return
+        }
+        let since = Int(request.query["since"] ?? "0") ?? 0
+        queue.async { [weak self] in
+            guard let self else { return }
+            var channel = self.channels[channelId] ?? Channel()
+            let cwd = channel.cwd
+            self.noteHeartbeat(channelId: channelId, cwd: cwd)
+
+            // Drop everything the client has already acknowledged.
+            channel.pending.removeAll { $0.seq <= since }
+
+            if !channel.pending.isEmpty {
+                let now = channel.pending.map(\.seq).max() ?? since
+                let body = Self.pollBody(channel.pending, now: now)
+                channel.pending.removeAll()
+                self.channels[channelId] = channel
+                self.respond(connection, body: body)
+                return
+            }
+
+            // Nothing waiting: park this poll and arm the empty-return timeout.
+            let pollId = UUID().uuidString
+            channel.waiter = (pollId: pollId, connection: connection)
+            self.channels[channelId] = channel
+            self.queue.asyncAfter(deadline: .now() + self.channelPollTimeout) { [weak self] in
+                guard let self, var ch = self.channels[channelId],
+                      ch.waiter?.pollId == pollId else { return }
+                ch.waiter = nil
+                self.channels[channelId] = ch
+                self.respond(connection, body: Self.pollBody([], now: since))
+            }
+        }
+    }
+
+    /// Claude's reply coming back through the channel (POST `/channel/reply`).
+    /// Body: `{"channelId":"...","cwd":"...","text":"..."}`. Shows the reply on
+    /// the matching conversation card.
+    private func handleChannelReply(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        guard let text = object?["text"] as? String, !text.isEmpty else {
+            respond(connection, status: "400 Bad Request", body: Data(#"{"ok":false}"#.utf8))
+            return
+        }
+        let channelId = object?["channelId"] as? String
+        let cwd = object?["cwd"] as? String
+        let petState = self.petState
+        Task { @MainActor in petState.presentChannelReply(channelId: channelId, cwd: cwd, text: text) }
+        respond(connection, body: Data(#"{"ok":true}"#.utf8))
+    }
+
+    /// Encodes a `/channel/poll` response body: `{"messages":[{seq,text}],"now":N}`.
+    private static func pollBody(_ messages: [(seq: Int, text: String)], now: Int) -> Data {
+        let items = messages.map { ["seq": $0.seq, "text": $0.text] as [String: Any] }
+        let object: [String: Any] = ["messages": items, "now": now]
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data(#"{"messages":[]}"#.utf8)
+    }
+
+    /// Tells `PetState` a channel is alive (drives the card's reply box). Safe
+    /// to call from `queue`; hops to the main actor.
+    private func noteHeartbeat(channelId: String, cwd: String?) {
+        let petState = self.petState
+        Task { @MainActor in petState.noteChannelHeartbeat(channelId: channelId, cwd: cwd) }
+    }
+
+    // MARK: - ChannelSink
+
+    /// Enqueues `text` to every live channel whose cwd matches (or, when
+    /// `cwd` is nil, to all channels), waking any parked poll. Called by
+    /// `PetState.sendReply` for sessions with no tmux pane.
+    func deliverToChannels(text: String, cwd: String?) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            for (id, var channel) in self.channels {
+                guard cwd == nil || channel.cwd == nil || channel.cwd == cwd else { continue }
+                channel.nextSeq += 1
+                channel.pending.append((seq: channel.nextSeq, text: text))
+                // Hand the whole backlog to a parked poll, if one is waiting.
+                if let waiter = channel.waiter {
+                    let now = channel.pending.map(\.seq).max() ?? channel.nextSeq
+                    let body = Self.pollBody(channel.pending, now: now)
+                    channel.pending.removeAll()
+                    channel.waiter = nil
+                    self.respond(waiter.connection, body: body)
+                }
+                self.channels[id] = channel
             }
         }
     }
@@ -303,6 +454,26 @@ struct HTTPRequest {
     let path: String
     let headers: [String: String]
     let body: Data
+
+    /// The request path with any `?query` stripped, for route matching.
+    var pathOnly: String {
+        guard let q = path.firstIndex(of: "?") else { return path }
+        return String(path[path.startIndex..<q])
+    }
+
+    /// Parsed `?key=value&…` query items (percent-decoded).
+    var query: [String: String] {
+        guard let q = path.firstIndex(of: "?") else { return [:] }
+        let raw = path[path.index(after: q)...]
+        var items: [String: String] = [:]
+        for pair in raw.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+            guard let key = kv.first.map(String.init) else { continue }
+            let value = kv.count > 1 ? String(kv[1]) : ""
+            items[key.removingPercentEncoding ?? key] = value.removingPercentEncoding ?? value
+        }
+        return items
+    }
 
     init?(_ data: Data) {
         guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
