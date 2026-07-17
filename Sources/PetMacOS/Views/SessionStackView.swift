@@ -240,8 +240,7 @@ private struct SessionCardView: View {
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(summary.name)
-                    .font(.caption)
-                    .bold()
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .truncationMode(.tail)
@@ -258,11 +257,15 @@ private struct SessionCardView: View {
                 onDismissCard(summary.id)
             } label: {
                 Text("✕")
-                    .font(.caption2)
-                    .bold()
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.secondary)
+                    // Generous hit area — the glyph alone is a fiddly target.
+                    .padding(4)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .padding(.top, -4)
+            .padding(.trailing, -4)
         }
     }
 
@@ -294,9 +297,9 @@ private struct SessionCardView: View {
                         .background(messageProbes(message))
                     if canExpand {
                         Image(systemName: isMessageExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.tertiary)
-                            .padding(.top, 3)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
                 }
             }
@@ -355,9 +358,11 @@ private struct SessionCardView: View {
                         .bold()
                         .foregroundStyle(.secondary)
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.secondary)
                 }
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -400,10 +405,13 @@ private struct SessionCardView: View {
                         if isSubagent { onDismissSubagent(item.id) } else { onDismissBackground(item.id) }
                     } label: {
                         Text("✕")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .padding(3)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .padding(-3)
                 }
             }
             if overflow > 0 {
