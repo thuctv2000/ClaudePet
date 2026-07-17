@@ -7,13 +7,36 @@ import Foundation
 /// `Bundle.main`. `SWIFT_PACKAGE` is defined by the Swift compiler only when
 /// building as a package, so it reliably tells the two builds apart.
 enum L10n {
-    static var bundle: Bundle {
+    /// UserDefaults key for the user's language choice in Settings:
+    /// "en"/"vi" force that language, absent/other means follow the system.
+    static let overrideKey = "app.language.override"
+
+    /// Read once at first use — the language applies from launch, and
+    /// Settings asks for a relaunch when it changes.
+    static let override: String? = {
+        let value = UserDefaults.standard.string(forKey: overrideKey)
+        return (value == "en" || value == "vi") ? value : nil
+    }()
+
+    private static var baseBundle: Bundle {
         #if SWIFT_PACKAGE
         .module
         #else
         .main
         #endif
     }
+
+    /// The bundle `tr()` resolves strings against: the chosen language's
+    /// `.lproj` sub-bundle when the user picked one, else the base bundle
+    /// (system language).
+    static let bundle: Bundle = {
+        guard let code = override,
+              let path = baseBundle.path(forResource: code, ofType: "lproj"),
+              let localized = Bundle(path: path) else {
+            return baseBundle
+        }
+        return localized
+    }()
 }
 
 /// Looks up `key` (the English source string) in `Localizable.xcstrings`,

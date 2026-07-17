@@ -136,6 +136,21 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         isConnected = HookInstaller.isInstalled
     }
 
+    /// Relaunches the app (used to apply a language change). A bare `swift
+    /// run` binary has no bundle to reopen — it just quits.
+    func relaunchApp() {
+        let url = Bundle.main.bundleURL
+        guard url.pathExtension == "app" else {
+            NSApp.terminate(nil)
+            return
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+            Task { @MainActor in NSApp.terminate(nil) }
+        }
+    }
+
     func reloadSprites() {
         sprites.reload()
         let count = sprites.clips.count

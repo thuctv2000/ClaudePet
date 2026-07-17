@@ -10,6 +10,11 @@ struct SettingsWindowView: View {
     var usage: UsageMonitor
 
     @State private var importMessage: String?
+    /// Language picker state ("system", "en", "vi") + whether it changed this
+    /// session (drives the relaunch prompt).
+    @State private var language: String =
+        UserDefaults.standard.string(forKey: L10n.overrideKey) ?? "system"
+    @State private var languageChanged = false
     /// Ticks periodically so the "last event" relative time and the stale-
     /// connection warning stay fresh while the tab is open (they depend on
     /// `Date()`, which SwiftUI has no other reason to recompute).
@@ -124,9 +129,38 @@ struct SettingsWindowView: View {
                 }
             }
 
+            languageSection
             updateSection
         }
         .formStyle(.grouped)
+    }
+
+    /// Language override: follow the system (default) or force EN/VI.
+    /// Strings resolve once at launch, so applying a change means relaunching.
+    private var languageSection: some View {
+        Section(tr("Language")) {
+            Picker(tr("App language"), selection: $language) {
+                Text(tr("Follow system")).tag("system")
+                Text(verbatim: "English").tag("en")
+                Text(verbatim: "Tiếng Việt").tag("vi")
+            }
+            .onChange(of: language) { _, newValue in
+                if newValue == "system" {
+                    UserDefaults.standard.removeObject(forKey: L10n.overrideKey)
+                } else {
+                    UserDefaults.standard.set(newValue, forKey: L10n.overrideKey)
+                }
+                languageChanged = true
+            }
+            if languageChanged {
+                HStack {
+                    Text(tr("Takes effect after the app relaunches."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button(tr("Relaunch now")) { delegate.relaunchApp() }
+                }
+            }
+        }
     }
 
     /// App update via Sparkle: the button opens Sparkle's own update window,

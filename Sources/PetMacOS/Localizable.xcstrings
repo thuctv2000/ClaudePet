@@ -97,6 +97,16 @@
         }
       }
     },
+    "App language": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngôn ngữ ứng dụng"
+          }
+        }
+      }
+    },
     "Approving permissions on the pet": {
       "localizations": {
         "en": {
@@ -1025,6 +1035,16 @@
         }
       }
     },
+    "Follow system": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theo hệ thống"
+          }
+        }
+      }
+    },
     "Found Claude Code on this Mac. You can move on to the next step.": {
       "localizations": {
         "en": {
@@ -1165,6 +1185,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Server nội bộ"
+          }
+        }
+      }
+    },
+    "Language": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngôn ngữ"
           }
         }
       }
@@ -1531,6 +1561,16 @@
         }
       }
     },
+    "Relaunch now": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở lại ngay"
+          }
+        }
+      }
+    },
     "Reload sprites": {
       "localizations": {
         "en": {
@@ -1879,6 +1919,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Thành công — pet đã nhận event qua pet-hook.sh."
+          }
+        }
+      }
+    },
+    "Takes effect after the app relaunches.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Có hiệu lực sau khi mở lại app."
           }
         }
       }
