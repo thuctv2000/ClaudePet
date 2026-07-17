@@ -33,7 +33,12 @@ enum HookInstaller {
             // *before* the permission check, so it cannot tell whether a prompt
             // was coming, and answering there suppresses the dialog and stops
             // PermissionRequest from ever firing. The two are mutually exclusive.
-            ("PermissionRequest", "permission", "*", nil),
+            //
+            // Timeout MUST cover the pet-hook's own `curl -m 300` wait for the
+            // user's click. Left unset, Claude Code applies its 60s default and
+            // gives up on the pet mid-decision — raising its OWN terminal dialog
+            // while the pet is still showing ours. 305s = curl 300s + slack.
+            ("PermissionRequest", "permission", "*", 305),
             // PreToolUse now only feeds task cards. It used to double as the
             // approval hook, which is why it also carried the /event POST for
             // auto modes; that side of it lives on here.
