@@ -583,10 +583,10 @@ final class PetState {
     }
 
     /// Removes the oldest still-running subagent card (FIFO). This is the
-    /// fallback used when a `SubagentStop` carries no `agent_id`, or carries
-    /// one we never managed to claim onto a card (see `finishSubagent(agentId:)`
-    /// below) -- e.g. an older Claude Code build that predates `SubagentStart`.
-    /// Returns the removed card for the completion notice.
+    /// fallback used only when a `SubagentStop` carries no `agent_id` at all
+    /// (an older Claude Code build that predates `SubagentStart`) -- see
+    /// `finishSubagent(agentId:sessionId:)` below. Returns the removed card
+    /// for the completion notice.
     @discardableResult
     private func finishOldestSubagent() -> TaskItem? {
         guard !subagentTasks.isEmpty else { return nil }
@@ -597,21 +597,24 @@ final class PetState {
     }
 
     /// Removes the subagent card matching `agentId` if one was claimed for it
-    /// (see `handleSubagentStart`); otherwise falls back to FIFO removal. This
-    /// is the actual fix for the old bug where `SubagentStop` always retired
-    /// the *oldest* subagent regardless of which one truly finished -- now that
-    /// `SubagentStart` tags cards with their real `agent_id`, a `SubagentStop`
-    /// for a *younger* subagent removes the right card even if an older one is
-    /// still running. Returns the removed card, if any.
+    /// (see `handleSubagentStart`). An unmatched id retires the oldest
+    /// *unclaimed* card of the same session, if any -- that covers a missed
+    /// `SubagentStart` -- and otherwise nothing: Claude Code also runs hidden
+    /// internal agents whose `SubagentStop` arrives with an id that never
+    /// started here, and the old unconditional FIFO fallback let those stops
+    /// retire a still-running visible subagent (seen with background Agent
+    /// launches). Only a stop with NO id at all (pre-`SubagentStart` builds)
+    /// still falls back to plain FIFO. Returns the removed card, if any.
     @discardableResult
-    private func finishSubagent(agentId: String?) -> TaskItem? {
-        if let agentId, let index = subagentTasks.firstIndex(where: { $0.agentId == agentId }) {
-            let item = subagentTasks.remove(at: index)
-            updatePassthrough()
-            persistInFlightSubagents()
-            return item
-        }
-        return finishOldestSubagent()
+    private func finishSubagent(agentId: String?, sessionId: String?) -> TaskItem? {
+        guard let agentId else { return finishOldestSubagent() }
+        let index = subagentTasks.firstIndex(where: { $0.agentId == agentId })
+            ?? subagentTasks.firstIndex(where: { $0.agentId == nil && $0.sessionId == sessionId })
+        guard let index else { return nil }
+        let item = subagentTasks.remove(at: index)
+        updatePassthrough()
+        persistInFlightSubagents()
+        return item
     }
 
     /// Handles a `SubagentStart` event (agent_id + agent_type; Claude Code
@@ -1149,8 +1152,12 @@ final class PetState {
             setMood(.working, for: sid)
             handleSubagentStart(event)
         case "SubagentStop":
-            setMood(subagentTasks.count > 1 ? .working : .talking, for: sid)
-            let card = finishSubagent(agentId: event.agentId)
+            let card = finishSubagent(agentId: event.agentId, sessionId: event.sessionId)
+            // A stop that retired nothing while carrying an id belongs to a
+            // hidden internal agent -- no card of ours, so no mood flip and no
+            // "finished" notice either (it used to fabricate one mid-run).
+            guard card != nil || event.agentId == nil else { break }
+            setMood(subagentTasks.isEmpty ? .talking : .working, for: sid)
             let title = event.agentType.map { String(format: tr("Subagent %@ finished"), $0) }
                 ?? tr("Subagent finished")
             // Fall back to the launch card's purpose when the stop event carries
