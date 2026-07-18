@@ -183,15 +183,12 @@ final class PetState {
     /// exits 0, so Claude Code never surfaces a connection failure itself).
     private(set) var lastEventAt: Date?
 
-    /// Most recent error the app noticed (hook install failure, server start
-    /// failure, failed connectivity test…). Deliberately just the latest
-    /// message, not a history — the Diagnostics tab only needs "what broke
-    /// most recently", and `events.log` already has the full trail.
-    private(set) var lastErrorMessage: String?
-
-    /// Records the latest error for display in the Diagnostics tab.
+    /// Records an error the app noticed (hook install failure, server start
+    /// failure, failed connectivity test…) to `events.log`. There is no in-app
+    /// error view anymore — the self-healing path surfaces real breakage as a
+    /// plain pet notice, and the log keeps the full trail for support.
     func recordError(_ message: String) {
-        lastErrorMessage = message
+        appendLog("error \(message)")
     }
 
     /// Set by the app delegate to wire the server as the resolver.

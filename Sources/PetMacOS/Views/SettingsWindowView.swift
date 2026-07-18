@@ -342,13 +342,9 @@ struct SettingsWindowView: View {
 
     private var colorsTab: some View {
         Form {
-            Section(tr("Running-task border")) {
-                colorRow(tr("Thinking"), $settings.thinking)
+            Section(tr("Card colors")) {
                 colorRow(tr("Running tool"), $settings.tool)
                 colorRow(tr("Attention"), $settings.notification)
-                colorRow(tr("Session"), $settings.session)
-                colorRow("Subagent", $settings.subagent)
-                colorRow(tr("Background"), $settings.background)
             }
 
             Section(tr("Completed-task gradient")) {

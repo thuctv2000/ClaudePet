@@ -235,6 +235,16 @@
         }
       }
     },
+    "Card colors": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Màu thẻ"
+          }
+        }
+      }
+    },
     "Check again": {
       "localizations": {
         "en": {

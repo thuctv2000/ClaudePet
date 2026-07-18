@@ -2,34 +2,29 @@ import SwiftUI
 import Observation
 
 /// User-tunable appearance settings, persisted in UserDefaults.
-/// Border colours for the running-task cards plus the gradient used on
-/// completed notices. Defaults mirror the original hardcoded palette.
+///
+/// The per-conversation card (see `SessionCardView`) draws its border from
+/// just three sources — the active-tool colour, the completed gradient, and a
+/// fixed red for errors — so only those are configurable. `notification` also
+/// tints the question dialog's accent. The old per-kind palette (thinking,
+/// session, subagent, background, done) was dropped when the flat per-event
+/// card stack became one card per conversation; nothing read those colours.
 @MainActor
 @Observable
 final class SettingsStore {
     // MARK: - Defaults
 
     private static let defaultColors: [String: Color] = [
-        Keys.thinking: .blue.opacity(0.9),
         Keys.tool: .orange.opacity(0.9),
         Keys.notification: .purple.opacity(0.9),
-        Keys.session: .gray.opacity(0.9),
-        Keys.done: .pink.opacity(0.9),
-        Keys.subagent: .teal.opacity(0.9),
-        Keys.background: .indigo.opacity(0.9),
         Keys.gradient1: .purple,
         Keys.gradient2: .pink,
         Keys.gradient3: .orange,
     ]
 
     private enum Keys {
-        static let thinking = "color.thinking"
         static let tool = "color.tool"
         static let notification = "color.notification"
-        static let session = "color.session"
-        static let done = "color.done"
-        static let subagent = "color.subagent"
-        static let background = "color.background"
         static let gradient1 = "color.gradient1"
         static let gradient2 = "color.gradient2"
         static let gradient3 = "color.gradient3"
@@ -37,25 +32,17 @@ final class SettingsStore {
 
     // MARK: - Stored colours
 
-    var thinking: Color { didSet { save(Keys.thinking, thinking) } }
+    /// Border of an active (running) card.
     var tool: Color { didSet { save(Keys.tool, tool) } }
+    /// Accent of the question dialog.
     var notification: Color { didSet { save(Keys.notification, notification) } }
-    var session: Color { didSet { save(Keys.session, session) } }
-    var done: Color { didSet { save(Keys.done, done) } }
-    var subagent: Color { didSet { save(Keys.subagent, subagent) } }
-    var background: Color { didSet { save(Keys.background, background) } }
     var gradient1: Color { didSet { save(Keys.gradient1, gradient1) } }
     var gradient2: Color { didSet { save(Keys.gradient2, gradient2) } }
     var gradient3: Color { didSet { save(Keys.gradient3, gradient3) } }
 
     init() {
-        thinking = Self.load(Keys.thinking)
         tool = Self.load(Keys.tool)
         notification = Self.load(Keys.notification)
-        session = Self.load(Keys.session)
-        done = Self.load(Keys.done)
-        subagent = Self.load(Keys.subagent)
-        background = Self.load(Keys.background)
         gradient1 = Self.load(Keys.gradient1)
         gradient2 = Self.load(Keys.gradient2)
         gradient3 = Self.load(Keys.gradient3)
@@ -63,22 +50,12 @@ final class SettingsStore {
 
     // MARK: - Lookup
 
-    /// Border colour for a running card of the given kind.
+    /// Border colour for an active card. `.failed` only ever appears on a
+    /// completed notice (see `TaskKind`'s doc comment), which renders via the
+    /// gradient/red stroke in `SessionCardView`, so any other kind maps to the
+    /// single active-tool colour.
     func borderColor(for kind: TaskKind) -> Color {
-        switch kind {
-        case .thinking: return thinking
-        case .tool: return tool
-        case .notification: return notification
-        case .session: return session
-        case .done: return done
-        case .subagent: return subagent
-        case .background: return background
-        // `.failed` only ever appears on a completed notice (see TaskKind's
-        // doc comment), which renders via `CompletedCard`'s gradient/red
-        // stroke, not this per-kind running-card color -- a plain,
-        // non-configurable red is enough here to keep this minimal.
-        case .failed: return .red.opacity(0.9)
-        }
+        kind == .failed ? .red.opacity(0.9) : tool
     }
 
     /// Gradient stroking the border of completed notices.
@@ -91,13 +68,8 @@ final class SettingsStore {
     }
 
     func resetToDefaults() {
-        thinking = Self.defaultColors[Keys.thinking]!
         tool = Self.defaultColors[Keys.tool]!
         notification = Self.defaultColors[Keys.notification]!
-        session = Self.defaultColors[Keys.session]!
-        done = Self.defaultColors[Keys.done]!
-        subagent = Self.defaultColors[Keys.subagent]!
-        background = Self.defaultColors[Keys.background]!
         gradient1 = Self.defaultColors[Keys.gradient1]!
         gradient2 = Self.defaultColors[Keys.gradient2]!
         gradient3 = Self.defaultColors[Keys.gradient3]!
