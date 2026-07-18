@@ -1024,20 +1024,47 @@ final class PetState {
     // MARK: - Hook events
 
     /// Appends one line per received event to ~/.petmacos/events.log so hook
-    /// delivery can be debugged (which events arrive, from which agent). The
-    /// file is reset once it passes ~1MB so it never grows unbounded.
+    /// delivery can be debugged (which events arrive, from which agent).
     private func logEvent(_ event: HookEvent, route: String) {
         lastEventAt = Date()
-        let ts = ISO8601DateFormatter().string(from: Date())
-        let line = "\(ts) \(route) \(event.hookEventName ?? "?")"
+        appendLog("\(route) \(event.hookEventName ?? "?")"
             + " tool=\(event.toolName ?? "-")"
             + " agent=\(event.agentId ?? "-")/\(event.agentType ?? "-")"
-            + " cwd=\(event.projectName ?? "-")\n"
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".petmacos/events.log")
-        let maxLogSize: UInt64 = 1_000_000
-        if Self.fileSize(path: url.path) > maxLogSize {
-            try? FileManager.default.removeItem(at: url)
+            + " cwd=\(event.projectName ?? "-")")
+    }
+
+    /// Records what happened to a permission ask (`allow`/`deny`/`timeout`) so
+    /// a "pet didn't show it" report can be told apart from "shown but answered
+    /// elsewhere / timed out". `outcome` is the resolution; `queued` is how many
+    /// asks were already ahead of it (i.e. it wasn't the visible one).
+    private func logAskOutcome(_ ask: PendingAsk, outcome: String, queuedAhead: Int) {
+        appendLog("ask-\(outcome) tool=\(ask.toolName)"
+            + " session=\(ask.sessionId ?? "-")"
+            + (queuedAhead > 0 ? " queuedAhead=\(queuedAhead)" : ""))
+    }
+
+    private static let logURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".petmacos/events.log")
+    /// Hard ceiling; on breach the oldest half is dropped (see `appendLog`) so
+    /// recent history survives instead of the whole file being wiped.
+    private static let maxLogSize = 1_000_000
+    private static let logTrimTo = 500_000
+
+    /// Appends one timestamped line to events.log, trimming the file from the
+    /// front when it grows past `maxLogSize` so it stays bounded without ever
+    /// discarding the most recent lines (which is exactly what a live bug
+    /// report needs).
+    private func appendLog(_ body: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(body)\n"
+        let url = Self.logURL
+        if Self.fileSize(path: url.path) > UInt64(Self.maxLogSize),
+           let data = try? Data(contentsOf: url), data.count > Self.logTrimTo {
+            // Keep the last `logTrimTo` bytes, realigned to the next line start.
+            var tail = data.suffix(Self.logTrimTo)
+            if let nl = tail.firstIndex(of: 0x0A) {
+                tail = tail[(nl + 1)...]
+            }
+            try? Data(tail).write(to: url, options: .atomic)
         }
         if let handle = try? FileHandle(forWritingTo: url) {
             _ = try? handle.seekToEnd()
@@ -1303,6 +1330,7 @@ final class PetState {
     func resolve(_ decision: String) {
         guard let ask = askQueue.first else { return }
         askQueue.removeFirst()
+        logAskOutcome(ask, outcome: decision, queuedAhead: 0)
         resolver?.resolveAsk(id: ask.id, decision: PetDecision(decision: decision))
         if decision == "deny" { retireDeniedCard(for: ask) }
         setMood(.idle, for: ask.sessionId)
@@ -1337,6 +1365,9 @@ final class PetState {
         guard let index = askQueue.firstIndex(where: { $0.id == id }) else { return }
         let wasCurrent = index == 0
         let ask = askQueue.remove(at: index)
+        // Timed out after `askTimeout` (300s) with no click: the user either
+        // never saw the pet dialog or answered on Claude Code's own dialog.
+        logAskOutcome(ask, outcome: "timeout", queuedAhead: index)
         setMood(.idle, for: ask.sessionId)
         if wasCurrent {
             presentNextAskOrDismiss()
