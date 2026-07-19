@@ -78,6 +78,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
 
     let petState = PetState()
     let sprites = SpriteLibrary()
+    let petStore = PetStore()
     let settings = SettingsStore()
     let usage = UsageMonitor()
     /// Sparkle auto-updater (feed + EdDSA key in Info.plist). nil under
@@ -93,6 +94,10 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Order matters: migrating the legacy sprites folder into the first
+        // pet decides what `SpriteLibrary.root` resolves to below.
+        petStore.migrateLegacyIfNeeded()
+        petStore.reload()
         SpriteLibrary.ensureScaffold()
         sprites.reload()
         petState.recoverInFlightSubagents()

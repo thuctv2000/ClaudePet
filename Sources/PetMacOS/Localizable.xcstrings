@@ -49,6 +49,16 @@
         }
       }
     },
+    "Add a new pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thêm pet mới"
+          }
+        }
+      }
+    },
     "After adding or changing images, use the menu bar > \"Reload sprites\".": {
       "localizations": {
         "en": {
@@ -77,6 +87,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cho phép"
+          }
+        }
+      }
+    },
+    "Animations of the selected pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Animation của pet đang chọn"
           }
         }
       }
@@ -235,6 +255,16 @@
         }
       }
     },
+    "Built-in dog": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chó vẽ sẵn"
+          }
+        }
+      }
+    },
     "Card colors": {
       "localizations": {
         "vi": {
@@ -321,6 +351,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chọn ảnh PNG trong suốt (nhiều frame) hoặc một file GIF cho \"%@\""
+          }
+        }
+      }
+    },
+    "Choose image or GIF…": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chọn ảnh hoặc GIF…"
+          }
+        }
+      }
+    },
+    "Choose one GIF or one or more images for your pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chọn 1 file GIF hoặc một/nhiều ảnh cho pet của bạn"
           }
         }
       }
@@ -805,6 +855,26 @@
         }
       }
     },
+    "Create": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tạo"
+          }
+        }
+      }
+    },
+    "Created %@ with %d frame(s).": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã tạo %@ với %d frame."
+          }
+        }
+      }
+    },
     "Current": {
       "localizations": {
         "en": {
@@ -1167,6 +1237,16 @@
         }
       }
     },
+    "In use": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang dùng"
+          }
+        }
+      }
+    },
     "Installed in ~/.claude/settings.json": {
       "localizations": {
         "en": {
@@ -1273,6 +1353,36 @@
         }
       }
     },
+    "Move this pet to the Trash": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chuyển pet này vào Thùng rác"
+          }
+        }
+      }
+    },
+    "My pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet của tôi"
+          }
+        }
+      }
+    },
+    "New pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet mới"
+          }
+        }
+      }
+    },
     "Next": {
       "localizations": {
         "en": {
@@ -1349,6 +1459,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Không chạy"
+          }
+        }
+      }
+    },
+    "One image or GIF is enough — the pet comes alive right away. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods below whenever you like.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉ cần 1 ảnh hoặc GIF là pet sống ngay. GIF chạy như vốn có, nhiều ảnh sẽ ghép thành các frame, còn 1 ảnh tĩnh sẽ được nhún nhẹ cho sinh động. Các mood khác điền dần bên dưới lúc nào cũng được."
           }
         }
       }
@@ -1461,6 +1581,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pet không nhận được tín hiệu từ Claude Code — thử tắt mở lại app, hoặc bấm Kết nối trong Cài đặt"
+          }
+        }
+      }
+    },
+    "Pet name": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tên pet"
           }
         }
       }
@@ -2135,6 +2265,16 @@
         }
       }
     },
+    "Use": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dùng"
+          }
+        }
+      }
+    },
     "Version": {
       "localizations": {
         "en": {
@@ -2211,6 +2351,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Câu trả lời của bạn"
+          }
+        }
+      }
+    },
+    "Your pets": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pet của bạn"
           }
         }
       }

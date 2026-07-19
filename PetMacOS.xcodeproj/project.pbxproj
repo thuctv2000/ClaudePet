@@ -30,6 +30,7 @@
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
 		F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */; };
+		F1B1646AF5E03013464B8F69 /* PetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10753CA32DC12C3E85FA958 /* PetStore.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
 		FAC5DF96ED0EEBB59EFBA97B /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CE15D8703CA77D630E924A /* L10n.swift */; };
 /* End PBXBuildFile section */
@@ -48,6 +49,7 @@
 		7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageBadgeView.swift; sourceTree = "<group>"; };
 		858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedSpriteView.swift; sourceTree = "<group>"; };
 		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
+		A10753CA32DC12C3E85FA958 /* PetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetStore.swift; sourceTree = "<group>"; };
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
 		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
 		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -77,6 +79,7 @@
 		2AD5AD954394A47B008E8B62 /* Sprites */ = {
 			isa = PBXGroup;
 			children = (
+				A10753CA32DC12C3E85FA958 /* PetStore.swift */,
 				B12CA287C7CACA340ABD108C /* SpriteImporter.swift */,
 				BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */,
 			);
@@ -266,6 +269,7 @@
 				BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */,
 				995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */,
 				B3F255B5CB973B7EFC0F0427 /* PetState.swift in Sources */,
+				F1B1646AF5E03013464B8F69 /* PetStore.swift in Sources */,
 				9E58269CF6806A7D1BD91931 /* PetView.swift in Sources */,
 				C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */,
 				F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */,

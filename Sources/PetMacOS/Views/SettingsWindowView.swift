@@ -10,6 +10,8 @@ struct SettingsWindowView: View {
     var usage: UsageMonitor
 
     @State private var importMessage: String?
+    /// Name typed into the "add a new pet" field.
+    @State private var newPetName = ""
     /// Language picker state ("system", "en", "vi") + whether it changed this
     /// session (drives the relaunch prompt).
     @State private var language: String =
@@ -213,12 +215,146 @@ struct SettingsWindowView: View {
 
     private var petTab: some View {
         Form {
+            petLibrarySection
+            addPetSection
+            if delegate.petStore.activeID != nil {
+                petMoodsSection
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    // MARK: Pet library
+
+    /// Every saved pet plus the built-in dog: one tap to switch, ✕ to move a
+    /// pet's folder to the Trash.
+    private var petLibrarySection: some View {
+        Section(tr("Your pets")) {
+            builtInDogRow
+            ForEach(delegate.petStore.pets) { pet in
+                petLibraryRow(pet)
+            }
+        }
+    }
+
+    private var builtInDogRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "pawprint.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(.orange)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.quaternary))
+            Text(tr("Built-in dog"))
+            Spacer()
+            activeMark(isActive: delegate.petStore.activeID == nil) {
+                switchPet(to: nil)
+            }
+        }
+    }
+
+    private func petLibraryRow(_ pet: PetInfo) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if let avatar = pet.avatar {
+                    Image(nsImage: avatar).resizable().scaledToFit()
+                } else {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.quaternary)
+                }
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(pet.name)
+                Text("\(pet.coverage)/\(SpriteLibrary.states.count) mood")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            activeMark(isActive: delegate.petStore.activeID == pet.id) {
+                switchPet(to: pet.id)
+            }
+            Button {
+                delegate.petStore.deletePet(id: pet.id)
+                delegate.reloadSprites()
+            } label: {
+                Text("✕").font(.caption).bold().foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(tr("Move this pet to the Trash"))
+        }
+    }
+
+    @ViewBuilder
+    private func activeMark(isActive: Bool, action: @escaping () -> Void) -> some View {
+        if isActive {
+            Text(tr("In use"))
+                .font(.caption)
+                .foregroundStyle(.green)
+        } else {
+            Button(tr("Use"), action: action)
+        }
+    }
+
+    private func switchPet(to id: String?) {
+        delegate.petStore.setActive(id)
+        SpriteLibrary.ensureScaffold()
+        delegate.reloadSprites()
+    }
+
+    // MARK: Add a pet
+
+    private var addPetSection: some View {
+        Section {
+            TextField(tr("Pet name"), text: $newPetName)
+            HStack {
+                Button(tr("Choose image or GIF…")) { addPet() }
+                if let message = importMessage {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text(tr("Add a new pet"))
+        } footer: {
+            Text(tr("One image or GIF is enough — the pet comes alive right away. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods below whenever you like."))
+        }
+    }
+
+    /// Name + files → a living pet: create the folder, make it active, import
+    /// everything into `idle` (the mood every other mood falls back to).
+    private func addPet() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .gif, .jpeg]
+        panel.allowsMultipleSelection = true
+        panel.message = tr("Choose one GIF or one or more images for your pet")
+        panel.prompt = tr("Create")
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        let trimmed = newPetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? tr("New pet") : trimmed
+        do {
+            let id = try delegate.petStore.createPet(named: name)
+            delegate.petStore.setActive(id)
+            let result = try SpriteImporter.replaceFrames(of: "idle", with: panel.urls)
+            delegate.petStore.reload()
+            delegate.reloadSprites()
+            newPetName = ""
+            importMessage = String(format: tr("Created %@ with %d frame(s)."), name, result.frameCount)
+        } catch {
+            importMessage = String(format: tr("Import error: %@"), error.localizedDescription)
+        }
+    }
+
+    // MARK: Per-mood animations of the active pet
+
+    private var petMoodsSection: some View {
+        Group {
             Section {
                 ForEach(SpriteLibrary.states, id: \.self) { stateName in
                     spriteRow(for: stateName)
                 }
             } header: {
-                Text("Sprites")
+                Text(tr("Animations of the selected pet"))
             } footer: {
                 Text(tr("Press Replace… to pick a transparent PNG sequence or an animated GIF — the app splits it into frames, centers them, and sets the speed automatically."))
             }
@@ -238,7 +374,6 @@ struct SettingsWindowView: View {
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     private func spriteRow(for stateName: String) -> some View {
@@ -287,6 +422,7 @@ struct SettingsWindowView: View {
         do {
             let result = try SpriteImporter.replaceFrames(of: stateName, with: panel.urls)
             delegate.reloadSprites()
+            delegate.petStore.reload()   // coverage/avatar may have changed
             if let fps = result.gifFPS {
                 importMessage = String(format: tr("Imported %d frames for %@ (GIF, %@ fps)."), result.frameCount, stateName, trimmed(fps))
             } else {

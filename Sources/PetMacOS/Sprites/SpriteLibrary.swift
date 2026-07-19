@@ -19,7 +19,14 @@ struct SpriteClip {
 final class SpriteLibrary {
     private(set) var clips: [String: SpriteClip] = [:]
 
-    static let root = PetConfig.directory.appendingPathComponent("sprites", isDirectory: true)
+    /// Folder the clips load from: the active pet's directory when one is
+    /// chosen (see `PetStore`), else the legacy single-pet `sprites/` folder —
+    /// kept as the fallback so pre-library installs and the "no pet" state
+    /// still have a place for the scaffold/README.
+    static var root: URL {
+        PetStore.activeDirectory
+            ?? PetConfig.directory.appendingPathComponent("sprites", isDirectory: true)
+    }
 
     /// Every state the app knows how to play. `click` is the tap reaction;
     /// `happy` is the one-shot played on a clean `Stop` (see `PetState.happyID`).
