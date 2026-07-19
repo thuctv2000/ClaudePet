@@ -225,6 +225,16 @@ struct SettingsWindowView: View {
             }
         }
         .formStyle(.grouped)
+        // Dropping a GIF/images anywhere on the tab creates a pet from them —
+        // the fastest possible path from "found a cute GIF" to a living pet.
+        .dropDestination(for: URL.self) { urls, _ in
+            let images = urls.filter {
+                ["png", "gif", "jpg", "jpeg"].contains($0.pathExtension.lowercased())
+            }
+            guard !images.isEmpty else { return false }
+            createPet(from: images)
+            return true
+        }
     }
 
     // MARK: Pet library
@@ -262,24 +272,26 @@ struct SettingsWindowView: View {
     }
 
     private func petLibraryRow(_ pet: PetInfo) -> some View {
-        HStack(spacing: 10) {
+        let isActive = delegate.petStore.activeID == pet.id
+        return HStack(spacing: 12) {
             Group {
                 if let avatar = pet.avatar {
                     Image(nsImage: avatar).resizable().scaledToFit()
                 } else {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.quaternary)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary)
                 }
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(pet.name)
+                    .fontWeight(isActive ? .semibold : .regular)
                 Text("\(pet.coverage)/\(SpriteLibrary.states.count) mood")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            activeMark(isActive: delegate.petStore.activeID == pet.id) {
+            activeMark(isActive: isActive) {
                 switchPet(to: pet.id)
             }
             Button {
@@ -301,6 +313,7 @@ struct SettingsWindowView: View {
             .buttonStyle(.plain)
             .help(tr("Move this pet to the Trash"))
         }
+        .listRowBackground(isActive ? Color.accentColor.opacity(0.08) : nil)
     }
 
     @ViewBuilder
@@ -308,7 +321,11 @@ struct SettingsWindowView: View {
         if isActive {
             Text(tr("In use"))
                 .font(.caption)
+                .bold()
                 .foregroundStyle(.green)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(.green.opacity(0.12)))
         } else {
             Button(tr("Use"), action: action)
         }
@@ -336,12 +353,13 @@ struct SettingsWindowView: View {
         } header: {
             Text(tr("Add a new pet"))
         } footer: {
-            Text(tr("One image or GIF is enough — the pet comes alive right away. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods below whenever you like."))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(tr("One image or GIF is enough — the pet comes alive right away. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods below whenever you like."))
+                Text(tr("Tip: you can also drop a GIF or images anywhere on this tab."))
+            }
         }
     }
 
-    /// Name + files → a living pet: create the folder, make it active, import
-    /// everything into `idle` (the mood every other mood falls back to).
     private func addPet() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .gif, .jpeg]
@@ -349,12 +367,22 @@ struct SettingsWindowView: View {
         panel.message = tr("Choose one GIF or one or more images for your pet")
         panel.prompt = tr("Create")
         guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        createPet(from: panel.urls)
+    }
+
+    /// Files → a living pet: create the folder, make it active, import
+    /// everything into `idle` (the mood every other mood falls back to).
+    /// Unnamed pets fall back to the first file's name — good enough to tell
+    /// apart, renameable any time.
+    private func createPet(from urls: [URL]) {
         let trimmed = newPetName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = trimmed.isEmpty ? tr("New pet") : trimmed
+        let name = trimmed.isEmpty
+            ? (urls.first?.deletingPathExtension().lastPathComponent ?? tr("New pet"))
+            : trimmed
         do {
             let id = try delegate.petStore.createPet(named: name)
             delegate.petStore.setActive(id)
-            let result = try SpriteImporter.replaceFrames(of: "idle", with: panel.urls)
+            let result = try SpriteImporter.replaceFrames(of: "idle", with: urls)
             delegate.petStore.reload()
             delegate.reloadSprites()
             newPetName = ""

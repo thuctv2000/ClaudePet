@@ -1045,22 +1045,6 @@
         }
       }
     },
-    "Drag me anywhere": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Drag me anywhere"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kéo tôi đi bất kỳ đâu"
-          }
-        }
-      }
-    },
     "Each folder is a \"state\". Drop transparent PNG frames into the matching folder, named in playback order, e.g.:": {
       "localizations": {
         "en": {
@@ -2081,6 +2065,16 @@
         }
       }
     },
+    "Switch pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đổi pet"
+          }
+        }
+      }
+    },
     "Takes effect after the app relaunches.": {
       "localizations": {
         "vi": {
@@ -2231,6 +2225,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Đang suy nghĩ…"
+          }
+        }
+      }
+    },
+    "Tip: you can also drop a GIF or images anywhere on this tab.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mẹo: kéo thả GIF hoặc ảnh vào bất kỳ đâu trong tab này cũng được."
           }
         }
       }

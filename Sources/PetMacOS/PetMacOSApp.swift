@@ -373,7 +373,17 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             )
             let newPanel = PetPanel(contentRect: frame)
             newPanel.contentView = NSHostingView(
-                rootView: PetView(state: petState, sprites: sprites, settings: settings, usage: usage))
+                rootView: PetView(
+                    state: petState, sprites: sprites, settings: settings, usage: usage,
+                    petStore: petStore,
+                    onSwitchPet: { [weak self] id in
+                        self?.petStore.setActive(id)
+                        SpriteLibrary.ensureScaffold()
+                        self?.reloadSprites()
+                    },
+                    onOpenSettings: { [weak self] in self?.openSettingsWindow() },
+                    onHidePet: { [weak self] in self?.setPetVisible(false) }
+                ))
             panel = newPanel
         }
 

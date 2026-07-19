@@ -5,6 +5,12 @@ struct PetView: View {
     var sprites: SpriteLibrary
     var settings: SettingsStore
     var usage: UsageMonitor
+    var petStore: PetStore
+    /// Wired by the app delegate: switch the active pet / open settings /
+    /// hide the pet — all reachable from the right-click menu on the pet.
+    var onSwitchPet: (String) -> Void = { _ in }
+    var onOpenSettings: () -> Void = {}
+    var onHidePet: () -> Void = {}
 
     @State private var isHappy = false
     @State private var reacting = false   // playing the one-shot click clip
@@ -62,7 +68,24 @@ struct PetView: View {
         .frame(width: 320, height: 500)
         .background(Color.clear)
         .contextMenu {
-            Text(tr("Drag me anywhere"))
+            if !petStore.pets.isEmpty {
+                Menu(tr("Switch pet")) {
+                    ForEach(petStore.pets) { pet in
+                        Button {
+                            onSwitchPet(pet.id)
+                        } label: {
+                            if petStore.activeID == pet.id {
+                                Label(pet.name, systemImage: "checkmark")
+                            } else {
+                                Text(pet.name)
+                            }
+                        }
+                    }
+                }
+                Divider()
+            }
+            Button(tr("Settings…")) { onOpenSettings() }
+            Button(tr("Hide pet")) { onHidePet() }
         }
         .onChange(of: state.happyID) { _, newValue in
             // A clean Stop just happened. Play "happy" once if the user has
