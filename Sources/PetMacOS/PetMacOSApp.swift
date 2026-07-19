@@ -161,7 +161,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         let count = sprites.clips.count
         petState.notify(count > 0
             ? String(format: tr("Loaded %d animations"), count)
-            : tr("No sprites yet — using the default dog"))
+            : tr("No pet yet — add one in Settings → Pet"))
     }
 
     func openSpritesFolder() {

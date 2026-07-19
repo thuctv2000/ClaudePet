@@ -3,8 +3,8 @@ import Observation
 
 /// One saved pet: a named folder of per-mood sprite clips under
 /// `~/.petmacos/pets/<id>/` (same per-state layout `SpriteLibrary` reads).
-/// The built-in vector dog is deliberately NOT a `PetInfo` — it is what shows
-/// when no pet is active (`activeID == nil`), so it can never be deleted.
+/// With no pet active (`activeID == nil`, e.g. every pet deleted) the app
+/// shows a paw placeholder until one is added — there is no built-in pet.
 struct PetInfo: Identifiable, Equatable {
     let id: String          // folder name (a UUID)
     var name: String
@@ -21,7 +21,7 @@ struct PetInfo: Identifiable, Equatable {
 @Observable
 final class PetStore {
     private(set) var pets: [PetInfo] = []
-    /// Folder name of the active pet; nil = built-in vector dog.
+    /// Folder name of the active pet; nil = none (paw placeholder).
     private(set) var activeID: String? = UserDefaults.standard.string(forKey: PetStore.activeKey)
 
     private static let activeKey = "pet.active"
@@ -90,12 +90,24 @@ final class PetStore {
         return id
     }
 
+    /// Renames a pet (rewrites its meta.json) and refreshes the list.
+    func renamePet(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        try? Self.writeName(trimmed, to: Self.directory(for: id))
+        reload()
+    }
+
     /// Moves the pet's folder to the Trash (recoverable — never a hard delete).
+    /// Deleting the active pet hands the stage to the first remaining pet, if
+    /// any — with no built-in fallback pet, an empty library shows a paw
+    /// placeholder until the user adds one.
     func deletePet(id: String) {
         try? FileManager.default.trashItem(
             at: Self.directory(for: id), resultingItemURL: nil)
-        if activeID == id { setActive(nil) }
+        let wasActive = activeID == id
         reload()
+        if wasActive { setActive(pets.first?.id) }
     }
 
     // MARK: - Legacy migration

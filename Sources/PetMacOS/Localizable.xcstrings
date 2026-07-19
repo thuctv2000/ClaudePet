@@ -101,18 +101,12 @@
         }
       }
     },
-    "Any state with no images falls back to the \"idle\" frame, or the built-in vector dog if there are no images at all.": {
+    "Any state with no images falls back to the \"idle\" frames.": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Any state with no images falls back to the \"idle\" frame, or the built-in vector dog if there are no images at all."
-          }
-        },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "State nào chưa có ảnh sẽ tự dùng frame \"idle\", hoặc con chó vẽ sẵn nếu chưa có ảnh nào cả."
+            "value": "State nào không có ảnh sẽ tự dùng frame của \"idle\"."
           }
         }
       }
@@ -255,12 +249,12 @@
         }
       }
     },
-    "Built-in dog": {
+    "Cancel": {
       "localizations": {
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chó vẽ sẵn"
+            "value": "Huỷ"
           }
         }
       }
@@ -1415,18 +1409,22 @@
         }
       }
     },
-    "No sprites yet — using the default dog": {
+    "No pet yet — add one in Settings → Pet": {
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sprites yet — using the default dog"
-          }
-        },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chưa có ảnh — đang dùng chó vẽ sẵn"
+            "value": "Chưa có pet — thêm trong Cài đặt → Pet"
+          }
+        }
+      }
+    },
+    "No pets yet — add one below.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa có pet nào — thêm ở bên dưới."
           }
         }
       }
@@ -1723,6 +1721,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tải lại sprites"
+          }
+        }
+      }
+    },
+    "Rename": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đổi tên"
+          }
+        }
+      }
+    },
+    "Rename pet": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đổi tên pet"
           }
         }
       }

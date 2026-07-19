@@ -109,7 +109,7 @@ final class SpriteLibrary {
             {"fps": 12, "loop": true}
 
         \(tr("After adding or changing images, use the menu bar > \"Reload sprites\"."))
-        \(tr("Any state with no images falls back to the \"idle\" frame, or the built-in vector dog if there are no images at all."))
+        \(tr("Any state with no images falls back to the \"idle\" frames."))
         """
         try? text.write(to: readme, atomically: true, encoding: .utf8)
     }

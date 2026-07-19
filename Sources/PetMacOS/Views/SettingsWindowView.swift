@@ -12,6 +12,9 @@ struct SettingsWindowView: View {
     @State private var importMessage: String?
     /// Name typed into the "add a new pet" field.
     @State private var newPetName = ""
+    /// Pet currently being renamed (drives the rename alert) + its draft name.
+    @State private var renamingPetID: String?
+    @State private var renameText = ""
     /// Language picker state ("system", "en", "vi") + whether it changed this
     /// session (drives the relaunch prompt).
     @State private var language: String =
@@ -226,30 +229,36 @@ struct SettingsWindowView: View {
 
     // MARK: Pet library
 
-    /// Every saved pet plus the built-in dog: one tap to switch, ✕ to move a
+    /// Every saved pet: one tap to switch, pencil to rename, ✕ to move the
     /// pet's folder to the Trash.
     private var petLibrarySection: some View {
         Section(tr("Your pets")) {
-            builtInDogRow
+            if delegate.petStore.pets.isEmpty {
+                Text(tr("No pets yet — add one below."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             ForEach(delegate.petStore.pets) { pet in
                 petLibraryRow(pet)
             }
         }
+        .alert(tr("Rename pet"), isPresented: renameAlertShown) {
+            TextField(tr("Pet name"), text: $renameText)
+            Button(tr("Rename")) {
+                if let id = renamingPetID {
+                    delegate.petStore.renamePet(id: id, to: renameText)
+                }
+                renamingPetID = nil
+            }
+            Button(tr("Cancel"), role: .cancel) { renamingPetID = nil }
+        }
     }
 
-    private var builtInDogRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "pawprint.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(.orange)
-                .frame(width: 34, height: 34)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.quaternary))
-            Text(tr("Built-in dog"))
-            Spacer()
-            activeMark(isActive: delegate.petStore.activeID == nil) {
-                switchPet(to: nil)
-            }
-        }
+    private var renameAlertShown: Binding<Bool> {
+        Binding(
+            get: { renamingPetID != nil },
+            set: { if !$0 { renamingPetID = nil } }
+        )
     }
 
     private func petLibraryRow(_ pet: PetInfo) -> some View {
@@ -273,6 +282,16 @@ struct SettingsWindowView: View {
             activeMark(isActive: delegate.petStore.activeID == pet.id) {
                 switchPet(to: pet.id)
             }
+            Button {
+                renameText = pet.name
+                renamingPetID = pet.id
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(tr("Rename pet"))
             Button {
                 delegate.petStore.deletePet(id: pet.id)
                 delegate.reloadSprites()
