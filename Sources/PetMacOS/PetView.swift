@@ -21,10 +21,9 @@ struct PetView: View {
         state.pendingQuestion != nil || state.pendingAsk != nil
     }
 
-    /// One fixed size (~3/10 of the old 280pt idle size). The pet no longer
-    /// grows or shrinks with cards/dialogs — a constant, unobtrusive presence;
-    /// cards and dialogs get all the freed room.
-    private let petSide: CGFloat = 84
+    /// One fixed size. The pet no longer grows or shrinks with cards/dialogs —
+    /// a constant, unobtrusive presence; cards and dialogs get the freed room.
+    private let petSide: CGFloat = 120
 
     var body: some View {
         // Grouping walk is O(sessions x items) — compute once per render and
