@@ -8,6 +8,15 @@
         <link>https://github.com/thuctv2000/ClaudePet</link>
         <description>PetMacOS updates</description>
         <item>
+            <title>1.4.0</title>
+            <pubDate>Tue, 21 Jul 2026 00:47:55 +0700</pubDate>
+            <link>https://github.com/thuctv2000/ClaudePet</link>
+            <sparkle:version>1.4.0</sparkle:version>
+            <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.4.0/PetMacOS-1.4.0.dmg" length="4090255" type="application/octet-stream" sparkle:edSignature="NC0c34EDW7kURwTNML6lj7BwRdySkNoJSCo+juOTry9KiZwD4+Y2sX09GuaDDgGMuCB9CEUikT41wGhXgBPRCw=="/>
+        </item>
+        <item>
             <title>1.3.0</title>
             <pubDate>Mon, 20 Jul 2026 10:18:30 +0700</pubDate>
             <link>https://github.com/thuctv2000/ClaudePet</link>
