@@ -1093,6 +1093,10 @@ final class PetState {
 
     /// Applies an incoming hook event to the pet's presentation.
     func apply(_ event: HookEvent) {
+        // The pet's own plumbing: UsageMonitor renews the OAuth token by
+        // spawning a hidden `claude` run inside a marker folder. Its hook
+        // events would otherwise paint a phantom conversation card.
+        if event.projectName == UsageMonitor.refreshMarkerDirName { return }
         logEvent(event, route: "event")
         rememberSessionMeta(for: event)
         let context = contextLabel(for: event)

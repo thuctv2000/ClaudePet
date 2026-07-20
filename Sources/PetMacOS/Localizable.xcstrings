@@ -1635,6 +1635,22 @@
         }
       }
     },
+    "Refreshing login…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refreshing login…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang làm mới đăng nhập…"
+          }
+        }
+      }
+    },
     "Reading %@": {
       "localizations": {
         "en": {

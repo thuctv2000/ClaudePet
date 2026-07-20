@@ -17,6 +17,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
+            // Assets.xcassets (app icon) only makes sense in the xcodegen app
+            // build; SPM can't compile asset catalogs, so keep it out of the
+            // dev build instead of warning on every compile.
+            exclude: ["Resources"],
             resources: [
                 .process("Localizable.xcstrings")
             ]
