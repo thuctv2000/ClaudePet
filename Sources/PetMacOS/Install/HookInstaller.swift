@@ -135,16 +135,40 @@ enum HookInstaller {
 
     // MARK: - Helpers
 
+    enum SettingsError: LocalizedError {
+        case unreadable
+        var errorDescription: String? {
+            tr("~/.claude/settings.json exists but couldn't be parsed — not touching it")
+        }
+    }
+
+    /// Missing file → fresh empty settings. An EXISTING file that doesn't
+    /// parse as a JSON object throws instead: writing in that state would
+    /// replace whatever the user had with just our hooks. We never "fix" or
+    /// overwrite a file we can't fully read.
     private static func loadSettings() throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: settingsURL),
-              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return [:] }
+        guard let data = try? Data(contentsOf: settingsURL) else { return [:] }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw SettingsError.unreadable
+        }
         return object
     }
 
+    /// Every write to `~/.claude/settings.json` first snapshots the current
+    /// file to `~/.petmacos/claude-settings.backup.json` (rolling, one copy).
+    /// Combined with marker-scoped edits (only groups whose command contains
+    /// `pet-hook.sh` are ever added/removed) and the atomic write below, a bad
+    /// day can always be undone by copying the backup back by hand.
     private static func saveSettings(_ settings: [String: Any]) throws {
         try FileManager.default.createDirectory(
             at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: settingsURL.path) {
+            let backup = PetConfig.directory.appendingPathComponent("claude-settings.backup.json")
+            try? FileManager.default.createDirectory(
+                at: PetConfig.directory, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.copyItem(at: settingsURL, to: backup)
+        }
         let data = try JSONSerialization.data(
             withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         try data.write(to: settingsURL, options: .atomic)

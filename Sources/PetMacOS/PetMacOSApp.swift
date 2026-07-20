@@ -229,6 +229,25 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         refreshConnectionStatus()
     }
 
+    /// Clean uninstall: removes the pet's hook entries from
+    /// `~/.claude/settings.json` (marker-scoped; a rolling backup is written
+    /// first — see `HookInstaller.saveSettings`), optionally trashes
+    /// `~/.petmacos` (pets + config) and the app's preferences, then reveals
+    /// the app bundle in Finder and quits so the user can drag it to the Trash.
+    func cleanUninstall(deleteData: Bool) {
+        try? HookInstaller.uninstall()
+        refreshConnectionStatus()
+        if deleteData {
+            UserDefaults.standard.removePersistentDomain(
+                forName: Bundle.main.bundleIdentifier ?? "com.desktoppet.PetMacOS")
+            try? FileManager.default.trashItem(at: PetConfig.directory, resultingItemURL: nil)
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            NSApp.terminate(nil)
+        }
+    }
+
     // MARK: - Connection self-healing
 
     /// There is no diagnostics UI: the app watches its own connection and

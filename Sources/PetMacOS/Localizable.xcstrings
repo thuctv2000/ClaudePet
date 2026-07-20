@@ -545,6 +545,16 @@
         }
       }
     },
+    "Clean uninstall…": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gỡ cài đặt sạch…"
+          }
+        }
+      }
+    },
     "Click-through": {
       "localizations": {
         "en": {
@@ -1455,6 +1465,16 @@
         }
       }
     },
+    "Only the pet's own entries are removed from ~/.claude/settings.json (a backup is saved first) — the rest of your Claude Code settings stay untouched. Deleted data goes to the Trash. The app then shows itself in Finder so you can drag it to the Trash.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉ các entry của pet bị gỡ khỏi ~/.claude/settings.json (đã lưu bản backup trước) — phần còn lại của cài đặt Claude Code giữ nguyên. Data bị xoá được đưa vào Thùng rác. Sau đó app tự hiện trong Finder để bạn kéo vào Thùng rác."
+          }
+        }
+      }
+    },
     "Open Terminal (or your IDE's integrated one), run \"claude\" to start a session, then type any command, for example:": {
       "localizations": {
         "en": {
@@ -1635,22 +1655,6 @@
         }
       }
     },
-    "Refreshing login…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Refreshing login…"
-          }
-        },
-        "vi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Đang làm mới đăng nhập…"
-          }
-        }
-      }
-    },
     "Reading %@": {
       "localizations": {
         "en": {
@@ -1699,6 +1703,32 @@
         }
       }
     },
+    "Refreshing login…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refreshing login…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang làm mới đăng nhập…"
+          }
+        }
+      }
+    },
+    "Reinstalling later brings everything back if you kept your pets.": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cài lại sau này sẽ có lại mọi thứ nếu bạn giữ pet."
+          }
+        }
+      }
+    },
     "Relaunch now": {
       "localizations": {
         "vi": {
@@ -1721,6 +1751,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tải lại sprites"
+          }
+        }
+      }
+    },
+    "Remove hooks and delete all pet data": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gỡ hook và xoá toàn bộ data pet"
+          }
+        }
+      }
+    },
+    "Remove hooks, keep my pets": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gỡ hook, giữ lại pet"
+          }
+        }
+      }
+    },
+    "Remove the pet's hooks from Claude Code and quit?": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gỡ hook của pet khỏi Claude Code và thoát app?"
           }
         }
       }
@@ -2783,6 +2843,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "khi rảnh (nên loop)"
+          }
+        }
+      }
+    },
+    "~/.claude/settings.json exists but couldn't be parsed — not touching it": {
+      "localizations": {
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~/.claude/settings.json tồn tại nhưng không đọc được — không đụng vào file"
           }
         }
       }

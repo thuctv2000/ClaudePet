@@ -15,6 +15,7 @@ struct SettingsWindowView: View {
     /// Pet currently being renamed (drives the rename alert) + its draft name.
     @State private var renamingPetID: String?
     @State private var renameText = ""
+    @State private var showUninstallDialog = false
     /// Language picker state ("system", "en", "vi") + whether it changed this
     /// session (drives the relaunch prompt).
     @State private var language: String =
@@ -136,8 +137,36 @@ struct SettingsWindowView: View {
 
             languageSection
             updateSection
+            uninstallSection
         }
         .formStyle(.grouped)
+    }
+
+    /// Clean uninstall entry point. The hook removal is marker-scoped (only
+    /// the pet's own entries) and a backup of settings.json is written first,
+    /// so the user's other Claude Code configuration can never be harmed.
+    private var uninstallSection: some View {
+        Section {
+            Button(tr("Clean uninstall…"), role: .destructive) {
+                showUninstallDialog = true
+            }
+            .confirmationDialog(
+                tr("Remove the pet's hooks from Claude Code and quit?"),
+                isPresented: $showUninstallDialog
+            ) {
+                Button(tr("Remove hooks, keep my pets"), role: .destructive) {
+                    delegate.cleanUninstall(deleteData: false)
+                }
+                Button(tr("Remove hooks and delete all pet data"), role: .destructive) {
+                    delegate.cleanUninstall(deleteData: true)
+                }
+                Button(tr("Cancel"), role: .cancel) {}
+            } message: {
+                Text(tr("Only the pet's own entries are removed from ~/.claude/settings.json (a backup is saved first) — the rest of your Claude Code settings stay untouched. Deleted data goes to the Trash. The app then shows itself in Finder so you can drag it to the Trash."))
+            }
+        } footer: {
+            Text(tr("Reinstalling later brings everything back if you kept your pets."))
+        }
     }
 
     /// Language override: follow the system (default) or force EN/VI.
