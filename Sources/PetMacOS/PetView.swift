@@ -23,7 +23,7 @@ struct PetView: View {
 
     /// One fixed size. The pet no longer grows or shrinks with cards/dialogs —
     /// a constant, unobtrusive presence; cards and dialogs get the freed room.
-    private let petSide: CGFloat = 120
+    private let petSide: CGFloat = 140
 
     var body: some View {
         // Grouping walk is O(sessions x items) — compute once per render and
