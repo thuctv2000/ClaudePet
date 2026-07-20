@@ -42,7 +42,7 @@ targets:
         # ad-hoc local signing out of the box. Release signing is injected by
         # scripts/build-release.sh (PET_SIGN_IDENTITY / PET_TEAM_ID env vars).
         CODE_SIGN_STYLE: Automatic
-        MARKETING_VERSION: "1.2.0"
+        MARKETING_VERSION: "1.3.0"
         ENABLE_HARDENED_RUNTIME: YES
         SWIFT_STRICT_CONCURRENCY: complete
     scheme:
