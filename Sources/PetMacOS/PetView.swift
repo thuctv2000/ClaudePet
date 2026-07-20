@@ -21,12 +21,10 @@ struct PetView: View {
         state.pendingQuestion != nil || state.pendingAsk != nil
     }
 
-    private func petSide(hasCards: Bool) -> CGFloat {
-        if dialogActive { return 150 }
-        // Give the session-card stack breathing room while cards are on
-        // screen; the pet grows back once every conversation is done.
-        return hasCards ? 210 : 280
-    }
+    /// One fixed size (~3/10 of the old 280pt idle size). The pet no longer
+    /// grows or shrinks with cards/dialogs — a constant, unobtrusive presence;
+    /// cards and dialogs get all the freed room.
+    private let petSide: CGFloat = 84
 
     var body: some View {
         // Grouping walk is O(sessions x items) — compute once per render and
@@ -59,8 +57,7 @@ struct PetView: View {
                     .animation(.spring(response: 0.35, dampingFraction: 0.7), value: summaries)
                     .frame(maxHeight: 300)
             }
-            dog(side: petSide(hasCards: !summaries.isEmpty))
-                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: dialogActive)
+            dog(side: petSide)
             // Usage badge stays visible under the pet at all times.
             UsageBadgeView(usage: usage)
                 .padding(.top, 2)
@@ -140,13 +137,13 @@ struct PetView: View {
             if let clip = resolvedClip {
                 AnimatedSpriteView(clip: clip)
                     .id(activeClipName)   // restart playback when the state changes
-                    .shadow(color: .black.opacity(0.16), radius: 12, y: 9)
+                    .shadow(color: .black.opacity(0.16), radius: 6, y: 4)
             } else {
                 Image(systemName: "pawprint.fill")
                     .font(.system(size: side * 0.4))
                     .foregroundStyle(.secondary.opacity(0.7))
             }
-            hearts
+            hearts(side: side)
         }
         .frame(width: side, height: side)
         .contentShape(Rectangle())
@@ -166,14 +163,15 @@ struct PetView: View {
         sprites.clip(named: activeClipName) ?? sprites.clip(named: "idle")
     }
 
+    /// Tap-reaction hearts, scaled to the pet's size.
     @ViewBuilder
-    private var hearts: some View {
+    private func hearts(side: CGFloat) -> some View {
         if isHappy {
             ForEach(0..<3, id: \.self) { index in
                 Image(systemName: "heart.fill")
                     .foregroundStyle(.pink)
-                    .font(.system(size: 18))
-                    .offset(x: CGFloat(index - 1) * 40, y: -118)
+                    .font(.system(size: side * 0.16))
+                    .offset(x: CGFloat(index - 1) * side * 0.35, y: -side * 0.55)
                     .transition(.scale.combined(with: .opacity))
             }
         }
