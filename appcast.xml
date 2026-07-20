@@ -1,11 +1,20 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <!-- Sparkle update feed. Regenerated (and EdDSA-signed) by
      scripts/build-release.sh; commit + push after each release.
      Empty channel = clients report "you're up to date". -->
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>PetMacOS</title>
         <link>https://github.com/thuctv2000/ClaudePet</link>
         <description>PetMacOS updates</description>
+        <item>
+            <title>1.3.0</title>
+            <pubDate>Mon, 20 Jul 2026 10:18:30 +0700</pubDate>
+            <link>https://github.com/thuctv2000/ClaudePet</link>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.3.0/PetMacOS-1.3.0.dmg" length="4061642" type="application/octet-stream" sparkle:edSignature="NogO3wBSdW0j2ukNAxTit7SZn2usBDEvLNrsR48XhuDngWyxU77FD9CDxI2Eg1SAXDPw+MJaiQQ3rBrfAkWmBA=="/>
+        </item>
     </channel>
 </rss>
