@@ -74,18 +74,57 @@ enum HookInstaller {
 
         for entry in plan() {
             var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
-            var hook: [String: Any] = [
-                "type": "command", "command": "sh \(scriptURL.path) \(entry.mode)",
-            ]
-            if let timeout = entry.timeout { hook["timeout"] = timeout }
-            var group: [String: Any] = ["hooks": [hook]]
-            if let matcher = entry.matcher { group["matcher"] = matcher }
-            groups.append(group)
+            groups.append(group(for: entry))
             hooks[entry.event] = groups
         }
 
         settings["hooks"] = hooks
         try saveSettings(settings)
+    }
+
+    /// The settings.json group one plan entry installs as.
+    private static func group(
+        for entry: (event: String, mode: String, matcher: String?, timeout: Int?)
+    ) -> [String: Any] {
+        var hook: [String: Any] = [
+            "type": "command", "command": "sh \(scriptURL.path) \(entry.mode)",
+        ]
+        if let timeout = entry.timeout { hook["timeout"] = timeout }
+        var group: [String: Any] = ["hooks": [hook]]
+        if let matcher = entry.matcher { group["matcher"] = matcher }
+        return group
+    }
+
+    /// True when what's on disk matches what THIS app version would install:
+    /// the script byte-for-byte, and our settings.json groups (marker-scoped)
+    /// exactly the plan. After a Sparkle update the app calls `install()` at
+    /// launch when this is false, so new hook events/script fixes take effect
+    /// without the user ever pressing "Connect" again.
+    static var isCurrent: Bool {
+        guard let onDisk = try? String(contentsOf: scriptURL, encoding: .utf8),
+              onDisk == scriptSource else { return false }
+        guard let settings = try? loadSettings(),
+              let hooks = settings["hooks"] as? [String: Any] else { return false }
+
+        var actual: [String: [[String: Any]]] = [:]
+        for (event, value) in hooks {
+            guard let groups = value as? [[String: Any]] else { continue }
+            let ours = groups.filter { group in
+                guard let inner = group["hooks"] as? [[String: Any]] else { return false }
+                return inner.contains { ($0["command"] as? String)?.contains(marker) == true }
+            }
+            if !ours.isEmpty { actual[event] = ours }
+        }
+
+        var expected: [String: [[String: Any]]] = [:]
+        for entry in plan() {
+            expected[entry.event, default: []].append(group(for: entry))
+        }
+        return canonical(actual) == canonical(expected)
+    }
+
+    private static func canonical(_ object: [String: [[String: Any]]]) -> Data? {
+        try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
     // MARK: - Uninstall

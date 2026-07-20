@@ -107,6 +107,14 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         // port/token off the network queue, racing this decision if it ran
         // second — reading the flag back out from a half-written file.
         let needsOnboarding = Self.shouldShowOnboarding()
+        // Post-update migration: the user already chose to be connected, so a
+        // newer app silently rewrites the hook script/entries when they no
+        // longer match what this version installs. One click on "update" and
+        // everything — including new hook events — just works.
+        if HookInstaller.isInstalled, !HookInstaller.isCurrent {
+            try? HookInstaller.install()
+            refreshConnectionStatus()
+        }
         startHookServer()
         usage.start()
         // Auto-retire a done card once the user opens that conversation in
