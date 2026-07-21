@@ -572,13 +572,6 @@ final class PetState {
         persistInFlightSubagents()
     }
 
-    /// Manual close of a subagent card (safety valve for a missed SubagentStop).
-    func dismissSubagent(id: UUID) {
-        subagentTasks.removeAll { $0.id == id }
-        updatePassthrough()
-        persistInFlightSubagents()
-    }
-
     /// Removes the oldest still-running subagent card (FIFO). This is the
     /// fallback used only when a `SubagentStop` carries no `agent_id` at all
     /// (an older Claude Code build that predates `SubagentStart`) -- see
@@ -776,16 +769,6 @@ final class PetState {
         updatePassthrough()
         ensureWatcher(for: transcriptPath)
         ensureBackgroundSafetyPoll()
-    }
-
-    /// Manual close of a background-task card (safety valve if the completion
-    /// signal is ever missed).
-    func dismissBackgroundTask(id: UUID) {
-        guard let index = backgroundTasks.firstIndex(where: { $0.id == id }) else { return }
-        let item = backgroundTasks.remove(at: index)
-        cancelBackgroundTimeout(id: id)
-        if let path = item.transcriptPath { retireWatcherIfUnused(path: path) }
-        updatePassthrough()
     }
 
     /// Starts (or reuses) the DispatchSource-based watcher for one transcript

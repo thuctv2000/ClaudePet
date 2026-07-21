@@ -22,8 +22,6 @@ struct SessionStackView: View {
     let summaries: [PetState.SessionSummary]
     let settings: SettingsStore
     let onDismissCard: (String) -> Void
-    let onDismissSubagent: (UUID) -> Void
-    let onDismissBackground: (UUID) -> Void
 
     /// Session ids whose task-count line is expanded into the task list.
     @State private var expandedTasks: Set<String> = []
@@ -91,9 +89,7 @@ struct SessionStackView: View {
                                 isMessageExpanded: expandedMessages.contains(summary.id),
                                 onToggleExpand: { toggle(summary.id, in: &expandedTasks) },
                                 onToggleMessage: { toggle(summary.id, in: &expandedMessages) },
-                                onDismissCard: onDismissCard,
-                                onDismissSubagent: onDismissSubagent,
-                                onDismissBackground: onDismissBackground
+                                onDismissCard: onDismissCard
                             )
                             .id(summary.id)
                             .contentShape(Rectangle())
@@ -197,8 +193,6 @@ private struct SessionCardView: View {
     let onToggleExpand: () -> Void
     let onToggleMessage: () -> Void
     let onDismissCard: (String) -> Void
-    let onDismissSubagent: (UUID) -> Void
-    let onDismissBackground: (UUID) -> Void
 
     private static let maxListedTasks = 5
     private static let collapsedMessageLines = 2
@@ -379,6 +373,11 @@ private struct SessionCardView: View {
         let all = summary.subagents.map { ($0, true) } + summary.backgrounds.map { ($0, false) }
         let shown = all.prefix(Self.maxListedTasks)
         let overflow = all.count - shown.count
+        // Read-only list: these rows are purely informational. A running
+        // subagent/background task clears itself when it finishes (SubagentStop
+        // / a background completion notice), and a whole conversation card can
+        // be dismissed by its header ✕ — so individual rows carry no dismiss
+        // control of their own.
         return VStack(alignment: .leading, spacing: 4) {
             ForEach(shown, id: \.0.id) { item, isSubagent in
                 HStack(alignment: .top, spacing: 6) {
@@ -401,17 +400,6 @@ private struct SessionCardView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    Button {
-                        if isSubagent { onDismissSubagent(item.id) } else { onDismissBackground(item.id) }
-                    } label: {
-                        Text("✕")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .padding(3)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(-3)
                 }
             }
             if overflow > 0 {

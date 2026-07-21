@@ -191,24 +191,25 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         petState.onInteractiveNeeded = { [weak self] needed in
             guard let self, let panel = self.panel else { return }
             if needed {
-                // A dialog needs real clicks/typing: accept mouse events and take
-                // key focus so SwiftUI buttons and the text field respond.
-                panel.ignoresMouseEvents = false
+                // A dialog needs real clicks/typing: make the whole window live
+                // (overriding cursor tracking) and take key focus so SwiftUI
+                // buttons and the text field respond.
+                panel.forceInteractive = true
                 self.isVisible = true
                 NSApp.activate(ignoringOtherApps: true)
                 panel.makeKeyAndOrderFront(nil)
             } else {
-                panel.ignoresMouseEvents = self.isClickThrough
+                panel.forceInteractive = false
                 panel.orderFrontRegardless()
                 // Hand active status back to whatever the user was using.
                 NSApp.deactivate()
             }
         }
-        petState.onMousePassthroughNeeded = { [weak self] needed in
-            guard let self, let panel = self.panel else { return }
-            // Accept clicks (so the user can close a notice) without stealing
-            // focus; fall back to the user's click-through preference otherwise.
-            panel.ignoresMouseEvents = needed ? false : self.isClickThrough
+        petState.onMousePassthroughNeeded = { [weak self] _ in
+            // A notice / card carries its own hittable ✕, so cursor tracking
+            // already makes it clickable. Just recompute in case it appeared
+            // under a stationary cursor (no mouse-move to trigger tracking).
+            self?.panel?.reevaluateCursor()
         }
         do {
             try server.start { [weak self] port in
@@ -391,7 +392,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
 
     func setClickThrough(_ enabled: Bool) {
         isClickThrough = enabled
-        panel?.ignoresMouseEvents = enabled
+        panel?.clickThrough = enabled
     }
 
     private func showPet() {
@@ -415,12 +416,15 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                         self?.reloadSprites()
                     },
                     onOpenSettings: { [weak self] in self?.openSettingsWindow() },
-                    onHidePet: { [weak self] in self?.setPetVisible(false) }
+                    onHidePet: { [weak self] in self?.setPetVisible(false) },
+                    onContentFrameChange: { [weak self] rect in
+                        self?.panel?.setContentFrame(rect)
+                    }
                 ))
             panel = newPanel
         }
 
-        panel?.ignoresMouseEvents = isClickThrough
+        panel?.clickThrough = isClickThrough
         panel?.orderFrontRegardless()
         isVisible = true
     }
@@ -492,7 +496,30 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// The floating pet window. It's a fixed 320x500 panel, but most of that is
+/// empty space above the pet. To avoid acting as a big invisible click-blocker
+/// over the desktop, it tracks the cursor and only accepts mouse events while
+/// the pointer is over real content (the pet, a card, a dialog, the badge);
+/// everywhere else it passes clicks straight through to whatever is behind.
 final class PetPanel: NSPanel {
+    /// User's "click-through" preference. When on, the window ignores mouse
+    /// events everywhere — even over the pet.
+    var clickThrough = false { didSet { refreshIgnoreState() } }
+
+    /// A blocking dialog/notice needs its clicks guaranteed the instant it
+    /// appears (before the user moves the mouse), so it overrides tracking and
+    /// makes the whole window live until dismissed.
+    var forceInteractive = false { didSet { refreshIgnoreState() } }
+
+    // nonisolated(unsafe): the array is only mutated on the main actor, but the
+    // Swift 6 nonisolated deinit needs to read it to tear the monitors down —
+    // safe because deinit runs only when no other reference remains.
+    nonisolated(unsafe) private var monitors: [Any] = []
+    private var cursorOverContent = false
+    /// The pet's real content box in the hosting view's global space (top-left
+    /// origin), reported by PetView. Empty until the first layout pass.
+    private var contentFrame: CGRect = .zero
+
     init(contentRect: NSRect) {
         super.init(
             contentRect: contentRect,
@@ -510,6 +537,68 @@ final class PetPanel: NSPanel {
         // Only grab key focus when a control (dialog button / text field) needs
         // it, so idle clicks and drags don't steal focus from other apps.
         becomesKeyOnlyIfNeeded = true
+        // Start transparent to clicks; tracking turns it on over the pet.
+        ignoresMouseEvents = true
+        installCursorTracking()
+    }
+
+    deinit { monitors.forEach(NSEvent.removeMonitor) }
+
+    // MARK: - Cursor tracking
+
+    /// Watches the pointer with both a local monitor (fires while our window is
+    /// live over content) and a global one (fires while the window is passing
+    /// events through to other apps). Together they cover the hand-off in both
+    /// directions as the cursor enters and leaves the pet. `mouseMoved` doesn't
+    /// need Accessibility permission (only keyboard taps do).
+    private func installCursorTracking() {
+        let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            self?.trackCursor()
+            return event
+        }
+        let global = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            self?.trackCursor()
+        }
+        monitors = [local, global].compactMap { $0 }
+    }
+
+    /// Updates the clickable region (called by PetView as content grows/shrinks)
+    /// and re-checks the cursor against it right away, so a card appearing under
+    /// a still cursor becomes live without waiting for a mouse move.
+    func setContentFrame(_ rect: CGRect) {
+        contentFrame = rect
+        trackCursor()
+    }
+
+    /// Recomputes whether the cursor is over real content and updates the
+    /// ignore state. Public so the app can nudge it when content appears under
+    /// a stationary cursor.
+    func reevaluateCursor() { trackCursor() }
+
+    private func trackCursor() {
+        // Never flip mid-drag: it would abort a drag of the pet halfway.
+        guard NSEvent.pressedMouseButtons == 0 else { return }
+        let over = pointIsOverContent(NSEvent.mouseLocation)
+        guard over != cursorOverContent else { return }
+        cursorOverContent = over
+        refreshIgnoreState()
+    }
+
+    /// True when the cursor is inside the reported content box. PetView measures
+    /// that box in SwiftUI's global space (top-left origin), so the cursor's
+    /// window point is flipped to match before testing. `hitTest` can't do this
+    /// job: NSHostingView returns itself for every in-bounds point, empty or not.
+    private func pointIsOverContent(_ screenPoint: NSPoint) -> Bool {
+        guard let content = contentView, isVisible, !contentFrame.isEmpty else { return false }
+        let windowPoint = convertPoint(fromScreen: screenPoint)   // bottom-left origin
+        let flipped = CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y)
+        return contentFrame.contains(flipped)
+    }
+
+    private func refreshIgnoreState() {
+        if forceInteractive { ignoresMouseEvents = false }
+        else if clickThrough { ignoresMouseEvents = true }
+        else { ignoresMouseEvents = !cursorOverContent }
     }
 
     // Must be able to become key, otherwise SwiftUI buttons / text fields in the

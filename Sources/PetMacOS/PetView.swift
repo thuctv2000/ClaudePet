@@ -11,6 +11,10 @@ struct PetView: View {
     var onSwitchPet: (String) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
     var onHidePet: () -> Void = {}
+    /// Reports the bounding box of the real (non-empty) content in the hosting
+    /// view's global space (top-left origin) so PetPanel knows which part of the
+    /// window should catch clicks — everything else passes through. See PetPanel.
+    var onContentFrameChange: (CGRect) -> Void = { _ in }
 
     @State private var isHappy = false
     @State private var reacting = false   // playing the one-shot click clip
@@ -34,35 +38,50 @@ struct PetView: View {
         // upward instead of pushing the dog out of the panel.
         VStack(spacing: 4) {
             Spacer(minLength: 0)
-            if dialogActive {
-                // Scrollable so a tall dialog never gets clipped by the
-                // panel; anchored to the bottom so it grows upward from the
-                // pet's head.
-                ScrollView(.vertical, showsIndicators: false) {
-                    topContent
+            // Only this inner stack holds real content; the Spacer above soaks
+            // up the empty room. Measuring *this* subtree (not the whole 500pt
+            // window) gives PetPanel the exact hit region, so empty space above
+            // the pet passes clicks through to the desktop.
+            VStack(spacing: 4) {
+                if dialogActive {
+                    // Scrollable so a tall dialog never gets clipped by the
+                    // panel; anchored to the bottom so it grows upward from the
+                    // pet's head.
+                    ScrollView(.vertical, showsIndicators: false) {
+                        topContent
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
+                            .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+                    }
+                    .defaultScrollAnchor(.bottom)
+                    .frame(maxHeight: 420)
+                } else if !summaries.isEmpty {
+                    // The session-card list scrolls inside its own bounds (see
+                    // SessionStackView) so the "Latest" card is always in view.
+                    // Rendered only when there ARE cards: an empty ScrollView is
+                    // greedy and would reserve its full maxHeight, inflating the
+                    // clickable region (and visually pushing the pet down) even
+                    // with nothing to show.
+                    stackContent(summaries)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingAsk)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: state.pendingQuestion)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: summaries)
+                        .frame(maxHeight: 300)
                 }
-                .defaultScrollAnchor(.bottom)
-                .frame(maxHeight: 420)
-            } else {
-                // The session-card list scrolls inside its own bounds (see
-                // SessionStackView) so the "Latest" card is always in view.
-                stackContent(summaries)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: summaries)
-                    .frame(maxHeight: 300)
+                dog(side: petSide)
+                // Usage badge stays visible under the pet at all times.
+                UsageBadgeView(usage: usage)
+                    .padding(.top, 2)
             }
-            dog(side: petSide)
-            // Usage badge stays visible under the pet at all times.
-            UsageBadgeView(usage: usage)
-                .padding(.top, 2)
+            .background(contentFrameReporter)
         }
         .frame(width: 320, height: 500)
-        .background(Color.clear)
+        // No full-size background on purpose: an opaque/clear backdrop would
+        // make the whole 320x500 window hit-testable, so the empty area above
+        // the pet would swallow clicks meant for the desktop behind it. With no
+        // backdrop, only the real content (pet, cards, dialog, badge) is
+        // hittable; PetPanel's cursor tracking passes empty regions through.
         .contextMenu {
             if !petStore.pets.isEmpty {
                 Menu(tr("Switch pet")) {
@@ -96,6 +115,21 @@ struct PetView: View {
         }
     }
 
+    /// Measures the real content box and reports it to PetPanel. Uses a direct
+    /// GeometryReader callback (not a PreferenceKey): `onPreferenceChange`
+    /// doesn't fire reliably for SwiftUI hosted in a plain NSHostingView, so it
+    /// only ever delivered the default `.zero`. `.global` here is the hosting
+    /// view's space (top-left origin), which PetPanel flips to match the cursor.
+    private var contentFrameReporter: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .onAppear { onContentFrameChange(proxy.frame(in: .global)) }
+                .onChange(of: proxy.frame(in: .global)) { _, new in
+                    onContentFrameChange(new)
+                }
+        }
+    }
+
     /// The blocking dialog, when one is pending (dialog branch of `body`).
     @ViewBuilder
     private var topContent: some View {
@@ -121,9 +155,7 @@ struct PetView: View {
         SessionStackView(
             summaries: summaries,
             settings: settings,
-            onDismissCard: { key in state.dismissSession(key: key) },
-            onDismissSubagent: { id in state.dismissSubagent(id: id) },
-            onDismissBackground: { id in state.dismissBackgroundTask(id: id) }
+            onDismissCard: { key in state.dismissSession(key: key) }
         )
     }
 
