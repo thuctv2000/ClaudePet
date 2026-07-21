@@ -29,7 +29,8 @@ enum SpriteImporter {
     /// actor (called from the settings UI; a handful of frames is fast enough).
     @MainActor
     static func replaceFrames(
-        of state: String, with urls: [URL], canvasSize: Int = 512, pad: CGFloat = 0.06
+        of state: String, with urls: [URL], into root: URL? = nil,
+        canvasSize: Int = 512, pad: CGFloat = 0.06
     ) throws -> ImportResult {
         // Keep a stable order regardless of the panel's selection order.
         let sorted = urls.sorted {
@@ -45,7 +46,7 @@ enum SpriteImporter {
         }
         guard !frames.isEmpty else { throw ImportError.noFrames }
 
-        let dir = SpriteLibrary.root.appendingPathComponent(state, isDirectory: true)
+        let dir = (root ?? SpriteLibrary.root).appendingPathComponent(state, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for old in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         where old.pathExtension.lowercased() == "png" {

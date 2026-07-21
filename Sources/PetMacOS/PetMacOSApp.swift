@@ -98,6 +98,12 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         // pet decides what `SpriteLibrary.root` resolves to below.
         petStore.migrateLegacyIfNeeded()
         petStore.reload()
+        // Bundled Dino pet: always present (re-provisioned from bundled GIFs if
+        // its folder is missing), on both fresh installs and updates. On a
+        // fresh install — the only time no pet is active — it becomes active so
+        // the app opens with a real pet instead of the paw placeholder.
+        petStore.provisionBuiltinIfNeeded()
+        if petStore.activeID == nil { petStore.setActive(PetStore.builtinID) }
         SpriteLibrary.ensureScaffold()
         sprites.reload()
         petState.recoverInFlightSubagents()

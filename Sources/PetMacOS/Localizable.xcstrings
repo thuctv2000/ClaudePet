@@ -2209,6 +2209,22 @@
         }
       }
     },
+    "The default pet can't be deleted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The default pet can't be deleted"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không thể xoá thú cưng mặc định"
+          }
+        }
+      }
+    },
     "The dog on screen will change expression when Claude Code starts thinking, runs a tool, or needs you to approve a permission. If you still don't see anything after a few minutes, open Settings → the \"Diagnostics\" tab to check.": {
       "localizations": {
         "en": {

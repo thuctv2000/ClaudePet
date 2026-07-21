@@ -40,6 +40,7 @@ struct QuestionDialogView: View {
                 Text(header)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Text(current.question)
@@ -105,11 +106,12 @@ struct QuestionDialogView: View {
                 Text(option.label)
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let desc = option.description, !desc.isEmpty {
                     Text(desc)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

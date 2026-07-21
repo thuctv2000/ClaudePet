@@ -6,13 +6,16 @@ import Observation
 /// With no pet active (`activeID == nil`, e.g. every pet deleted) the app
 /// shows a paw placeholder until one is added — there is no built-in pet.
 struct PetInfo: Identifiable, Equatable {
-    let id: String          // folder name (a UUID)
+    let id: String          // folder name (a UUID, or PetStore.builtinID)
     var name: String
     /// States that have at least one frame, out of `SpriteLibrary.states`.
     var coverage: Int
     /// First idle frame (or the first frame of any state) — the pet's face in
     /// the library list. Derived, never stored.
     var avatar: NSImage?
+    /// The bundled default pet (Dino). Always present, can't be deleted; the
+    /// app re-provisions it on launch if its folder is missing.
+    var isBuiltin: Bool { id == PetStore.builtinID }
 }
 
 /// Manages the pet library: create/delete/switch, plus the one-time migration
@@ -26,6 +29,27 @@ final class PetStore {
 
     private static let activeKey = "pet.active"
     static let petsRoot = PetConfig.directory.appendingPathComponent("pets", isDirectory: true)
+
+    /// Fixed folder id of the bundled default pet, so it can be recognised
+    /// (and protected from deletion) across launches — unlike user pets, which
+    /// get random UUIDs.
+    nonisolated static let builtinID = "dino-default"
+    nonisolated static let builtinName = "Dino"
+
+    /// Maps each app mood to the bundled GIF that supplies its frames.
+    /// (`row02_excited` → the tap reaction `click`; `row06_confused` → `asking`;
+    /// `row08_upset` → `error`; `row09_celebrate` → the clean-finish `happy`.)
+    private static let builtinGIFs: [(state: String, gif: String)] = [
+        ("idle", "row01_idle"),
+        ("click", "row02_excited"),
+        ("thinking", "row03_thinking"),
+        ("working", "row04_working_laptop"),
+        ("talking", "row05_waving"),
+        ("asking", "row06_confused"),
+        ("sleep", "row07_sleeping"),
+        ("error", "row08_upset"),
+        ("happy", "row09_celebrate"),
+    ]
 
     /// Directory of the currently active pet, if one is chosen and still on
     /// disk. Static so `SpriteLibrary.root` can consult it without a reference.
@@ -100,9 +124,10 @@ final class PetStore {
 
     /// Moves the pet's folder to the Trash (recoverable — never a hard delete).
     /// Deleting the active pet hands the stage to the first remaining pet, if
-    /// any — with no built-in fallback pet, an empty library shows a paw
-    /// placeholder until the user adds one.
+    /// any. The bundled Dino is protected: it can't be deleted (and would be
+    /// re-provisioned on next launch anyway), so the library is never empty.
     func deletePet(id: String) {
+        guard id != Self.builtinID else { return }
         try? FileManager.default.trashItem(
             at: Self.directory(for: id), resultingItemURL: nil)
         let wasActive = activeID == id
@@ -131,6 +156,40 @@ final class PetStore {
             // Leave the legacy folder untouched; the old single-pet path
             // (SpriteLibrary.root fallback) keeps working.
         }
+    }
+
+    // MARK: - Bundled default pet
+
+    /// Ensures the bundled Dino pet exists on disk. Runs on every launch (fresh
+    /// install *and* update): if the `dino-default` folder has no frames yet, it
+    /// converts the bundled GIFs into it — one clip per mood. A no-op once
+    /// provisioned, so a user who renamed it keeps their name and frames.
+    /// Returns true if it created the pet this call (caller may make it active).
+    @discardableResult
+    func provisionBuiltinIfNeeded() -> Bool {
+        let dir = Self.directory(for: Self.builtinID)
+        guard Self.coverage(of: dir) == 0 else { return false }
+        var wrote = false
+        for (state, gif) in Self.builtinGIFs {
+            guard let url = Self.bundledGIF(gif) else { continue }
+            if (try? SpriteImporter.replaceFrames(of: state, with: [url], into: dir)) != nil {
+                wrote = true
+            }
+        }
+        guard wrote else { return false }   // resources missing (bare dev run)
+        try? Self.writeName(Self.builtinName, to: dir)
+        reload()
+        return true
+    }
+
+    /// Locates a bundled GIF by name in whichever bundle this build uses
+    /// (`Bundle.module` under SPM, `Bundle.main` in the xcodegen .app).
+    private static func bundledGIF(_ name: String) -> URL? {
+        #if SWIFT_PACKAGE
+        return Bundle.module.url(forResource: name, withExtension: "gif")
+        #else
+        return Bundle.main.url(forResource: name, withExtension: "gif")
+        #endif
     }
 
     // MARK: - Folder inspection

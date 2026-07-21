@@ -22,7 +22,12 @@ let package = Package(
             // dev build instead of warning on every compile.
             exclude: ["Resources"],
             resources: [
-                .process("Localizable.xcstrings")
+                .process("Localizable.xcstrings"),
+                // Bundled default "Dino" pet GIFs (9 moods). `.process` flattens
+                // them to the bundle root, matching how the xcodegen app target
+                // copies them, so `Bundle.{module,main}.url(forResource:…)` finds
+                // them the same way in both builds. See PetStore.provisionBuiltin.
+                .process("BundledPets")
             ]
         )
     ]

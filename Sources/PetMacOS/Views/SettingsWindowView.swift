@@ -333,14 +333,23 @@ struct SettingsWindowView: View {
             }
             .buttonStyle(.plain)
             .help(tr("Rename pet"))
-            Button {
-                delegate.petStore.deletePet(id: pet.id)
-                delegate.reloadSprites()
-            } label: {
-                Text("✕").font(.caption).bold().foregroundStyle(.secondary)
+            if pet.isBuiltin {
+                // The bundled Dino can't be removed — it's the guaranteed
+                // fallback pet. Show a lock instead of a delete control.
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .help(tr("The default pet can't be deleted"))
+            } else {
+                Button {
+                    delegate.petStore.deletePet(id: pet.id)
+                    delegate.reloadSprites()
+                } label: {
+                    Text("✕").font(.caption).bold().foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(tr("Move this pet to the Trash"))
             }
-            .buttonStyle(.plain)
-            .help(tr("Move this pet to the Trash"))
         }
         .listRowBackground(isActive ? Color.accentColor.opacity(0.08) : nil)
     }
