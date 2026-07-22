@@ -191,18 +191,21 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         petState.onInteractiveNeeded = { [weak self] needed in
             guard let self, let panel = self.panel else { return }
             if needed {
-                // A dialog needs real clicks/typing: make the whole window live
-                // (overriding cursor tracking) and take key focus so SwiftUI
-                // buttons and the text field respond.
-                panel.forceInteractive = true
+                // A dialog needs key focus (so its buttons / text field respond)
+                // but must NOT make the whole window catch clicks: the empty area
+                // above the dialog has to keep passing clicks through to whatever
+                // is behind. Content tracking already makes the dialog itself
+                // live once the cursor is over it; just re-evaluate now in case it
+                // popped up under a stationary cursor.
                 self.isVisible = true
                 NSApp.activate(ignoringOtherApps: true)
                 panel.makeKeyAndOrderFront(nil)
+                panel.reevaluateSoon()
             } else {
-                panel.forceInteractive = false
                 panel.orderFrontRegardless()
                 // Hand active status back to whatever the user was using.
                 NSApp.deactivate()
+                panel.reevaluateSoon()
             }
         }
         petState.onMousePassthroughNeeded = { [weak self] _ in
@@ -506,11 +509,6 @@ final class PetPanel: NSPanel {
     /// events everywhere — even over the pet.
     var clickThrough = false { didSet { refreshIgnoreState() } }
 
-    /// A blocking dialog/notice needs its clicks guaranteed the instant it
-    /// appears (before the user moves the mouse), so it overrides tracking and
-    /// makes the whole window live until dismissed.
-    var forceInteractive = false { didSet { refreshIgnoreState() } }
-
     // nonisolated(unsafe): the array is only mutated on the main actor, but the
     // Swift 6 nonisolated deinit needs to read it to tear the monitors down —
     // safe because deinit runs only when no other reference remains.
@@ -519,6 +517,10 @@ final class PetPanel: NSPanel {
     /// The pet's real content box in the hosting view's global space (top-left
     /// origin), reported by PetView. Empty until the first layout pass.
     private var contentFrame: CGRect = .zero
+    /// Cached snapshot of the content view, sampled for per-pixel alpha in
+    /// `pointIsOverContent`. Refreshed lazily (see `contentAlpha`).
+    private var contentBitmap: NSBitmapImageRep?
+    private var bitmapAt = Date.distantPast
 
     init(contentRect: NSRect) {
         super.init(
@@ -567,6 +569,7 @@ final class PetPanel: NSPanel {
     /// a still cursor becomes live without waiting for a mouse move.
     func setContentFrame(_ rect: CGRect) {
         contentFrame = rect
+        contentBitmap = nil   // structure changed — force a fresh snapshot
         trackCursor()
     }
 
@@ -584,21 +587,60 @@ final class PetPanel: NSPanel {
         refreshIgnoreState()
     }
 
-    /// True when the cursor is inside the reported content box. PetView measures
-    /// that box in SwiftUI's global space (top-left origin), so the cursor's
-    /// window point is flipped to match before testing. `hitTest` can't do this
-    /// job: NSHostingView returns itself for every in-bounds point, empty or not.
+    /// True when the cursor sits on an actually-drawn (non-transparent) pixel of
+    /// the pet UI. A plain rectangle isn't enough: the pet sprite is a wide art
+    /// centered in a square frame, so its bounding box has transparent bands
+    /// above and below the visible body — and with `isMovableByWindowBackground`
+    /// those bands would still drag the window. So test the real alpha: first a
+    /// cheap reject against the reported content box, then the rendered pixel.
+    /// (`hitTest` can't help — NSHostingView returns itself for every in-bounds
+    /// point, transparent or not.)
     private func pointIsOverContent(_ screenPoint: NSPoint) -> Bool {
         guard let content = contentView, isVisible, !contentFrame.isEmpty else { return false }
         let windowPoint = convertPoint(fromScreen: screenPoint)   // bottom-left origin
         let flipped = CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y)
-        return contentFrame.contains(flipped)
+        guard contentFrame.contains(flipped) else { return false }
+        return contentAlpha(atTopLeft: flipped, in: content) > 0.02
+    }
+
+    /// Alpha of the content view's rendered pixel at a top-left-origin point.
+    /// Uses a short-lived cached snapshot so mouse-move sampling stays cheap; the
+    /// pet's silhouette is stable enough between refreshes that a slightly stale
+    /// snapshot is fine for hit-testing.
+    private func contentAlpha(atTopLeft point: CGPoint, in content: NSView) -> CGFloat {
+        if contentBitmap == nil || Date().timeIntervalSince(bitmapAt) > 0.4 {
+            let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds)
+            if let rep { content.cacheDisplay(in: content.bounds, to: rep) }
+            contentBitmap = rep
+            bitmapAt = Date()
+        }
+        guard let rep = contentBitmap else { return 1 }   // can't snapshot → treat as solid
+        let sx = CGFloat(rep.pixelsWide) / content.bounds.width
+        let sy = CGFloat(rep.pixelsHigh) / content.bounds.height
+        let px = Int((point.x * sx).rounded())
+        let py = Int((point.y * sy).rounded())
+        guard px >= 0, py >= 0, px < rep.pixelsWide, py < rep.pixelsHigh else { return 0 }
+        return rep.colorAt(x: px, y: py)?.alphaComponent ?? 0
     }
 
     private func refreshIgnoreState() {
-        if forceInteractive { ignoresMouseEvents = false }
-        else if clickThrough { ignoresMouseEvents = true }
+        if clickThrough { ignoresMouseEvents = true }
         else { ignoresMouseEvents = !cursorOverContent }
+    }
+
+    /// Re-checks the cursor a couple of times over the next moment. Used when a
+    /// dialog appears/dismisses: the layout (and so the snapshot) changes a frame
+    /// or two later, and the cursor may be sitting still, so a plain immediate
+    /// check could sample the old content. Cheap and self-correcting.
+    func reevaluateSoon() {
+        contentBitmap = nil
+        trackCursor()
+        for delay in [0.05, 0.2, 0.4] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.contentBitmap = nil
+                self?.trackCursor()
+            }
+        }
     }
 
     // Must be able to become key, otherwise SwiftUI buttons / text fields in the
