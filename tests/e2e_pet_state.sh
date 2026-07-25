@@ -1584,6 +1584,301 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_POLITE\"
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_MD\",\"cwd\":\"$CWD22\"}"
 
 # ============================================================================
+# TEST 23 — Reply: sending a message from a session card into a live Claude
+# Code session, using only the hooks the pet already installs.
+#
+# Transport recap (docs/RESEARCH_PET_REPLY.md): returning
+# {"decision":"block","reason":"<text>"} from `Stop` keeps the turn alive and
+# hands the text to Claude as a user turn; the same shape on `PostToolUse`
+# reaches it at the next tool boundary. So these tests drive the two real
+# routes (/stop, /deliver) and assert on the HTTP body the hook script would
+# have printed — which IS the contract with Claude Code.
+#
+# Typing on the card goes through /debug/sendReply, which calls the very same
+# PetState.sendReply the TextField calls.
+# ============================================================================
+R_CWD="/tmp/e2ereply"
+
+# post_stop <json> <outfile> -> runs the /stop route in the background, the way
+# the hook script does, so the test can inspect the pet WHILE the hook is held.
+post_stop_bg() {
+    curl -s -m 30 -X POST "$BASE/stop" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "$1" > "$2" 2>/dev/null &
+}
+
+# post_deliver <json> -> POSTs a PostToolUse event and prints the response body
+# (empty, or the block JSON carrying a queued message).
+post_deliver() {
+    curl -s -m 15 -X POST "$BASE/deliver" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "$1" 2>/dev/null
+}
+
+send_reply() {
+    python3 -c 'import json,sys;print(json.dumps({"sessionId":sys.argv[1],"text":sys.argv[2]}))' "$1" "$2" \
+        | curl -s -m 5 -X POST "$BASE/debug/sendReply" \
+            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+            --data-binary @- >/dev/null 2>&1
+}
+
+# wait_for_held <sessionId> <max-seconds> -> polls until the pet reports that
+# session's Stop hook as held.
+wait_for_held() {
+    local sid="$1" deadline_s="$2" waited=0
+    while true; do
+        local got
+        got=$(get_state | python3 -c 'import json,sys
+print("yes" if "'"$sid"'" in json.load(sys.stdin).get("heldStopSessions",[]) else "no")' 2>/dev/null)
+        [ "$got" = "yes" ] && return 0
+        waited=$((waited + 1))
+        [ "$waited" -ge $((deadline_s * 10)) ] && return 1
+        sleep 0.1
+    done
+}
+
+# ---------------------------------------------------------------------------
+# 23a — A turn that ends on a QUESTION holds the Stop hook open, and the reply
+# typed on the card comes back as the block JSON that resumes that same turn.
+# ---------------------------------------------------------------------------
+R_SID_Q="re1aaa0000000000000000000000000001"
+R_OUT_Q="/tmp/petmacos_e2e_reply_q_$$.json"
+TMP_REPLY_FILES="$R_OUT_Q"
+post_stop_bg "{\"hook_event_name\":\"Stop\",\"session_id\":\"$R_SID_Q\",\"cwd\":\"$R_CWD\",\"last_assistant_message\":\"Should I deploy this to production?\"}" "$R_OUT_Q"
+
+if wait_for_held "$R_SID_Q" 5; then
+    STATE=$(get_state)
+    assert "23a. A question at end of turn holds the Stop hook open (card shows a live reply box)" '
+held=s.get("heldStopSessions",[])
+order=s.get("sessionOrder",[])
+if "'"$R_SID_Q"'" not in held:
+    print("FAIL: session not in heldStopSessions %s" % held)
+elif "'"$R_SID_Q"'" not in order:
+    print("FAIL: no card for the held session (sessionOrder=%s)" % order)
+else:
+    print("PASS")
+' "$STATE"
+
+    send_reply "$R_SID_Q" "Yes, go ahead — but tag it \"v2\" first."
+    wait 2>/dev/null
+    R_BODY_Q=$(cat "$R_OUT_Q")
+    R_RESULT=$(printf '%s' "$R_BODY_Q" | python3 -c '
+import json,sys
+raw=sys.stdin.read().strip()
+if not raw:
+    print("FAIL: hook got an EMPTY body — the reply never reached Claude Code")
+    sys.exit()
+try:
+    d=json.loads(raw)
+except Exception as e:
+    print("FAIL: body is not JSON (%s): %r" % (e, raw[:120])); sys.exit()
+if d.get("decision") != "block":
+    print("FAIL: decision is %r, expected block (without it the turn just ends)" % d.get("decision"))
+elif "Yes, go ahead" not in d.get("reason",""):
+    print("FAIL: reason does not carry the typed text: %r" % d.get("reason")[:160])
+elif "\"v2\"" not in d.get("reason",""):
+    print("FAIL: quotes in the typed text were mangled: %r" % d.get("reason")[:160])
+else:
+    print("PASS")
+')
+    report "23a2. The typed reply comes back as {\"decision\":\"block\",\"reason\":…} with the text intact" "$R_RESULT"
+
+    STATE=$(get_state)
+    assert "23a3. The hold is released once answered, and the card reports \"sent\"" '
+held=s.get("heldStopSessions",[])
+order=s.get("sessionOrder",[])
+statuses=s.get("sessionReplyStatuses",[])
+if "'"$R_SID_Q"'" in held:
+    print("FAIL: still held after answering: %s" % held)
+elif "'"$R_SID_Q"'" not in order:
+    print("FAIL: card vanished (sessionOrder=%s)" % order)
+elif statuses[order.index("'"$R_SID_Q"'")] != "sent":
+    print("FAIL: card status is %r, expected sent" % statuses[order.index("'"$R_SID_Q"'")])
+else:
+    print("PASS")
+' "$STATE"
+else
+    report "23a. A question at end of turn holds the Stop hook open" "FAIL: never appeared in heldStopSessions"
+    report "23a2. The typed reply comes back as a block decision" "FAIL: hook was never held"
+    report "23a3. The hold is released once answered" "FAIL: hook was never held"
+fi
+rm -f "$R_OUT_Q"
+
+# ---------------------------------------------------------------------------
+# 23b — A turn that ends NORMALLY must not be held: the hook has to return at
+# once, with an empty body, or every finished turn would look busy for two
+# minutes. This is the fail-open half of the feature.
+# ---------------------------------------------------------------------------
+R_SID_DONE="re2bbb0000000000000000000000000002"
+R_START=$(python3 -c 'import time;print(time.time())')
+R_BODY_DONE=$(curl -s -m 30 -X POST "$BASE/stop" \
+    -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "{\"hook_event_name\":\"Stop\",\"session_id\":\"$R_SID_DONE\",\"cwd\":\"$R_CWD\",\"last_assistant_message\":\"Done. The tests pass and I pushed the branch.\"}" 2>/dev/null)
+R_ELAPSED=$(python3 -c "import time;print(f'{time.time()-$R_START:.2f}')")
+if [ -n "$R_BODY_DONE" ]; then
+    report "23b. A normally-finished turn is never held (returns empty immediately)" \
+        "FAIL: body was not empty: ${R_BODY_DONE:0:120}"
+elif python3 -c "import sys;sys.exit(0 if $R_ELAPSED < 5 else 1)"; then
+    report "23b. A normally-finished turn is never held (returned empty in ${R_ELAPSED}s)" "PASS"
+else
+    report "23b. A normally-finished turn is never held" "FAIL: took ${R_ELAPSED}s — it was held"
+fi
+
+# ---------------------------------------------------------------------------
+# 23c — Typed while Claude is mid-turn: nothing is held, so the message parks
+# in the queue and rides out on the next PostToolUse.
+# ---------------------------------------------------------------------------
+R_SID_Q2="re3ccc0000000000000000000000000003"
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$R_SID_Q2\",\"cwd\":\"$R_CWD\"}"
+sleep 0.4
+send_reply "$R_SID_Q2" "Actually, skip the migration step."
+sleep 0.4
+STATE=$(get_state)
+assert "23c. A message typed mid-turn queues instead of blocking anything" '
+q=s.get("queuedReplySessions",[])
+order=s.get("sessionOrder",[])
+statuses=s.get("sessionReplyStatuses",[])
+if "'"$R_SID_Q2"'" not in q:
+    print("FAIL: not queued (queuedReplySessions=%s)" % q)
+elif "'"$R_SID_Q2"'" not in order:
+    print("FAIL: no card for the session")
+elif statuses[order.index("'"$R_SID_Q2"'")] != "queued":
+    print("FAIL: card status is %r, expected queued" % statuses[order.index("'"$R_SID_Q2"'")])
+else:
+    print("PASS")
+' "$STATE"
+
+R_BODY_DELIVER=$(post_deliver "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Read\",\"session_id\":\"$R_SID_Q2\",\"cwd\":\"$R_CWD\",\"tool_input\":{\"file_path\":\"/tmp/x\"}}")
+R_RESULT=$(printf '%s' "$R_BODY_DELIVER" | python3 -c '
+import json,sys
+raw=sys.stdin.read().strip()
+if not raw:
+    print("FAIL: PostToolUse returned empty — the queued message was never delivered"); sys.exit()
+try: d=json.loads(raw)
+except Exception as e:
+    print("FAIL: not JSON (%s): %r" % (e, raw[:120])); sys.exit()
+if d.get("decision") != "block":
+    print("FAIL: decision is %r, expected block" % d.get("decision"))
+elif "skip the migration step" not in d.get("reason",""):
+    print("FAIL: reason does not carry the text: %r" % d.get("reason")[:160])
+else:
+    print("PASS")
+')
+report "23c2. The queued message is handed over at the next PostToolUse" "$R_RESULT"
+
+sleep 0.3
+STATE=$(get_state)
+assert "23c3. The queue is empty again once delivered" '
+q=s.get("queuedReplySessions",[])
+if "'"$R_SID_Q2"'" in q:
+    print("FAIL: still queued after delivery: %s" % q)
+else:
+    print("PASS")
+' "$STATE"
+
+# ---------------------------------------------------------------------------
+# 23d — THE loop-protection test. `stop_hook_active` is only advisory: Claude
+# Code honours a second and third block just fine, so a pet that blocked
+# unconditionally would spin a session forever. Nothing queued must mean an
+# empty body, on both routes.
+# ---------------------------------------------------------------------------
+R_SID_EMPTY="re4ddd0000000000000000000000000004"
+R_EMPTY_DELIVER=$(post_deliver "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Read\",\"session_id\":\"$R_SID_EMPTY\",\"cwd\":\"$R_CWD\",\"tool_input\":{\"file_path\":\"/tmp/y\"}}")
+if [ -n "$R_EMPTY_DELIVER" ]; then
+    report "23d. PostToolUse with an empty queue never blocks (no infinite loop)" \
+        "FAIL: returned a body with nothing queued: ${R_EMPTY_DELIVER:0:120}"
+else
+    report "23d. PostToolUse with an empty queue never blocks (no infinite loop)" "PASS"
+fi
+
+# Same guarantee on the Stop side: answering a held hook must not leave the
+# NEXT turn blocked as well. The session from 23a already replied once; its
+# next Stop (a plain completion) has to come back clean.
+R_BODY_AGAIN=$(curl -s -m 30 -X POST "$BASE/stop" \
+    -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "{\"hook_event_name\":\"Stop\",\"session_id\":\"$R_SID_Q\",\"cwd\":\"$R_CWD\",\"last_assistant_message\":\"Tagged v2 and deployed.\"}" 2>/dev/null)
+if [ -n "$R_BODY_AGAIN" ]; then
+    report "23d2. The turn after a reply is not blocked again (one block per typed message)" \
+        "FAIL: blocked with nothing typed: ${R_BODY_AGAIN:0:120}"
+else
+    report "23d2. The turn after a reply is not blocked again (one block per typed message)" "PASS"
+fi
+
+# ---------------------------------------------------------------------------
+# 23e — Nobody types: the hold expires and the turn ends normally. Uses the
+# replyHoldSeconds override so the test doesn't wait out the real 120s.
+# ---------------------------------------------------------------------------
+python3 - "$CONFIG" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["replyHoldSeconds"] = 3
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+
+R_SID_TO="re5eee0000000000000000000000000005"
+R_START=$(python3 -c 'import time;print(time.time())')
+R_BODY_TO=$(curl -s -m 30 -X POST "$BASE/stop" \
+    -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+    --data-binary "{\"hook_event_name\":\"Stop\",\"session_id\":\"$R_SID_TO\",\"cwd\":\"$R_CWD\",\"last_assistant_message\":\"Want me to open the PR now?\"}" 2>/dev/null)
+R_ELAPSED=$(python3 -c "import time;print(f'{time.time()-$R_START:.2f}')")
+if [ -n "$R_BODY_TO" ]; then
+    report "23e. An unanswered hold expires and lets the turn end (fail-open)" \
+        "FAIL: body was not empty: ${R_BODY_TO:0:120}"
+elif python3 -c "import sys;sys.exit(0 if 2 <= $R_ELAPSED < 12 else 1)"; then
+    report "23e. An unanswered hold expires and lets the turn end (fail-open, ${R_ELAPSED}s)" "PASS"
+else
+    report "23e. An unanswered hold expires and lets the turn end" \
+        "FAIL: took ${R_ELAPSED}s, expected ~3s (the replyHoldSeconds override)"
+fi
+
+STATE=$(get_state)
+assert "23e2. The expired hold is forgotten, so a later message queues instead of vanishing" '
+if "'"$R_SID_TO"'" in s.get("heldStopSessions",[]):
+    print("FAIL: still marked held after the timeout")
+else:
+    print("PASS")
+' "$STATE"
+
+# ---------------------------------------------------------------------------
+# 23f — SessionEnd while a hook is held must release it. Otherwise the hook of
+# a conversation that is already gone sits there until the server timeout.
+# ---------------------------------------------------------------------------
+python3 - "$CONFIG" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+cfg["replyHoldSeconds"] = 25
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
+
+R_SID_END="re6fff0000000000000000000000000006"
+R_OUT_END="/tmp/petmacos_e2e_reply_end_$$.json"
+R_START=$(python3 -c 'import time;print(time.time())')
+post_stop_bg "{\"hook_event_name\":\"Stop\",\"session_id\":\"$R_SID_END\",\"cwd\":\"$R_CWD\",\"last_assistant_message\":\"Shall I continue?\"}" "$R_OUT_END"
+if wait_for_held "$R_SID_END" 5; then
+    post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$R_SID_END\",\"cwd\":\"$R_CWD\"}"
+    wait 2>/dev/null
+    R_ELAPSED=$(python3 -c "import time;print(f'{time.time()-$R_START:.2f}')")
+    R_BODY_END=$(cat "$R_OUT_END")
+    if [ -n "$R_BODY_END" ]; then
+        report "23f. SessionEnd releases a held hook" "FAIL: body was not empty: ${R_BODY_END:0:120}"
+    elif python3 -c "import sys;sys.exit(0 if $R_ELAPSED < 20 else 1)"; then
+        report "23f. SessionEnd releases a held hook instead of leaving it to time out (${R_ELAPSED}s)" "PASS"
+    else
+        report "23f. SessionEnd releases a held hook" "FAIL: took ${R_ELAPSED}s — it waited out the hold"
+    fi
+else
+    report "23f. SessionEnd releases a held hook" "FAIL: the hook was never held"
+fi
+rm -f "$R_OUT_END"
+restore_config
+
+# ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
 # ~1.1MB (the app resets it once it passes ~1MB).
 # ============================================================================

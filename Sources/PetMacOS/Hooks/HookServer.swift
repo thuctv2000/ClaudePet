@@ -23,6 +23,11 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// answer response can echo the questions back verbatim. Touched on `queue`.
     private var pendingQuestionPayloads: [String: Data] = [:]
 
+    /// Continuations for `Stop` hooks held open while the user types a reply.
+    /// The response body is the hook's own JSON (`decision: block`) or empty.
+    /// Only touched on `queue`.
+    private var pendingReplies: [String: CheckedContinuation<Data, Never>] = [:]
+
     /// How long to wait for the user before defaulting to deny.
     private let askTimeout: TimeInterval = 300
 
@@ -97,10 +102,16 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleAsk(request, on: connection)
         case "/question":
             handleQuestion(request, on: connection)
+        case "/stop":
+            handleStop(request, on: connection)
+        case "/deliver":
+            handleDeliver(request, on: connection)
         case "/debug/state":
             handleDebugState(on: connection)
         case "/debug/resolveAsk":
             handleDebugResolveAsk(request, on: connection)
+        case "/debug/sendReply":
+            handleDebugSendReply(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -173,6 +184,68 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in petState.presentQuestion(id: id, event: event) }
     }
 
+    /// The `Stop` hook. Runs the normal Stop handling and then either answers
+    /// straight away (turn ends as usual) or holds the connection open while
+    /// the user types a reply on the pet — see `PetState.presentStop`.
+    ///
+    /// Holding a `Stop` is what makes replying possible at all, and it is also
+    /// the only way this feature can hurt: a held hook makes the session look
+    /// busy. So the hold is bounded here, the script's own `curl -m` is
+    /// bounded below the hook timeout, and every exit path returns an empty
+    /// body, which the script turns into a plain `exit 0`.
+    private func handleStop(_ request: HTTPRequest, on connection: NWConnection) {
+        let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
+        let id = UUID().uuidString
+
+        Task {
+            let body = await withCheckedContinuation { (continuation: CheckedContinuation<Data, Never>) in
+                self.queue.async { self.pendingReplies[id] = continuation }
+            }
+            self.respond(connection, body: body)
+        }
+
+        let petState = self.petState
+        Task { @MainActor in
+            // Read the (live-overridable) hold length before presenting, so a
+            // test can shorten it on a running app.
+            let hold = petState.replyHoldSeconds
+            petState.presentStop(id: id, event: event)
+            self.queue.asyncAfter(deadline: .now() + hold) { [weak self] in
+                guard let self,
+                      let continuation = self.pendingReplies.removeValue(forKey: id) else { return }
+                Task { @MainActor in petState.cancelStop(id: id) }
+                continuation.resume(returning: Data())
+            }
+        }
+    }
+
+    /// The `PostToolUse` hook: the pet's ordinary event feed *plus* the
+    /// delivery point for a message typed while Claude was mid-turn. Never
+    /// waits — an empty queue answers with an empty body immediately, so this
+    /// costs one loopback round-trip per tool call and nothing else.
+    private func handleDeliver(_ request: HTTPRequest, on connection: NWConnection) {
+        let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
+        let petState = self.petState
+        Task { @MainActor in
+            petState.apply(event)
+            let text = petState.takeQueuedReply(forSession: event.sessionId)
+            self.respond(connection, body: Self.blockBody(text))
+        }
+    }
+
+    /// The hook JSON that hands `text` to Claude and keeps the turn going, or
+    /// an empty body when there is nothing to say. Built with
+    /// `JSONSerialization` rather than string interpolation because the text
+    /// is whatever the user typed — quotes, newlines and emoji included.
+    private static func blockBody(_ text: String?) -> Data {
+        guard let text, !text.isEmpty else { return Data() }
+        let object: [String: Any] = [
+            "decision": "block",
+            "reason": PetState.replyReason(for: text),
+        ]
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    }
+
     /// Read-only introspection used by automated tests (no computer-use access
     /// to this accessory app's borderless panel is possible, so tests assert
     /// on exact state here instead of screenshots). Same token gate as every
@@ -201,12 +274,36 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
     }
 
+    /// Test-only route that types into a session card's reply box for real —
+    /// same entry point the TextField calls, so the queue/hold logic under it
+    /// is the shipping one (same rationale as `/debug/resolveAsk`: the pet's
+    /// borderless panel can't be driven by computer-use).
+    /// Body: `{"sessionId":"…","text":"…"}`.
+    private func handleDebugSendReply(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let sessionId = object?["sessionId"] as? String ?? ""
+        let text = object?["text"] as? String ?? ""
+        let petState = self.petState
+        Task { @MainActor in
+            petState.sendReply(text, forSession: sessionId)
+            self.respond(connection)
+        }
+    }
+
     // MARK: - AskResolver
 
     func resolveAsk(id: String, decision: PetDecision) {
         queue.async { [weak self] in
             guard let self, let continuation = self.pending.removeValue(forKey: id) else { return }
             continuation.resume(returning: decision)
+        }
+    }
+
+    func resolveReply(id: String, text: String?) {
+        queue.async { [weak self] in
+            guard let self,
+                  let continuation = self.pendingReplies.removeValue(forKey: id) else { return }
+            continuation.resume(returning: Self.blockBody(text))
         }
     }
 

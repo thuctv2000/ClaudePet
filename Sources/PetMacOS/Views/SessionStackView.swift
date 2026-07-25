@@ -22,6 +22,8 @@ struct SessionStackView: View {
     let summaries: [PetState.SessionSummary]
     let settings: SettingsStore
     let onDismissCard: (String) -> Void
+    /// (sessionId, text) — send a typed message into that conversation.
+    let onSendReply: (String, String) -> Void
 
     /// Session ids whose task-count line is expanded into the task list.
     @State private var expandedTasks: Set<String> = []
@@ -89,7 +91,8 @@ struct SessionStackView: View {
                                 isMessageExpanded: expandedMessages.contains(summary.id),
                                 onToggleExpand: { toggle(summary.id, in: &expandedTasks) },
                                 onToggleMessage: { toggle(summary.id, in: &expandedMessages) },
-                                onDismissCard: onDismissCard
+                                onDismissCard: onDismissCard,
+                                onSendReply: { text in onSendReply(summary.id, text) }
                             )
                             .id(summary.id)
                             .contentShape(Rectangle())
@@ -193,6 +196,11 @@ private struct SessionCardView: View {
     let onToggleExpand: () -> Void
     let onToggleMessage: () -> Void
     let onDismissCard: (String) -> Void
+    /// Send the typed message into this conversation.
+    let onSendReply: (String) -> Void
+
+    /// Text typed into this card's reply box.
+    @State private var replyText = ""
 
     private static let maxListedTasks = 5
     private static let collapsedMessageLines = 2
@@ -213,6 +221,8 @@ private struct SessionCardView: View {
             taskCountLine
             if isExpanded { taskList }
             messageLine
+            replyStatusLine
+            replyBox
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -370,6 +380,80 @@ private struct SessionCardView: View {
             .font(.caption2)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Reply box
+
+    /// What happened to the last message sent from this card. Auto-clears in
+    /// `PetState` after ~20s.
+    @ViewBuilder
+    private var replyStatusLine: some View {
+        if let status = summary.replyStatus {
+            HStack(spacing: 4) {
+                Image(systemName: status == .sent ? "checkmark.circle.fill" : "clock.fill")
+                Text(status == .sent ? tr("Sent to Claude") : tr("Queued — goes out at Claude's next step"))
+            }
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(status == .sent ? Color.green : Color.orange)
+            .lineLimit(1)
+        }
+    }
+
+    /// One-line message field, shown for every live conversation — delivery
+    /// rides the installed hooks, so there is no transport to detect and
+    /// nothing for the user to set up.
+    ///
+    /// Disabled while this session has its own permission/question dialog
+    /// waiting: that prompt is what actually blocks Claude, and a message typed
+    /// now could not be delivered until it is answered.
+    @ViewBuilder
+    private var replyBox: some View {
+        if summary.canReply {
+            HStack(spacing: 6) {
+                TextField(replyPlaceholder, text: $replyText)
+                    .textFieldStyle(.plain)
+                    .font(.caption2)
+                    .disabled(summary.isAwaitingApproval)
+                    .onSubmit(send)
+                Button(action: send) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(canSend ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(0.5))
+            )
+            // While the Stop hook is held the conversation is genuinely paused
+            // on this box, so it gets a ring to say the typing goes somewhere.
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.orange.opacity(summary.isHoldingReply ? 0.8 : 0), lineWidth: 1)
+            )
+            .padding(.top, 2)
+        }
+    }
+
+    private var replyPlaceholder: String {
+        if summary.isAwaitingApproval { return tr("Answer the permission prompt first…") }
+        if summary.isHoldingReply { return tr("Claude is waiting — reply now…") }
+        return tr("Message this conversation…")
+    }
+
+    private var canSend: Bool {
+        !summary.isAwaitingApproval
+            && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func send() {
+        guard canSend else { return }
+        onSendReply(replyText.trimmingCharacters(in: .whitespacesAndNewlines))
+        replyText = ""
     }
 
     // MARK: Task count + expandable list

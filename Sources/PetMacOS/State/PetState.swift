@@ -10,6 +10,10 @@ protocol AskResolver: AnyObject, Sendable {
     /// text; `nil` means the user skipped, so the server returns an empty body
     /// and Claude Code asks in the terminal instead.
     func resolveQuestion(id: String, answers: [String: PetAnswer]?)
+    /// Releases a held `Stop` hook. `text` non-nil makes the hook answer
+    /// `{"decision":"block","reason":…}` so the user's message reaches Claude
+    /// and the turn continues; `nil` lets the turn end normally.
+    func resolveReply(id: String, text: String?)
 }
 
 /// A pending permission request awaiting the user's Allow/Deny on the pet.
@@ -342,6 +346,32 @@ final class PetState {
         let subagents: [TaskItem]
         /// This session's still-running background Bash tasks (oldest first).
         let backgrounds: [TaskItem]
+        /// This session has a blocking `/ask` or `/question` of its own waiting
+        /// on the pet. The reply box is disabled meanwhile: the permission
+        /// dialog is the thing that needs answering, and a message typed now
+        /// could only be delivered after it.
+        let isAwaitingApproval: Bool
+        /// The session's `Stop` hook is being held open right now (Claude ended
+        /// its turn on a question). Anything typed goes straight to Claude and
+        /// the turn resumes — so the box says so.
+        let isHoldingReply: Bool
+        /// Outcome of the most recent message sent from this card, if any.
+        let replyStatus: ReplyStatus?
+        /// A card offers a reply box for any conversation that is still alive.
+        /// Unlike the tmux prototype there is no transport to detect: delivery
+        /// rides the hooks that are already installed, so every live session
+        /// can be written to.
+        var canReply: Bool { !id.isEmpty && mood != .sleep }
+    }
+
+    /// What happened to a message sent from a session card.
+    enum ReplyStatus: Equatable {
+        /// Handed to Claude Code (a held `Stop` was released, or a queued
+        /// message was picked up at a tool boundary).
+        case sent
+        /// Parked in the queue — Claude is mid-turn, so it goes out at the
+        /// next `PostToolUse` or when the turn ends.
+        case queued
     }
 
     /// One card per conversation, ordered so the session with the NEWEST
@@ -393,7 +423,11 @@ final class PetState {
                 latestRunning: running.first,       // runningTasks is newest-first
                 latestCompleted: completed.first,   // completedNotices is newest-first
                 subagents: subs,
-                backgrounds: bgs
+                backgrounds: bgs,
+                isAwaitingApproval: askQueue.contains { $0.sessionId == key }
+                    || pendingQuestion?.sessionId == key,
+                isHoldingReply: heldStops[key] != nil,
+                replyStatus: replyStatuses[key]
             ))
         }
         return result.sorted { $0.lastEventAt > $1.lastEventAt }
@@ -1029,9 +1063,12 @@ final class PetState {
     /// Enables click passthrough while notices, subagent/background cards or
     /// an ask are on screen (their manual ✕ must be clickable).
     private func updatePassthrough() {
+        // `runningTasks` joins the list because every live session card now
+        // carries a reply box, and a card built from a running task alone
+        // would otherwise render a TextField the mouse falls straight through.
         onMousePassthroughNeeded?(
             !completedNotices.isEmpty || !subagentTasks.isEmpty
-                || !backgroundTasks.isEmpty || pendingAsk != nil)
+                || !backgroundTasks.isEmpty || !runningTasks.isEmpty || pendingAsk != nil)
     }
 
     /// Shows a short-lived app notice (connection, sprites) as a session card.
@@ -1040,6 +1077,161 @@ final class PetState {
     func notify(_ title: String, mood: Mood = .idle) {
         setMood(mood, for: nil)
         pushRunning(TaskItem(title: title, kind: .session))
+    }
+
+    // MARK: - Reply (delivered through the hooks, no extra transport)
+
+    /// Claude Code has no API for "push text into a running session", but two
+    /// hooks already carry text *to the model*: returning
+    /// `{"decision":"block","reason":…}` from `Stop` keeps the turn alive and
+    /// hands `reason` to Claude as a user turn ("Stop hook feedback: …"), and
+    /// the same shape on `PostToolUse` reaches it at the next tool boundary.
+    /// That is the whole transport — which is why replying works identically in
+    /// the terminal, the Desktop app and VS Code: they all read the same
+    /// `~/.claude/settings.json`.
+    ///
+    /// Two delivery moments, so a message is never stranded:
+    ///  - **held `Stop`** — when a turn ends on a question (`QuestionDetector`),
+    ///    the hook is kept open for `replyHoldSeconds` instead of returning
+    ///    immediately. Typing then resumes that same turn.
+    ///  - **queue** — anything typed at another moment waits here and goes out
+    ///    at the next `PostToolUse`/`Stop` of that session.
+    ///
+    /// The one rule that must never be broken: **only ever block when there is
+    /// a real message**. `stop_hook_active` looks like loop protection but is
+    /// only advisory — Claude Code honours a second and third block just fine —
+    /// so an unconditional block here would spin the session forever.
+    ///
+    /// sessionId -> the request id of that session's `Stop` hook being held.
+    private var heldStops: [String: String] = [:]
+    /// sessionId -> messages typed while nothing was held, oldest first.
+    private var replyQueue: [String: [String]] = [:]
+    /// sessionId -> outcome of its most recent message (shown on the card).
+    private var replyStatuses: [String: ReplyStatus] = [:]
+    /// Per-session auto-clear timers for `replyStatuses`.
+    private var replyStatusClearTasks: [String: Task<Void, Never>] = [:]
+    /// How long a status line stays on the card.
+    private static let replyStatusTTL: TimeInterval = 20
+
+    /// Prefix that tells Claude where the text came from. Without it the
+    /// message arrives as bare "Stop hook feedback", which reads like a policy
+    /// hook talking rather than the person at the keyboard.
+    nonisolated private static let replyPreamble =
+        "Message from the user, sent from the ClaudePet desktop app:"
+
+    /// Wraps a typed message in the preamble. `nonisolated` so the hook server
+    /// can build the response body on its own queue.
+    nonisolated static func replyReason(for text: String) -> String {
+        "\(replyPreamble)\n\n\(text)"
+    }
+
+    /// A `Stop` hook arrived. Registers the hold *before* `apply` so the
+    /// settle below can never run first, then lets the normal Stop handling
+    /// (cards, mood, `QuestionDetector`) proceed — `settleStop` decides from
+    /// inside it whether the hold is kept.
+    func presentStop(id: String, event: HookEvent) {
+        // Two cases that must resolve immediately, or the hook hangs until the
+        // server's timeout: an event `apply` drops on the floor (the pet's own
+        // token-refresh runs), and anything that isn't actually a Stop.
+        let isRealStop = (event.hookEventName ?? "") == "Stop"
+            && event.projectName != UsageMonitor.refreshMarkerDirName
+        guard let sid = event.sessionId, isRealStop else {
+            apply(event)
+            resolver?.resolveReply(id: id, text: nil)
+            return
+        }
+        // One hold per session; a new Stop supersedes a stale one.
+        if let previous = heldStops.removeValue(forKey: sid) {
+            resolver?.resolveReply(id: previous, text: nil)
+        }
+        heldStops[sid] = id
+        apply(event)
+    }
+
+    /// Called from `pushStopNotice` once the turn's reply text is known.
+    /// Keeps the hold open only when Claude ended on a question — every other
+    /// turn releases at once so the session isn't left looking busy.
+    private func settleStop(sessionId: String?, isQuestion: Bool) {
+        guard let sid = sessionId, let id = heldStops[sid] else { return }
+        if let queued = dequeueReply(forSession: sid) {
+            heldStops.removeValue(forKey: sid)
+            resolver?.resolveReply(id: id, text: queued)
+            setReplyStatus(.sent, forSession: sid)
+            return
+        }
+        guard isQuestion else {
+            heldStops.removeValue(forKey: sid)
+            resolver?.resolveReply(id: id, text: nil)
+            return
+        }
+        // Question: hold, and let the card show a live reply box.
+    }
+
+    /// The server's hold timed out (or the connection died): forget the hold
+    /// so a later message queues instead of resolving a dead request.
+    func cancelStop(id: String) {
+        guard let sid = heldStops.first(where: { $0.value == id })?.key else { return }
+        heldStops.removeValue(forKey: sid)
+    }
+
+    /// Sends a message typed on a session card. Goes out immediately when that
+    /// session's `Stop` is being held, otherwise waits in the queue for the
+    /// next hook of that session.
+    func sendReply(_ text: String, forSession sessionId: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !sessionId.isEmpty else { return }
+        if let id = heldStops.removeValue(forKey: sessionId) {
+            resolver?.resolveReply(id: id, text: trimmed)
+            setReplyStatus(.sent, forSession: sessionId)
+        } else {
+            replyQueue[sessionId, default: []].append(trimmed)
+            setReplyStatus(.queued, forSession: sessionId)
+        }
+    }
+
+    /// Pops the next queued message for a session (used by the `PostToolUse`
+    /// route). Returns nil — never blocks — when the queue is empty.
+    func takeQueuedReply(forSession sessionId: String?) -> String? {
+        guard let sid = sessionId, let text = dequeueReply(forSession: sid) else { return nil }
+        setReplyStatus(.sent, forSession: sid)
+        return text
+    }
+
+    private func dequeueReply(forSession sessionId: String) -> String? {
+        guard var pending = replyQueue[sessionId], !pending.isEmpty else { return nil }
+        let next = pending.removeFirst()
+        if pending.isEmpty { replyQueue.removeValue(forKey: sessionId) }
+        else { replyQueue[sessionId] = pending }
+        return next
+    }
+
+    /// How long a `Stop` may be held waiting for the user. Same live-override
+    /// mechanism as the decay timings so tests can shorten it on a running app.
+    var replyHoldSeconds: TimeInterval {
+        Self.configOverride(key: "replyHoldSeconds") ?? 120
+    }
+
+    private func setReplyStatus(_ status: ReplyStatus, forSession sessionId: String) {
+        replyStatuses[sessionId] = status
+        replyStatusClearTasks[sessionId]?.cancel()
+        replyStatusClearTasks[sessionId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.replyStatusTTL))
+            guard !Task.isCancelled else { return }
+            self?.clearReplyState(forSession: sessionId, keepQueue: true)
+        }
+    }
+
+    /// Drops a session's reply state. `keepQueue` distinguishes the status
+    /// line expiring (queue must survive — the message hasn't been delivered
+    /// yet) from the session ending (everything goes).
+    private func clearReplyState(forSession sessionId: String, keepQueue: Bool) {
+        replyStatuses.removeValue(forKey: sessionId)
+        replyStatusClearTasks.removeValue(forKey: sessionId)?.cancel()
+        guard !keepQueue else { return }
+        replyQueue.removeValue(forKey: sessionId)
+        if let id = heldStops.removeValue(forKey: sessionId) {
+            resolver?.resolveReply(id: id, text: nil)
+        }
     }
 
     // MARK: - Hook events
@@ -1245,6 +1437,10 @@ final class PetState {
             if let sid { sessions.removeValue(forKey: sid) } else { sessions.removeValue(forKey: Self.noSessionKey) }
             recomputeAggregateMood()
             clearRunning(sessionId: sid)
+            // Nothing can deliver a queued message to a conversation that has
+            // ended, and a still-held Stop must be released or its hook sits
+            // there until the server's timeout.
+            if let sid { clearReplyState(forSession: sid, keepQueue: false) }
             pruneMetaIfUnused(sessionId: sid)
         default:
             if let message = event.message {
@@ -1278,6 +1474,9 @@ final class PetState {
 
         func push(_ text: String?, context: String?) {
             let isQuestion = QuestionDetector.looksLikeQuestion(text ?? "")
+            // Runs on both paths below and exactly once per Stop, which is what
+            // lets it own the held hook's fate — see `settleStop`.
+            settleStop(sessionId: sid, isQuestion: isQuestion)
             if isQuestion {
                 // No "happy" burst and no decay back to idle: the pet stays in
                 // `.asking` until the user actually answers (the next
@@ -1534,6 +1733,15 @@ final class PetState {
         /// The display name each session card shows, aligned with
         /// `sessionOrder` (resolved conversation name, else "#tag" fallback).
         let sessionNames: [String]
+        /// Session ids whose `Stop` hook the pet is holding open right now,
+        /// waiting for the user to type an answer.
+        let heldStopSessions: [String]
+        /// Session ids with at least one message still waiting to be delivered
+        /// at the next hook boundary.
+        let queuedReplySessions: [String]
+        /// Each card's reply status ("sent"/"queued"), aligned with
+        /// `sessionOrder`; nil where the card shows none.
+        let sessionReplyStatuses: [String?]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1565,7 +1773,10 @@ final class PetState {
             pendingAskSessionId: pendingAsk?.sessionId,
             sessions: sessionSnapshots,
             sessionOrder: summaries.map(\.id),
-            sessionNames: summaries.map(\.name)
+            sessionNames: summaries.map(\.name),
+            heldStopSessions: heldStops.keys.sorted(),
+            queuedReplySessions: replyQueue.keys.sorted(),
+            sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } }
         )
     }
 

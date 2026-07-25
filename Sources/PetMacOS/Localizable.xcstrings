@@ -197,6 +197,22 @@
         }
       }
     },
+    "Answer the permission prompt first…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answer the permission prompt first…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trả lời hộp thoại quyền trước…"
+          }
+        }
+      }
+    },
     "Any state with no images falls back to the \"idle\" frames.": {
       "localizations": {
         "vi": {
@@ -557,6 +573,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude đang chờ bạn trả lời"
+          }
+        }
+      }
+    },
+    "Claude is waiting — reply now…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude is waiting — reply now…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude đang chờ — trả lời ngay…"
           }
         }
       }
@@ -1597,6 +1629,22 @@
         }
       }
     },
+    "Message this conversation…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message this conversation…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhắn cho hội thoại này…"
+          }
+        }
+      }
+    },
     "Move this pet to the Trash": {
       "localizations": {
         "vi": {
@@ -1965,6 +2013,22 @@
         }
       }
     },
+    "Queued — goes out at Claude's next step": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued — goes out at Claude's next step"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã xếp hàng — gửi ở bước tiếp theo"
+          }
+        }
+      }
+    },
     "Quit": {
       "localizations": {
         "en": {
@@ -2281,6 +2345,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tìm kiếm"
+          }
+        }
+      }
+    },
+    "Sent to Claude": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent to Claude"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã gửi cho Claude"
           }
         }
       }

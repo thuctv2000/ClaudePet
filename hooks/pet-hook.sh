@@ -2,9 +2,11 @@
 # pet-hook.sh — bridges a Claude Code hook to the running Pet macOS app.
 #
 # Usage (from a Claude Code hook `command`):
-#   pet-hook.sh event       # fire-and-forget notification (Stop, PostToolUse, …)
+#   pet-hook.sh event       # fire-and-forget notification (PreToolUse, …)
 #   pet-hook.sh permission  # blocking approval (PermissionRequest)
 #   pet-hook.sh question    # blocking AskUserQuestion answer (PreToolUse)
+#   pet-hook.sh stop        # Stop: notify, then maybe hold for a typed reply
+#   pet-hook.sh deliver     # PostToolUse: notify + pick up a queued reply
 #
 # Reads the hook JSON from stdin and forwards it to the pet's loopback server,
 # whose port + token are published in ~/.petmacos/config.json on app launch.
@@ -32,6 +34,26 @@ if [ "$MODE" = "question" ]; then
     # Claude Code falls back to asking in the terminal. curl -m below the 600s
     # hook timeout.
     RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "$PAYLOAD" 2>/dev/null)
+    [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
+    exit 0
+fi
+
+if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
+    # Reply delivery. Both routes answer with either an empty body or the
+    # complete hook JSON — `{"decision":"block","reason":"<what the user typed>"}`
+    # — which is printed verbatim. Claude Code then feeds that reason to Claude
+    # as a user turn and the turn keeps going, which is the entire transport:
+    # no tmux, no accessibility, no extra process. Building the JSON server-side
+    # keeps arbitrary user text (quotes, newlines, emoji) out of `sh`.
+    #
+    # `/stop` may hold while the user types, so it gets a longer budget than
+    # `/deliver`, which never waits. Both -m values sit under the hook timeouts
+    # in HookInstaller.plan(), so a wedged pet degrades to "turn ends normally"
+    # instead of stalling the session.
+    if [ "$MODE" = "stop" ]; then ROUTE=/stop; LIMIT=150; else ROUTE=/deliver; LIMIT=10; fi
+    RESPONSE=$(curl -s -m "$LIMIT" -X POST "http://127.0.0.1:$PORT$ROUTE" \
         -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
         --data-binary "$PAYLOAD" 2>/dev/null)
     [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
