@@ -122,6 +122,14 @@ struct HookEvent: Decodable {
     /// form is still accepted as a fallback in case an older build sends it.
     var backgroundTaskId: String? {
         guard toolName == "Bash", let toolResponse else { return nil }
+        // `run_in_background` is what actually makes a call a background task,
+        // and it is the only trustworthy gate. The fallback below scans the
+        // flattened `tool_response`, which includes **stdout** — so a perfectly
+        // ordinary `grep`/`sed` whose output happens to contain the sentence
+        // (this repo's own test suite prints it) used to spawn a phantom
+        // background card that nothing could ever retire.
+        guard case let .object(input)? = toolInput,
+              case let .bool(true)? = input["run_in_background"] else { return nil }
         if case let .object(fields) = toolResponse,
            case let .string(id)? = fields["backgroundTaskId"], !id.isEmpty {
             return id

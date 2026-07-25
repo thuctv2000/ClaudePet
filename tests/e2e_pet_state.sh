@@ -39,6 +39,11 @@ set -u
 CONFIG="$HOME/.petmacos/config.json"
 HOOK="$HOME/.petmacos/pet-hook.sh"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Assertions resolve user-facing titles through this catalogue instead of
+# hardcoding one language: the app picks its language from the system (or the
+# Settings override), so a suite that hardcoded the Vietnamese titles failed on
+# an English Mac even though the app was behaving perfectly.
+export XCSTRINGS="$PROJECT_DIR/Sources/PetMacOS/Localizable.xcstrings"
 
 PASS=0
 FAIL=0
@@ -219,8 +224,36 @@ assert() {
     local name="$1" body="$2" state="$3"
     local out
     out=$(printf '%s' "$state" | python3 -c '
-import json,sys
+import json,os,sys
 s=json.load(sys.stdin)
+def loc(key):
+    """Every localized value of an English source string (plus the key itself),
+    so a title assertion holds whatever language the app runs in."""
+    values=[key]
+    try:
+        cat=json.load(open(os.environ["XCSTRINGS"], encoding="utf-8"))
+        for unit in cat["strings"].get(key, {}).get("localizations", {}).values():
+            value=unit.get("stringUnit", {}).get("value")
+            if value: values.append(value)
+    except Exception:
+        pass
+    return values
+def title_loc(cards, *keys):
+    """Cards whose title matches any localization of any of `keys`. A key may
+    contain %@ placeholders; every literal fragment around them must appear."""
+    out=[]
+    for c in cards:
+        title=(c.get("title") or "").lower()
+        if not title: continue
+        for key in keys:
+            for value in loc(key):
+                parts=[p for p in value.lower().split("%@") if p]
+                if parts and all(p in title for p in parts):
+                    out.append(c); break
+            else:
+                continue
+            break
+    return out
 def ctx_has(cards, needle):
     return [c for c in cards if c.get("context") and needle in c["context"]]
 def title_has(cards, needle):
@@ -282,9 +315,17 @@ COMPLETED_BEFORE=$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;prin
 # Distinct agent_id per stop (and unique per run via $$) so each completion
 # notice gets its own dedupeKey ("subagent-<agentId>") and the suite is
 # idempotent across re-runs.
+#
+# Each stop must carry the session id of the card it retires. A stop whose
+# agent_id was never claimed only retires the oldest unclaimed card OF THE SAME
+# SESSION (see PetState.finishSubagent): Claude Code also runs hidden internal
+# agents whose SubagentStop arrives with an id we never saw start, and the old
+# unconditional FIFO let those retire someone else's still-running card. So the
+# drain reads each card's own sessionId instead of stamping them all with A's.
+SUB_SIDS=$(printf '%s' "$(get_state)" | python3 -c 'import json,sys;print(" ".join((c.get("sessionId") or "-") for c in json.load(sys.stdin)["subagentTasks"]))')
 i=0
-while [ "$i" -lt "$N_SUB" ]; do
-    post_event "{\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"e2e-agent-$$-$i\",\"agent_type\":\"general-purpose\",\"session_id\":\"$SIDA\",\"cwd\":\"$CWD_SUB\",\"last_assistant_message\":\"e2e subagent $i done\"}"
+for sub_sid in $SUB_SIDS; do
+    post_event "{\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"e2e-agent-$$-$i\",\"agent_type\":\"general-purpose\",\"session_id\":\"$sub_sid\",\"cwd\":\"$CWD_SUB\",\"last_assistant_message\":\"e2e subagent $i done\"}"
     i=$((i+1))
     sleep 0.2
 done
@@ -296,13 +337,13 @@ subs=s["subagentTasks"]
 comp=s["completedNotices"]
 n_sub_before='"$N_SUB"'
 comp_before='"$COMPLETED_BEFORE"'
-done_notices=title_has(comp, "hoàn thành")
+done_notices=title_loc(comp, "Subagent %@ finished", "Subagent finished")
 if subs:
     print("FAIL: subagentTasks not empty after SubagentStop drain: %s" % [c.get("context") for c in subs])
 elif n_sub_before>0 and len(comp) <= comp_before:
     print("FAIL: no new completion notice created (before=%d now=%d)" % (comp_before, len(comp)))
 elif n_sub_before>0 and not done_notices:
-    print("FAIL: no subagent completion notice ('"'"'hoàn thành'"'"') present")
+    print("FAIL: no subagent completion notice present (got: %s)" % [c.get("title") for c in comp])
 else:
     print("PASS")
 ' "$STATE"
@@ -316,7 +357,14 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SIDB\",\"cwd\"
 # ============================================================================
 # TEST 3 — Background Bash task: a PostToolUse for a run_in_background Bash call
 # shows a background card; appending a <task-notification>completed block to the
-# transcript retires it and creates a "Chạy nền xong" completion notice.
+# transcript retires it and creates a completion notice.
+#
+# The launch payload is the shape Claude Code really sends (verified against
+# 2.1.205): tool_response is an OBJECT with a `backgroundTaskId` field. The old
+# "Command running in background with ID: …" sentence never reaches the hook —
+# it is only what Claude reads — and matching on it meant no card was ever
+# created. Test 3f below still uses that string, on purpose, to keep the
+# legacy fallback parser covered.
 # ============================================================================
 BG_ID="E2EBG$$"
 BG_SID="bgsess0000000000000000000000000003"
@@ -328,8 +376,7 @@ BG_DESC="e2e-bg-$$"
 # offset and only reads the completion block we append afterwards.
 printf '{"type":"user","message":"seed"}\n' > "$TMP_TRANSCRIPT"
 
-TOOL_RESPONSE="Command running in background with ID: $BG_ID. Output is being written to: $TMP_TRANSCRIPT."
-post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$BG_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TMP_TRANSCRIPT\",\"tool_input\":{\"description\":\"$BG_DESC\",\"command\":\"sleep 100\",\"run_in_background\":true},\"tool_response\":\"$TOOL_RESPONSE\"}"
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$BG_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TMP_TRANSCRIPT\",\"tool_input\":{\"description\":\"$BG_DESC\",\"command\":\"sleep 100\",\"run_in_background\":true},\"tool_response\":{\"stdout\":\"\",\"stderr\":\"\",\"interrupted\":false,\"backgroundTaskId\":\"$BG_ID\"}}"
 sleep 0.6
 
 STATE=$(get_state)
@@ -356,15 +403,15 @@ printf '<task-notification><task-id>%s</task-id><status>completed</status></task
 wait_bg_retired "$BG_DESC" 5
 
 STATE=$(get_state)
-assert "3b. Completion signal retires background card + adds 'Chạy nền xong' notice" '
+assert "3b. Completion signal retires the background card + adds a done notice" '
 bg=s["backgroundTasks"]
 comp=s["completedNotices"]
 still=[c for c in bg if c.get("detail")=="'"$BG_DESC"'" or (c.get("title") and "'"$BG_DESC"'" in c["title"])]
-done=[c for c in comp if c.get("title")=="Chạy nền xong" and c.get("detail") and "'"$BG_DESC"'" in c["detail"]]
+done=[c for c in title_loc(comp, "Background task done") if c.get("detail") and "'"$BG_DESC"'" in c["detail"]]
 if still:
     print("FAIL: background card still present after completion signal")
 elif not done:
-    print("FAIL: no '"'"'Chạy nền xong'"'"' notice for '"$BG_DESC"' (got: %s)" % [(c.get("title"),c.get("detail")) for c in comp])
+    print("FAIL: no completion notice for '"$BG_DESC"' (got: %s)" % [(c.get("title"),c.get("detail")) for c in comp])
 else:
     print("PASS")
 ' "$STATE"
@@ -384,8 +431,7 @@ run_bg_status_case() {
     local transcript="/tmp/petmacos_e2e_bg_${status}_$$.jsonl"
 
     printf '{"type":"user","message":"seed"}\n' > "$transcript"
-    local tool_response="Command running in background with ID: $bg_id. Output is being written to: $transcript."
-    post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$bg_sid\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$transcript\",\"tool_input\":{\"description\":\"$bg_desc\",\"command\":\"false\",\"run_in_background\":true},\"tool_response\":\"$tool_response\"}"
+    post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$bg_sid\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$transcript\",\"tool_input\":{\"description\":\"$bg_desc\",\"command\":\"false\",\"run_in_background\":true},\"tool_response\":{\"stdout\":\"\",\"stderr\":\"\",\"interrupted\":false,\"backgroundTaskId\":\"$bg_id\"}}"
     sleep 0.6
 
     printf '<task-notification><task-id>%s</task-id><status>%s</status></task-notification>\n' "$bg_id" "$status" >> "$transcript"
@@ -396,7 +442,7 @@ run_bg_status_case() {
 bg=s["backgroundTasks"]
 comp=s["completedNotices"]
 still=[c for c in bg if c.get("detail")=="'"$bg_desc"'" or (c.get("title") and "'"$bg_desc"'" in c["title"])]
-done=[c for c in comp if c.get("title")=="'"$expect_title"'" and c.get("kind")=="failed" and c.get("detail") and "'"$bg_desc"'" in c["detail"]]
+done=[c for c in title_loc(comp, "'"$expect_title"'") if c.get("kind")=="failed" and c.get("detail") and "'"$bg_desc"'" in c["detail"]]
 if still:
     print("FAIL: background card still present after '"$status"' signal")
 elif not done:
@@ -408,8 +454,8 @@ else:
     post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$bg_sid\",\"cwd\":\"$BG_CWD\"}"
 }
 
-run_bg_status_case "3c. Background task status=failed retires card as 'Chạy nền lỗi' (kind failed)" "failed" "Chạy nền lỗi"
-run_bg_status_case "3d. Background task status=killed retires card as 'Chạy nền bị dừng' (kind failed)" "killed" "Chạy nền bị dừng"
+run_bg_status_case "3c. Background task status=failed retires the card as a failed notice" "failed" "Background task failed"
+run_bg_status_case "3d. Background task status=killed retires the card as a failed notice" "killed" "Background task stopped"
 
 # ============================================================================
 # TEST 3e — Background task safety-net timeout: with no completion signal at
@@ -434,8 +480,7 @@ with open(path, "w") as f:
     json.dump(cfg, f)
 PYEOF
 
-TOOL_RESPONSE_TMO="Command running in background with ID: $TIMEOUT_ID. Output is being written to: $TIMEOUT_TRANSCRIPT."
-post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$TIMEOUT_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TIMEOUT_TRANSCRIPT\",\"tool_input\":{\"description\":\"$TIMEOUT_DESC\",\"command\":\"sleep 999\",\"run_in_background\":true},\"tool_response\":\"$TOOL_RESPONSE_TMO\"}"
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$TIMEOUT_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TIMEOUT_TRANSCRIPT\",\"tool_input\":{\"description\":\"$TIMEOUT_DESC\",\"command\":\"sleep 999\",\"run_in_background\":true},\"tool_response\":{\"stdout\":\"\",\"stderr\":\"\",\"interrupted\":false,\"backgroundTaskId\":\"$TIMEOUT_ID\"}}"
 sleep 0.6
 
 # Never append a completion signal; just wait past the overridden 3s timeout
@@ -446,11 +491,11 @@ printf '%s' "$ORIG_CONFIG_BG" > "$CONFIG"
 rm -f "$TIMEOUT_TRANSCRIPT"
 
 STATE=$(get_state)
-assert "3e. Background task with no signal retires after backgroundTimeoutSeconds (kind failed, 'không rõ kết quả')" '
+assert "3e. Background task with no signal retires after backgroundTimeoutSeconds (kind failed, outcome unknown)" '
 bg=s["backgroundTasks"]
 comp=s["completedNotices"]
 still=[c for c in bg if c.get("detail")=="'"$TIMEOUT_DESC"'" or (c.get("title") and "'"$TIMEOUT_DESC"'" in c["title"])]
-done=[c for c in comp if "không rõ kết quả" in (c.get("title") or "") and c.get("kind")=="failed" and c.get("detail") and "'"$TIMEOUT_DESC"'" in c["detail"]]
+done=[c for c in title_loc(comp, "Background: outcome unknown (tracking timed out)") if c.get("kind")=="failed" and c.get("detail") and "'"$TIMEOUT_DESC"'" in c["detail"]]
 if still:
     print("FAIL: background card still present after timeout should have retired it")
 elif not done:
@@ -502,17 +547,41 @@ assert "3f. Directory-watch fallback catches a transcript created after task sta
 bg=s["backgroundTasks"]
 comp=s["completedNotices"]
 still=[c for c in bg if c.get("detail")=="'"$NEW_DESC"'" or (c.get("title") and "'"$NEW_DESC"'" in c["title"])]
-done=[c for c in comp if c.get("title")=="Chạy nền xong" and c.get("detail") and "'"$NEW_DESC"'" in c["detail"]]
+done=[c for c in title_loc(comp, "Background task done") if c.get("detail") and "'"$NEW_DESC"'" in c["detail"]]
 if still:
     print("FAIL: background card still present after transcript was created with the completion signal")
 elif not done:
-    print("FAIL: no '"'"'Chạy nền xong'"'"' notice for '"$NEW_DESC"' (got: %s)" % [(c.get("title"),c.get("detail")) for c in comp])
+    print("FAIL: no completion notice for '"$NEW_DESC"' (got: %s)" % [(c.get("title"),c.get("detail")) for c in comp])
 else:
     print("PASS")
 ' "$STATE"
 
 rm -rf "$NEW_DIR"
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$NEW_SID\",\"cwd\":\"$BG_CWD\"}"
+
+# ============================================================================
+# TEST 3g — A plain foreground Bash whose OUTPUT merely mentions the background
+# launch sentence must NOT create a background card. `tool_response` is scanned
+# as flattened text (stdout included), so grepping this very file used to be
+# enough to spawn a phantom card that no completion signal could ever retire.
+# Only `tool_input.run_in_background` makes a call a background task.
+# ============================================================================
+FAKE_SID="bgfake00000000000000000000000007"
+FAKE_DESC="e2e-bg-fake-$$"
+FAKE_OUT="Command running in background with ID: E2EFAKE$$. Output is being written to: /tmp/nope.jsonl."
+post_event "{\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$FAKE_SID\",\"cwd\":\"$BG_CWD\",\"transcript_path\":\"$TMP_TRANSCRIPT\",\"tool_input\":{\"description\":\"$FAKE_DESC\",\"command\":\"grep -n background tests/e2e_pet_state.sh\"},\"tool_response\":{\"stdout\":\"$FAKE_OUT\",\"stderr\":\"\",\"interrupted\":false}}"
+sleep 0.6
+
+STATE=$(get_state)
+assert "3g. Foreground Bash printing the launch sentence creates no background card" '
+bg=s["backgroundTasks"]
+mine=[c for c in bg if "'"$FAKE_DESC"'" in (c.get("title") or "") or "'"$FAKE_DESC"'" in (c.get("detail") or "")]
+if mine:
+    print("FAIL: phantom background card created from stdout text: %s" % [c.get("title") for c in mine])
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$FAKE_SID\",\"cwd\":\"$BG_CWD\"}"
 
 # ============================================================================
 # TEST 4 — SessionStart/SessionEnd never surface a card. Hooks are installed
@@ -795,7 +864,12 @@ sleep 4.5 # past the overridden 3s talkingDecaySeconds
 STATE=$(get_state)
 assert "8b. \"talking\" mood decays to \"idle\" after talkingDecaySeconds" '
 mood = session_mood("'"$STOP_SID"'")
-if mood != "idle":
+# A Stop lands on "working" (not "talking") while ANY session still has a
+# subagent/background task running — including the real Claude Code session
+# running this suite. Same guard test 8a already carries.
+if bool(s["subagentTasks"]) or bool(s["backgroundTasks"]):
+    print("SKIP: subagent/background work active elsewhere; talking decay cannot be asserted")
+elif mood != "idle":
     print("FAIL: expected session mood \"idle\" after talking decay, got %r" % mood)
 else:
     print("PASS")
