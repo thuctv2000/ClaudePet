@@ -105,16 +105,22 @@ final class SessionNameResolver {
     /// when that has nothing falls back to reading the session's own
     /// transcript JSONL directly (covers the Claude Code **desktop app**,
     /// whose sessions are verified to never get appended to `history.jsonl`).
-    /// The transcript fallback needs `cwd` to locate the right project folder
-    /// under `~/.claude/projects` -- callers that can't supply it (none
-    /// currently) simply don't get the fallback.
-    func name(for sessionId: String, cwd: String? = nil) -> String? {
+    /// The transcript fallback needs to find the session's JSONL file. Hook
+    /// events carry its real path (`transcript_path`), which is always right;
+    /// `cwd` only *reconstructs* the path via `slug(cwd)` and silently misses
+    /// whenever the reported cwd isn't the project root -- which happens on
+    /// every tool event after a `cd` inside a Bash call. Prefer the real path,
+    /// keep `cwd` as the fallback for callers that have no event at hand.
+    func name(for sessionId: String, cwd: String? = nil, transcriptPath: String? = nil) -> String? {
         // The transcript's `custom-title` is the conversation's *actual* name
         // (what the Claude Code UI shows in its sidebar; auto-generated or
         // user-renamed) -- it beats every other source. The first prompt is
         // only a stand-in when no title has been written yet.
-        let transcript = (cwd?.isEmpty == false)
-            ? transcriptInfo(for: sessionId, cwd: cwd!) : nil
+        let path = transcriptPath.flatMap { $0.isEmpty ? nil : $0 }
+            ?? (cwd?.isEmpty == false
+                ? "\(Self.configuredProjectsRoot())/\(Self.slug(cwd!))/\(sessionId).jsonl"
+                : nil)
+        let transcript = path.flatMap { transcriptInfo(for: sessionId, path: $0) }
         if let title = transcript?.title { return title }
         if let historyName = historyName(for: sessionId) { return historyName }
         return transcript?.firstPrompt
@@ -148,13 +154,12 @@ final class SessionNameResolver {
     /// pass and later lookups (including picking up renames) are cheap. The
     /// substring pre-filter avoids JSON-parsing every appended line once the
     /// first prompt is known.
-    private func transcriptInfo(for sessionId: String, cwd: String) -> TranscriptScan? {
+    private func transcriptInfo(for sessionId: String, path: String) -> TranscriptScan? {
         let root = Self.configuredProjectsRoot()
         if root != scannedProjectsRoot {
             scannedProjectsRoot = root
             transcriptScans.removeAll()
         }
-        let path = "\(root)/\(Self.slug(cwd))/\(sessionId).jsonl"
         var state = transcriptScans[sessionId] ?? TranscriptScan()
         let currentSize = PetState.fileSize(path: path)
         guard currentSize > state.offset else { return transcriptScans[sessionId] }

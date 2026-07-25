@@ -43,7 +43,8 @@ struct QuestionDialogView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Text(current.question)
+            // Claude writes these; they routinely carry `code` and **bold**.
+            Text(MarkdownText.inlineOnly(current.question))
                 .font(.system(size: 14, weight: .bold))
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -108,7 +109,7 @@ struct QuestionDialogView: View {
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let desc = option.description, !desc.isEmpty {
-                    Text(desc)
+                    Text(MarkdownText.inlineOnly(desc))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

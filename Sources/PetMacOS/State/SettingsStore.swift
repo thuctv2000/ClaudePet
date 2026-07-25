@@ -55,7 +55,11 @@ final class SettingsStore {
     /// gradient/red stroke in `SessionCardView`, so any other kind maps to the
     /// single active-tool colour.
     func borderColor(for kind: TaskKind) -> Color {
-        kind == .failed ? .red.opacity(0.9) : tool
+        switch kind {
+        case .failed: return .red.opacity(0.9)
+        case .question, .notification: return notification
+        default: return tool
+        }
     }
 
     /// Gradient stroking the border of completed notices.

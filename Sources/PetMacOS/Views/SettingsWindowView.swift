@@ -1,7 +1,12 @@
 import SwiftUI
 
-/// The real settings window: status, pet & sprites, permissions, colours.
-/// Text-only UI (no icons), Vietnamese labels.
+/// The settings window: an icon tab bar over grouped forms.
+///
+/// The tab bar is drawn by hand rather than using `TabView`. The native macOS
+/// tab bar moves the tabs into the window's title area and collapses them
+/// behind a "»" overflow menu when it decides the row is too wide — hiding
+/// every tab. A row of explicit buttons always lays them all out, and lets each
+/// tab carry an icon so the window is scannable at a glance.
 struct SettingsWindowView: View {
     var delegate: PetAppDelegate
     var state: PetState
@@ -25,147 +30,175 @@ struct SettingsWindowView: View {
     /// connection warning stay fresh while the tab is open (they depend on
     /// `Date()`, which SwiftUI has no other reason to recompute).
     @State private var now = Date()
-    /// Currently selected tab. Drives our custom top strip instead of a native
-    /// `TabView`, so the tabs can never collapse into the macOS overflow menu.
-    @State private var selectedTab: Tab = .status
+    /// Currently selected tab.
+    @State private var selectedTab: Tab = .general
 
-    /// The settings tabs, in display order. Each carries its Vietnamese label so
-    /// the strip and the content switch stay in sync.
+    /// The settings tabs, in display order. Each carries its own label and SF
+    /// Symbol so the strip and the content switch stay in sync.
     private enum Tab: String, CaseIterable, Identifiable {
-        case status, pet, permissions, colors
+        case general, pet, permissions, colors, about
         var id: Self { self }
+
         var label: String {
             switch self {
-            case .status: return tr("Status")
+            case .general: return tr("General")
             case .pet: return tr("Pet")
             case .permissions: return tr("Permissions")
             case .colors: return tr("Colors")
+            case .about: return tr("About")
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .general: return "gearshape.fill"
+            case .pet: return "pawprint.fill"
+            case .permissions: return "lock.shield.fill"
+            case .colors: return "paintpalette.fill"
+            case .about: return "info.circle.fill"
             }
         }
     }
 
     var body: some View {
-        // A custom top tab strip (a segmented picker) rather than `TabView`.
-        // The native macOS tab bar moves the tabs into the window's title area
-        // and collapses them behind a "»" overflow menu when it decides the row
-        // is too wide, hiding every tab. A segmented control always lays all the
-        // tabs out in one row regardless of width or macOS version.
         VStack(spacing: 0) {
-            Picker("", selection: $selectedTab) {
-                ForEach(Tab.allCases) { tab in
-                    Text(tab.label).tag(tab)
+            tabBar
+            Divider()
+            Group {
+                switch selectedTab {
+                case .general: generalTab
+                case .pet: petTab
+                case .permissions: permissionsTab
+                case .colors: colorsTab
+                case .about: aboutTab
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-
-            Divider()
-
-            // Only the selected tab's content is shown.
-            switch selectedTab {
-            case .status: statusTab
-            case .pet: petTab
-            case .permissions: permissionsTab
-            case .colors: colorsTab
-            }
+            .frame(maxHeight: .infinity)
         }
-        .frame(width: 480, height: 540)
+        .frame(width: 560, height: 600)
         .onReceive(Timer.publish(every: 15, on: .main, in: .common).autoconnect()) { date in
             now = date
         }
     }
 
-    // MARK: - Trạng thái
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(Tab.allCases) { tab in
+                TabButton(
+                    icon: tab.icon,
+                    label: tab.label,
+                    selected: selectedTab == tab
+                ) {
+                    selectedTab = tab
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+    }
 
-    private var statusTab: some View {
+    // MARK: - General
+
+    private var generalTab: some View {
         Form {
+            Section { connectionCard }
             Section(tr("Pet")) {
-                Toggle(tr("Show pet"), isOn: Binding(
+                switchRow(tr("Show pet"), isOn: Binding(
                     get: { delegate.isVisible },
                     set: { delegate.setPetVisible($0) }
                 ))
-                Toggle(tr("Click-through (mouse passes through the pet)"), isOn: Binding(
+                switchRow(tr("Click-through (mouse passes through the pet)"), isOn: Binding(
                     get: { delegate.isClickThrough },
                     set: { delegate.setClickThrough($0) }
                 ))
             }
-
-            Section(tr("Claude Code connection")) {
-                LabeledContent("Hooks") {
-                    Text(delegate.isConnected ? tr("Installed in ~/.claude/settings.json") : tr("Not connected"))
-                        .foregroundStyle(delegate.isConnected ? .green : .secondary)
-                }
-                LabeledContent(tr("Internal server")) {
-                    if let port = delegate.serverPort {
-                        Text(String(format: tr("Listening on port %@"), String(port)))
-                            .foregroundStyle(.green)
-                    } else {
-                        Text(tr("Not running"))
-                            .foregroundStyle(.red)
-                    }
-                }
-                HStack {
-                    if delegate.isConnected {
-                        Button(tr("Disconnect")) { delegate.disconnectClaudeCode() }
-                    } else {
-                        Button(tr("Connect")) { delegate.connectClaudeCode() }
-                    }
-                    Button(tr("Check again")) { delegate.refreshConnectionStatus() }
-                    Button(tr("Reopen the guide")) { delegate.openOnboardingWindow() }
-                }
-            }
-
-            Section(tr("Claude usage")) {
-                usageRow(tr("5-hour window"), usage.fiveHour)
-                usageRow(tr("Week"), usage.sevenDay)
-                if let error = usage.lastError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                HStack {
-                    Button(tr("Refresh")) { Task { await usage.refresh() } }
-                    if let updated = usage.lastUpdated {
-                        Text(String(format: tr("Updated %@"), updated.formatted(date: .omitted, time: .shortened)))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
+            usageSection
             languageSection
-            updateSection
-            uninstallSection
         }
         .formStyle(.grouped)
     }
 
-    /// Clean uninstall entry point. The hook removal is marker-scoped (only
-    /// the pet's own entries) and a backup of settings.json is written first,
-    /// so the user's other Claude Code configuration can never be harmed.
-    private var uninstallSection: some View {
+    /// The one thing this window exists to answer: is the pet actually wired to
+    /// Claude Code right now? Big status, the port it listens on, and every
+    /// repair action in one place.
+    private var connectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill((delegate.isConnected ? Color.green : Color.orange).opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: delegate.isConnected ? "link" : "link.badge.plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(delegate.isConnected ? .green : .orange)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(delegate.isConnected ? tr("Connected to Claude Code") : tr("Not connected"))
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(delegate.isConnected
+                         ? tr("Installed in ~/.claude/settings.json")
+                         : tr("Press Connect to install the hooks."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                VStack(alignment: .trailing, spacing: 3) {
+                    HStack(spacing: 5) {
+                        StatusDot(color: delegate.serverPort != nil ? .green : .red, size: 6)
+                        Text(tr("Internal server"))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let port = delegate.serverPort {
+                        Text(String(format: tr("Listening on port %@"), String(port)))
+                            .font(.system(size: 11, weight: .medium))
+                            .monospacedDigit()
+                    } else {
+                        Text(tr("Not running"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            HStack(spacing: 8) {
+                if delegate.isConnected {
+                    Button(tr("Disconnect")) { delegate.disconnectClaudeCode() }
+                } else {
+                    Button(tr("Connect")) { delegate.connectClaudeCode() }
+                        .buttonStyle(.borderedProminent)
+                }
+                Button(tr("Check again")) { delegate.refreshConnectionStatus() }
+                Button(tr("Reopen the guide")) { delegate.openOnboardingWindow() }
+                Spacer()
+            }
+            .controlSize(.regular)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var usageSection: some View {
         Section {
-            Button(tr("Clean uninstall…"), role: .destructive) {
-                showUninstallDialog = true
+            HStack(alignment: .top, spacing: 20) {
+                UsageBar(title: tr("5-hour window"), window: usage.fiveHour)
+                UsageBar(title: tr("Week"), window: usage.sevenDay)
             }
-            .confirmationDialog(
-                tr("Remove the pet's hooks from Claude Code and quit?"),
-                isPresented: $showUninstallDialog
-            ) {
-                Button(tr("Remove hooks, keep my pets"), role: .destructive) {
-                    delegate.cleanUninstall(deleteData: false)
-                }
-                Button(tr("Remove hooks and delete all pet data"), role: .destructive) {
-                    delegate.cleanUninstall(deleteData: true)
-                }
-                Button(tr("Cancel"), role: .cancel) {}
-            } message: {
-                Text(tr("Only the pet's own entries are removed from ~/.claude/settings.json (a backup is saved first) — the rest of your Claude Code settings stay untouched. Deleted data goes to the Trash. The app then shows itself in Finder so you can drag it to the Trash."))
+            .padding(.vertical, 4)
+            if let error = usage.lastError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
-        } footer: {
-            Text(tr("Reinstalling later brings everything back if you kept your pets."))
+            HStack {
+                Button(tr("Refresh")) { Task { await usage.refresh() } }
+                if let updated = usage.lastUpdated {
+                    Text(String(format: tr("Updated %@"), updated.formatted(date: .omitted, time: .shortened)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text(tr("Claude usage"))
         }
     }
 
@@ -197,15 +230,95 @@ struct SettingsWindowView: View {
         }
     }
 
+    /// A form row whose toggle is our own accent switch — the native one greys
+    /// out whenever the window isn't key, which reads as "disabled".
+    private func switchRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            AccentSwitch(isOn: isOn)
+        }
+    }
+
+    // MARK: - About
+
+    private var aboutTab: some View {
+        Form {
+            Section {
+                VStack(spacing: 8) {
+                    Image(systemName: "pawprint.fill")
+                        .font(.system(size: 38))
+                        .foregroundStyle(Color.systemAccent)
+                    Text(verbatim: "ClaudePet")
+                        .font(.title2.bold())
+                    Text(tr("A desktop pet that reacts to what Claude Code is doing."))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text(String(format: tr("Version %@"), appVersion))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+
+            updateSection
+
+            Section(tr("Project")) {
+                Link(destination: URL(string: "https://github.com/thuctv2000/ClaudePet")!) {
+                    Label("github.com/thuctv2000/ClaudePet", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+                Button {
+                    delegate.openSpritesFolder()
+                } label: {
+                    Label(tr("Open sprites folder"), systemImage: "folder")
+                }
+            }
+
+            uninstallSection
+        }
+        .formStyle(.grouped)
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
+            as? String ?? tr("dev build")
+    }
+
+    /// Clean uninstall entry point. The hook removal is marker-scoped (only
+    /// the pet's own entries) and a backup of settings.json is written first,
+    /// so the user's other Claude Code configuration can never be harmed.
+    private var uninstallSection: some View {
+        Section {
+            Button(tr("Clean uninstall…"), role: .destructive) {
+                showUninstallDialog = true
+            }
+            .confirmationDialog(
+                tr("Remove the pet's hooks from Claude Code and quit?"),
+                isPresented: $showUninstallDialog
+            ) {
+                Button(tr("Remove hooks, keep my pets"), role: .destructive) {
+                    delegate.cleanUninstall(deleteData: false)
+                }
+                Button(tr("Remove hooks and delete all pet data"), role: .destructive) {
+                    delegate.cleanUninstall(deleteData: true)
+                }
+                Button(tr("Cancel"), role: .cancel) {}
+            } message: {
+                Text(tr("Only the pet's own entries are removed from ~/.claude/settings.json (a backup is saved first) — the rest of your Claude Code settings stay untouched. Deleted data goes to the Trash. The app then shows itself in Finder so you can drag it to the Trash."))
+            }
+        } header: {
+            Text(tr("Uninstall"))
+        } footer: {
+            Text(tr("Reinstalling later brings everything back if you kept your pets."))
+        }
+    }
+
     /// App update via Sparkle: the button opens Sparkle's own update window,
     /// which downloads, verifies (EdDSA), installs and relaunches by itself.
     private var updateSection: some View {
-        Section(tr("Version")) {
-            LabeledContent(tr("Current")) {
-                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-                        as? String ?? tr("dev build"))
-                    .foregroundStyle(.secondary)
-            }
+        Section(tr("Updates")) {
             if let controller = delegate.updaterController {
                 HStack {
                     Button(tr("Check for updates")) { controller.checkForUpdates(nil) }
@@ -213,7 +326,7 @@ struct SettingsWindowView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Toggle(tr("Check automatically"), isOn: Binding(
+                switchRow(tr("Check automatically"), isOn: Binding(
                     get: { controller.updater.automaticallyChecksForUpdates },
                     set: { controller.updater.automaticallyChecksForUpdates = $0 }
                 ))
@@ -221,24 +334,6 @@ struct SettingsWindowView: View {
                 Text(tr("Dev build — auto-update only works in the /Applications install."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func usageRow(_ title: String, _ window: UsageMonitor.Window?) -> some View {
-        LabeledContent(title) {
-            if let window {
-                HStack(spacing: 6) {
-                    Text("\(Int(window.utilization.rounded()))%").bold().monospacedDigit()
-                    if let resets = window.resetsAt {
-                        Text(String(format: tr("reset %@"), resets.formatted(date: .abbreviated, time: .shortened)))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                Text(tr("no data yet")).foregroundStyle(.tertiary)
             }
         }
     }
@@ -345,7 +440,9 @@ struct SettingsWindowView: View {
                     delegate.petStore.deletePet(id: pet.id)
                     delegate.reloadSprites()
                 } label: {
-                    Text("✕").font(.caption).bold().foregroundStyle(.secondary)
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .help(tr("Move this pet to the Trash"))
@@ -537,7 +634,7 @@ struct SettingsWindowView: View {
         value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
     }
 
-    // MARK: - Quyền
+    // MARK: - Permissions
 
     /// Deliberately has no switches. The pet holds no permission policy of its
     /// own: it shows the dialog exactly when Claude Code would have shown one,
@@ -545,45 +642,102 @@ struct SettingsWindowView: View {
     /// permission mode, the allow rules -- belongs to Claude Code, and keeping a
     /// second copy here is what used to let the two drift apart.
     private var permissionsTab: some View {
-        Form {
-            Section {
-                Text(tr("The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again."))
-                Text(tr("Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically."))
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text(tr("Approving permissions on the pet"))
-            } footer: {
-                Text(tr("If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck."))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                infoRow(
+                    icon: "hand.raised.fill",
+                    tint: .orange,
+                    title: tr("The pet asks only when Claude Code would"),
+                    body: tr("The pet shows a dialog exactly when Claude Code would have asked you, and nothing more. Press Allow or Deny on the pet and you're done — the terminal won't ask again.")
+                )
+                infoRow(
+                    icon: "slider.horizontal.3",
+                    tint: .blue,
+                    title: tr("Tune it inside Claude Code"),
+                    body: tr("Want more or fewer prompts? Change the permission mode inside Claude Code itself (Shift+Tab, or the --permission-mode flag). The pet follows automatically.")
+                )
+                infoRow(
+                    icon: "checkmark.shield.fill",
+                    tint: .green,
+                    title: tr("Nothing ever gets stuck"),
+                    body: tr("If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck.")
+                )
             }
+            .padding(20)
         }
-        .formStyle(.grouped)
+    }
+
+    private func infoRow(icon: String, tint: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(tint.opacity(0.14))
+                    .frame(width: 34, height: 34)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Text(body)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .petCard()
     }
 
     // MARK: - Colors
 
     private var colorsTab: some View {
         Form {
+            Section { colorPreviewCard } header: {
+                Text(tr("Preview"))
+            }
             Section(tr("Card colors")) {
                 colorRow(tr("Running tool"), $settings.tool)
                 colorRow(tr("Attention"), $settings.notification)
             }
-
             Section(tr("Completed-task gradient")) {
                 colorRow(tr("Color 1"), $settings.gradient1)
                 colorRow(tr("Color 2"), $settings.gradient2)
                 colorRow(tr("Color 3"), $settings.gradient3)
-                LabeledContent(tr("Preview")) {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(settings.completedGradient, lineWidth: 3)
-                        .frame(width: 120, height: 28)
-                }
             }
-
             Section {
                 Button(tr("Restore defaults")) { settings.resetToDefaults() }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// The three card looks, drawn exactly as the pet draws them — so the
+    /// pickers below are judged against the real thing, not a swatch.
+    private var colorPreviewCard: some View {
+        HStack(spacing: 10) {
+            previewCard(tr("Running tool"), AnyShapeStyle(settings.tool))
+            previewCard(tr("Attention"), AnyShapeStyle(settings.notification))
+            previewCard(tr("Done"), AnyShapeStyle(settings.completedGradient))
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func previewCard(_ title: String, _ style: AnyShapeStyle) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(style, lineWidth: 2)
+            )
     }
 
     private func colorRow(_ title: String, _ color: Binding<Color>) -> some View {
@@ -594,5 +748,40 @@ struct SettingsWindowView: View {
                 .frame(width: 60, height: 22)
         }
     }
+}
 
+// MARK: - Tab bar button
+
+/// One tab: icon over label, accent-tinted while selected.
+private struct TabButton: View {
+    let icon: String
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 18))
+                Text(label).font(.system(size: 11))
+            }
+            .frame(width: 84, height: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(selected
+                          ? Color.systemAccent.opacity(0.18)
+                          : (hovering ? Color.primary.opacity(0.06) : .clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(selected ? Color.systemAccent.opacity(0.5) : .clear, lineWidth: 1)
+            )
+            .foregroundStyle(selected ? Color.systemAccent : Color.primary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
 }

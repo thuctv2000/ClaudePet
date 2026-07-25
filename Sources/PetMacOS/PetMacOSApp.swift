@@ -7,54 +7,25 @@ struct PetMacOSApp: App {
     @NSApplicationDelegateAdaptor(PetAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra("Desktop Pet", systemImage: "pawprint.fill") {
-            Group {
-                Button(appDelegate.isVisible ? tr("Hide pet") : tr("Show pet")) {
-                    appDelegate.togglePet()
-                }
-
-                Toggle(tr("Click-through"), isOn: Binding(
-                    get: { appDelegate.isClickThrough },
-                    set: { appDelegate.setClickThrough($0) }
-                ))
-
-                Divider()
-
-                if appDelegate.isConnected {
-                    Button(tr("Disconnect Claude Code")) {
-                        appDelegate.disconnectClaudeCode()
-                    }
-                } else {
-                    Button(tr("Connect Claude Code")) {
-                        appDelegate.connectClaudeCode()
-                    }
-                }
-
-                Divider()
-
-                Button(tr("Open sprites folder")) {
-                    appDelegate.openSpritesFolder()
-                }
-                Button(tr("Reload sprites")) {
-                    appDelegate.reloadSprites()
-                }
-
-                Divider()
-
-                Button(tr("Settings…")) {
-                    appDelegate.openSettingsWindow()
-                }
-
-                Divider()
-
-                Button("Quit Desktop Pet") {
-                    NSApp.terminate(nil)
-                }
-                .keyboardShortcut("q")
-            }
-            .onAppear { appDelegate.refreshConnectionStatus() }
+        // `.window` style, not `.menu`: clicking the icon opens a real panel
+        // showing what the pet knows (live conversations, usage, the pending
+        // permission) instead of a list of verbs. See `MenuBarPopoverView`.
+        MenuBarExtra {
+            MenuBarPopoverView(
+                delegate: appDelegate,
+                state: appDelegate.petState,
+                usage: appDelegate.usage
+            )
+        } label: {
+            // Redrawn whenever the counts change: paw alone when quiet, paw +
+            // count while work is live, all orange when a permission is
+            // blocking Claude.
+            Image(nsImage: MenuBarIcon.image(
+                count: appDelegate.menuBarCount,
+                waiting: appDelegate.isWaitingOnUser
+            ))
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }
 
@@ -147,6 +118,28 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
         return true
+    }
+
+    /// The number the menu bar icon shows next to the paw. A pending permission
+    /// wins over everything — Claude is literally blocked on the user — and is
+    /// what turns the icon orange; otherwise it counts the conversations that
+    /// are actually doing work, so an idle terminal never inflates it.
+    var menuBarCount: Int {
+        if petState.pendingAskCount > 0 { return petState.pendingAskCount }
+        if petState.waitingSessionCount > 0 { return petState.waitingSessionCount }
+        return petState.orderedSessionSummaries.filter { summary in
+            switch summary.mood {
+            case .working, .thinking: return true
+            default: return !summary.subagents.isEmpty || !summary.backgrounds.isEmpty
+            }
+        }.count
+    }
+
+    /// Whether anything is blocked on the user: a permission dialog, or a
+    /// conversation whose turn ended in a question. Turns the menu bar icon
+    /// orange.
+    var isWaitingOnUser: Bool {
+        petState.pendingAskCount > 0 || petState.waitingSessionCount > 0
     }
 
     /// Re-reads hook installation state from disk. Call before showing any UI
@@ -445,12 +438,14 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         refreshConnectionStatus()
         if settingsWindow == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 560, height: 600),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
             )
-            window.title = tr("Desktop Pet Settings")
+            // Product name, not a sentence — matches the About tab and the
+            // menu bar panel header, which both say "ClaudePet".
+            window.title = "ClaudePet"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(
                 rootView: SettingsWindowView(

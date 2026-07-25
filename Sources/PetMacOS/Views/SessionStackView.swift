@@ -272,23 +272,62 @@ private struct SessionCardView: View {
     @ViewBuilder
     private var messageLine: some View {
         if let running = summary.latestRunning {
-            Text(joined(running.title, running.detail))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(Self.collapsedMessageLines)
+            // Title and detail are different kinds of text — "Query live pet
+            // state" versus the raw shell command it runs — so they get
+            // different treatment instead of being glued together with a dash.
+            VStack(alignment: .leading, spacing: 1) {
+                Text(running.title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(Self.collapsedMessageLines)
+                if let detail = running.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else if let done = summary.latestCompleted {
-            let message = joined(done.title, done.detail)
-            let canExpand = messageOverflows || isMessageExpanded
+            // The result is Claude's own reply: real markdown, up to 4000
+            // characters of it (see `PetState.completedDetailLimit`). Collapsed,
+            // the card shows one clean sentence — `PlainText.firstLine` off the
+            // markup — and expanding renders the message as markdown instead of
+            // spelling out its `##`, `**` and code fences.
+            let full = (done.detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let headline = full.isEmpty ? done.title : PlainText.firstLine(of: full)
+            let hasMore = !full.isEmpty && full != headline
+            let canExpand = hasMore || messageOverflows || isMessageExpanded
             Button(action: onToggleMessage) {
                 HStack(alignment: .top, spacing: 6) {
-                    Text(message)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(isMessageExpanded ? nil : Self.collapsedMessageLines)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(messageProbes(message))
+                    VStack(alignment: .leading, spacing: 3) {
+                        // "Hoàn thành" is the generic Stop title and the
+                        // gradient border already says the session is done —
+                        // only a title that carries information (a subagent
+                        // finishing, a failure) is worth a line of its own.
+                        if done.title != tr("Completed") {
+                            Text(done.title)
+                                .font(.caption2)
+                                .bold()
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                        if isMessageExpanded {
+                            MarkdownText(text: full.isEmpty ? done.title : full)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(headline)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(Self.collapsedMessageLines)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(messageProbes(headline))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     if canExpand {
                         Image(systemName: isMessageExpanded ? "chevron.up" : "chevron.down")
                             .font(.system(size: 12, weight: .bold))
@@ -331,11 +370,6 @@ private struct SessionCardView: View {
             .font(.caption2)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func joined(_ title: String, _ detail: String?) -> String {
-        guard let detail, !detail.isEmpty else { return title }
-        return "\(title) — \(detail)"
     }
 
     // MARK: Task count + expandable list
@@ -419,6 +453,11 @@ private struct SessionCardView: View {
     private var borderStyle: AnyShapeStyle {
         if summary.mood == .error || summary.latestCompleted?.kind == .failed {
             return AnyShapeStyle(Color.red.opacity(0.85))
+        }
+        // Claude ended its turn with a question: this is the opposite of done,
+        // so it must never take the completion gradient.
+        if summary.latestCompleted?.kind == .question {
+            return AnyShapeStyle(settings.borderColor(for: .question))
         }
         let isDone = summary.latestRunning == nil && summary.latestCompleted != nil
             && (summary.mood == .idle || summary.mood == .talking || summary.mood == .sleep)

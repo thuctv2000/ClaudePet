@@ -104,22 +104,42 @@ struct HookEvent: Decodable {
         return String(sessionId.prefix(6))
     }
 
-    /// Parses a `PostToolUse` response for a `Bash` call launched with
-    /// `run_in_background: true`. Claude Code's `tool_response` for that case
-    /// is a fixed-format string: "Command running in background with ID:
-    /// <id>. Output is being written to: <path>. ...". Returns nil otherwise.
-    var backgroundLaunch: (taskId: String, outputFile: String)? {
+    /// The launcher-assigned id of a `Bash` call started with
+    /// `run_in_background: true`, or nil for any other tool result.
+    ///
+    /// Claude Code delivers this as a **structured field**:
+    ///
+    ///     {"stdout":"","stderr":"","interrupted":false,
+    ///      "isImage":false,"noOutputExpected":false,
+    ///      "backgroundTaskId":"br3g34yld"}
+    ///
+    /// The "Command running in background with ID: <id>. Output is being
+    /// written to: <path>." sentence that this used to parse never appears in
+    /// `tool_response` at all — it is the text Claude *reads*, recorded in the
+    /// transcript, not what the hook receives. Matching on it meant no
+    /// background card was ever created (verified against Claude Code 2.1.205:
+    /// the PostToolUse arrived, `backgroundTasks` stayed empty). The string
+    /// form is still accepted as a fallback in case an older build sends it.
+    var backgroundTaskId: String? {
         guard toolName == "Bash", let toolResponse else { return nil }
+        if case let .object(fields) = toolResponse,
+           case let .string(id)? = fields["backgroundTaskId"], !id.isEmpty {
+            return id
+        }
         let text = toolResponse.display
         guard let idMarker = text.range(of: "background with ID: "),
               let idEnd = text.range(of: ". Output", range: idMarker.upperBound..<text.endIndex)
         else { return nil }
-        let taskId = String(text[idMarker.upperBound..<idEnd.lowerBound])
+        let id = String(text[idMarker.upperBound..<idEnd.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return id.isEmpty ? nil : id
+    }
 
-        guard let pathMarker = text.range(of: "written to: ") else { return (taskId, "") }
-        let rest = text[pathMarker.upperBound...]
-        let outputFile = rest.range(of: ". ").map { String(rest[..<$0.lowerBound]) } ?? String(rest)
-        return (taskId, outputFile.trimmingCharacters(in: .whitespacesAndNewlines))
+    /// True for the two tool hooks. Their `cwd` is the Bash tool's persistent
+    /// shell directory, which wanders with every `cd`, so it can't be trusted
+    /// to name the session's project — see `PetState.rememberSessionMeta`.
+    var isToolEvent: Bool {
+        hookEventName == "PreToolUse" || hookEventName == "PostToolUse"
     }
 
     /// True when a Pre/PostToolUse event is for a tool running *inside* a

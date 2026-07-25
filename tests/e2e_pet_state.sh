@@ -1437,6 +1437,79 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$ORD_SID_X\",\"
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$ORD_SID_Y\",\"cwd\":\"$CWD21\"}"
 
 # ============================================================================
+# TEST 22 — A turn that ends in a question is "waiting for you", not "done".
+# Claude Code fires the SAME Stop hook whether Claude finished the job or asked
+# the user something, so `QuestionDetector` reads the final reply: a question
+# must produce a `question` card and leave the session in `asking`, while a
+# plain completion (including one with a polite "let me know if…" tail) must
+# stay `done`/`talking`.
+# ============================================================================
+Q_SID_ASK="q1aaa0000000000000000000000000022"
+Q_SID_DONE="q2bbb0000000000000000000000000022"
+Q_SID_POLITE="q3ccc0000000000000000000000000022"
+Q_SID_MD="q4ddd0000000000000000000000000022"
+CWD22="/tmp/e2eproj22"
+
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$Q_SID_ASK\",\"cwd\":\"$CWD22\",\"last_assistant_message\":\"Đã cài xong bản mới. Commit luôn không?\"}"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$Q_SID_DONE\",\"cwd\":\"$CWD22\",\"last_assistant_message\":\"Done — fixed the login bug and added a regression test.\"}"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$Q_SID_POLITE\",\"cwd\":\"$CWD22\",\"last_assistant_message\":\"I've made the change. Let me know if you'd like any tweaks.\"}"
+# The shape this pet really receives: the question, then a trailing code fence.
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$Q_SID_MD\",\"cwd\":\"$CWD22\",\"last_assistant_message\":\"## Kết quả\\n\\nĐã build xong.\\n\\nMuốn mình commit không?\\n\\n\`\`\`bash\\nswift build\\n\`\`\`\\n\"}"
+sleep 0.8
+
+STATE=$(get_state)
+assert "22a. Stop ending in a question yields a question card and leaves the session asking" '
+comp=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$Q_SID_ASK"'"]
+mood=session_mood("'"$Q_SID_ASK"'")
+if not comp:
+    print("FAIL: no notice for the question session")
+elif comp[0].get("kind") != "question":
+    print("FAIL: kind is %r, expected question" % comp[0].get("kind"))
+elif mood != "asking":
+    print("FAIL: session mood is %r, expected asking" % mood)
+else:
+    print("PASS")
+' "$STATE"
+
+assert "22b. A plain completion stays done (kind done, mood talking)" '
+comp=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$Q_SID_DONE"'"]
+mood=session_mood("'"$Q_SID_DONE"'")
+if not comp:
+    print("FAIL: no notice for the completion session")
+elif comp[0].get("kind") != "done":
+    print("FAIL: kind is %r, expected done" % comp[0].get("kind"))
+elif mood not in ("talking", "working"):
+    print("FAIL: session mood is %r, expected talking" % mood)
+else:
+    print("PASS")
+' "$STATE"
+
+assert "22c. A polite \"let me know if…\" tail is not treated as a question" '
+comp=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$Q_SID_POLITE"'"]
+if not comp:
+    print("FAIL: no notice for the polite session")
+elif comp[0].get("kind") != "done":
+    print("FAIL: kind is %r, expected done (polite tail is not a question)" % comp[0].get("kind"))
+else:
+    print("PASS")
+' "$STATE"
+
+assert "22d. A question above a trailing code fence is still detected" '
+comp=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$Q_SID_MD"'"]
+if not comp:
+    print("FAIL: no notice for the markdown session")
+elif comp[0].get("kind") != "question":
+    print("FAIL: kind is %r, expected question (the fence must not hide the question)" % comp[0].get("kind"))
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_ASK\",\"cwd\":\"$CWD22\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_DONE\",\"cwd\":\"$CWD22\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_POLITE\",\"cwd\":\"$CWD22\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_MD\",\"cwd\":\"$CWD22\"}"
+
+# ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
 # ~1.1MB (the app resets it once it passes ~1MB).
 # ============================================================================

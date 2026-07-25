@@ -59,6 +59,10 @@ enum TaskKind: Equatable {
     case done           // a completed result (gradient border)
     case subagent       // a running subagent (Task/Agent tool)
     case background     // a Bash command launched with run_in_background
+    /// Claude ended its turn by asking the user something instead of
+    /// finishing. There is no hook for this — `QuestionDetector` reads it off
+    /// the final reply — so the notice exists to say "your turn", not "done".
+    case question
     /// A background task that ended in failure/kill, or whose outcome timed
     /// out unseen. Only ever appears on a *completed notice* (never a running
     /// card) so it can get a visually distinct (red) border from `.done` --
@@ -266,10 +270,39 @@ final class PetState {
     private func rememberSessionMeta(for event: HookEvent) {
         guard let sid = event.sessionId else { return }
         var meta = sessionMeta[sid] ?? SessionMeta()
-        if let name = sessionNames.name(for: sid, cwd: event.cwd) { meta.name = name }
+        if let name = sessionNames.name(for: sid, cwd: event.cwd, transcriptPath: event.transcriptPath) {
+            meta.name = name
+        }
         if meta.tag == nil { meta.tag = event.sessionTag }
-        if let project = event.projectName { meta.project = project }
+        // A session's project never changes, but the reported `cwd` does: the
+        // Bash tool keeps a persistent shell, so once a command `cd`s
+        // somewhere every following tool event reports *that* folder -- the
+        // log shows one session flipping between "ClaudePet" and "scratchpad"
+        // from one PostToolUse to the next. `cwdIsProjectRoot` settles it
+        // exactly; when it can't (no transcript path), fall back to trusting
+        // session-level events, whose cwd never wanders.
+        if let project = event.projectName {
+            switch cwdIsProjectRoot(event) {
+            case true: meta.project = project
+            case false: break   // a wandered shell -- never name the session after it
+            case nil: if meta.project == nil || !event.isToolEvent { meta.project = project }
+            }
+        }
         sessionMeta[sid] = meta
+    }
+
+    /// Whether the event's `cwd` really is the session's project root, or
+    /// `nil` when it can't be told. Claude Code writes the transcript to
+    /// `<projects root>/<slug(project cwd)>/<session id>.jsonl`, and `slug` is
+    /// a pure function of the path — so slugging the event's own `cwd` and
+    /// comparing it to the folder the transcript actually sits in answers the
+    /// question exactly, with no guessing about which folder names contain a
+    /// `-`.
+    private func cwdIsProjectRoot(_ event: HookEvent) -> Bool? {
+        guard let cwd = event.cwd, !cwd.isEmpty,
+              let transcript = event.transcriptPath, !transcript.isEmpty else { return nil }
+        let folder = URL(fileURLWithPath: transcript).deletingLastPathComponent().lastPathComponent
+        return folder == SessionNameResolver.slug(cwd)
     }
 
     /// Drops a session's remembered metadata once nothing on screen needs it.
@@ -364,6 +397,14 @@ final class PetState {
             ))
         }
         return result.sorted { $0.lastEventAt > $1.lastEventAt }
+    }
+
+    /// Conversations whose turn ended on a question and haven't been answered
+    /// yet (`.asking` also covers a live `Notification`). Drives the menu bar
+    /// icon: these block the user just as a permission prompt does, only
+    /// silently — which is exactly why they need surfacing.
+    var waitingSessionCount: Int {
+        orderedSessionSummaries.filter { $0.mood == .asking }.count
     }
 
     /// Header title for one session card: resolved conversation name, else
@@ -1065,12 +1106,16 @@ final class PetState {
     /// Code tabs sharing one project folder even in the fallback case.
     private func contextLabel(for event: HookEvent) -> String? {
         let tab: String?
-        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId, cwd: event.cwd) {
+        if let sessionId = event.sessionId,
+           let name = sessionNames.name(for: sessionId, cwd: event.cwd, transcriptPath: event.transcriptPath) {
             tab = name
         } else {
             tab = event.sessionTag.map { "#\($0)" }
         }
-        let parts = [event.projectName, tab].compactMap { $0 }
+        // The session's first-seen project, not this event's `cwd` — see
+        // `rememberSessionMeta` for why they drift apart.
+        let project = event.sessionId.flatMap { sessionMeta[$0]?.project } ?? event.projectName
+        let parts = [project, tab].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -1124,9 +1169,9 @@ final class PetState {
             // A Bash call launched with run_in_background: true has no hook
             // that reports when it finishes, so track it separately and tail
             // the transcript for its completion signal.
-            if let launch = event.backgroundLaunch, let path = event.transcriptPath {
+            if let taskId = event.backgroundTaskId, let path = event.transcriptPath {
                 startBackgroundTask(
-                    taskId: launch.taskId,
+                    taskId: taskId,
                     title: String(format: tr("Background: %@"), event.intentTitle),
                     detail: event.intentDetail.map { truncate($0) },
                     context: context,
@@ -1147,13 +1192,11 @@ final class PetState {
             // PetView) and then decays back to idle after a while (see
             // `setMood`). Only THIS session's running cards are cleared —
             // other sessions' cards are untouched (see `clearRunning`).
-            if subagentTasks.isEmpty && backgroundTasks.isEmpty {
-                happyID = UUID()
-                setMood(.talking, for: sid)
-            } else {
-                setMood(.working, for: sid)
-            }
             clearRunning(sessionId: sid)
+            // The mood is decided inside `pushStopNotice`, not here: a turn
+            // that ended in a question is Claude *waiting*, not Claude done,
+            // and that is only knowable once the reply text is in hand (it may
+            // still have to be read from the transcript).
             pushStopNotice(for: event)
         case "SubagentStart":
             // New in Claude Code v2.1.177+: carries the real agent_id/agent_type
@@ -1234,10 +1277,22 @@ final class PetState {
         let sid = event.sessionId
 
         func push(_ text: String?, context: String?) {
+            let isQuestion = QuestionDetector.looksLikeQuestion(text ?? "")
+            if isQuestion {
+                // No "happy" burst and no decay back to idle: the pet stays in
+                // `.asking` until the user actually answers (the next
+                // UserPromptSubmit), which is the whole point of the card.
+                setMood(.asking, for: sid)
+            } else if subagentTasks.isEmpty && backgroundTasks.isEmpty {
+                happyID = UUID()
+                setMood(.talking, for: sid)
+            } else {
+                setMood(.working, for: sid)
+            }
             pushCompleted(TaskItem(
-                title: tr("Completed"),
+                title: isQuestion ? tr("Claude is waiting for your answer") : tr("Completed"),
                 detail: truncate(text ?? tr("Claude replied"), limit: Self.completedDetailLimit),
-                kind: .done,
+                kind: isQuestion ? .question : .done,
                 dedupeKey: key,
                 context: context,
                 sessionId: sid
@@ -1303,7 +1358,8 @@ final class PetState {
     /// same source as `contextLabel(for:)`'s tab portion, without the project
     /// name prefix (the dialog already shows the tool name).
     private func conversationLabel(for event: HookEvent) -> String? {
-        if let sessionId = event.sessionId, let name = sessionNames.name(for: sessionId, cwd: event.cwd) {
+        if let sessionId = event.sessionId,
+           let name = sessionNames.name(for: sessionId, cwd: event.cwd, transcriptPath: event.transcriptPath) {
             return name
         }
         return event.sessionTag.map { "#\($0)" }
