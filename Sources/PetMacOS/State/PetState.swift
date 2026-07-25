@@ -1083,12 +1083,13 @@ final class PetState {
 
     /// Claude Code has no API for "push text into a running session", but two
     /// hooks already carry text *to the model*: returning
-    /// `{"decision":"block","reason":…}` from `Stop` keeps the turn alive and
-    /// hands `reason` to Claude as a user turn ("Stop hook feedback: …"), and
-    /// the same shape on `PostToolUse` reaches it at the next tool boundary.
-    /// That is the whole transport — which is why replying works identically in
-    /// the terminal, the Desktop app and VS Code: they all read the same
-    /// `~/.claude/settings.json`.
+    /// `hookSpecificOutput.additionalContext` from `Stop` re-invokes the model
+    /// with that text instead of ending the turn, and the same shape on
+    /// `PostToolUse` reaches it at the next tool boundary. That is the whole
+    /// transport — which is why replying works identically in the terminal, the
+    /// Desktop app and VS Code: they all read the same
+    /// `~/.claude/settings.json`. See `HookServer.injectionBody` for why this
+    /// and not `decision: "block"`.
     ///
     /// Two delivery moments, so a message is never stranded:
     ///  - **held `Stop`** — when a turn ends on a question (`QuestionDetector`),

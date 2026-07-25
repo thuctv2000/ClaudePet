@@ -39,9 +39,9 @@ enum HookInstaller {
             // auto modes; that side of it lives on here.
             ("PreToolUse", "event", "*", nil),
             // PostToolUse carries the event feed AND collects a message typed
-            // while Claude was mid-turn: returning `decision: block` here hands
-            // the text to Claude at the next tool boundary. The server never
-            // waits on this route, so the added cost is one loopback hop.
+            // while Claude was mid-turn: returning `additionalContext` here
+            // hands the text to Claude at the next tool boundary. The server
+            // never waits on this route, so the cost is one loopback hop.
             ("PostToolUse", "deliver", "*", 60),
             ("Notification", "event", nil, nil),
             // Stop does the same at the end of a turn, and additionally holds
@@ -247,8 +247,8 @@ enum HookInstaller {
     PAYLOAD=$(cat)
     if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
         # Reply delivery. The server answers with an empty body or the complete
-        # hook JSON ({"decision":"block","reason":…}), printed verbatim — Claude
-        # Code feeds that reason to Claude as a user turn and the turn continues.
+        # hook JSON (hookSpecificOutput.additionalContext), printed verbatim —
+        # Claude Code re-invokes the model with that text and the turn continues.
         # Building it server-side keeps arbitrary typed text out of sh.
         if [ "$MODE" = "stop" ]; then ROUTE=/stop; LIMIT=150; else ROUTE=/deliver; LIMIT=10; fi
         RESPONSE=$(curl -s -m "$LIMIT" -X POST "http://127.0.0.1:$PORT$ROUTE" \\

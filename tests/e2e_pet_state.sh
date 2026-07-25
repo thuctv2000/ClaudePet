@@ -1588,9 +1588,11 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$Q_SID_MD\",\"c
 # Code session, using only the hooks the pet already installs.
 #
 # Transport recap (docs/RESEARCH_PET_REPLY.md): returning
-# {"decision":"block","reason":"<text>"} from `Stop` keeps the turn alive and
-# hands the text to Claude as a user turn; the same shape on `PostToolUse`
-# reaches it at the next tool boundary. So these tests drive the two real
+# hookSpecificOutput.additionalContext from `Stop` re-invokes the model with
+# that text instead of ending the turn; the same shape on `PostToolUse` reaches
+# it at the next tool boundary. (`decision: "block"` also continues a turn, but
+# Claude Code files it as a hook ERROR and shows "Stop hook error occurred" in
+# the terminal — see HookServer.injectionBody.) So these tests drive the two real
 # routes (/stop, /deliver) and assert on the HTTP body the hook script would
 # have printed — which IS the contract with Claude Code.
 #
@@ -1672,16 +1674,20 @@ try:
     d=json.loads(raw)
 except Exception as e:
     print("FAIL: body is not JSON (%s): %r" % (e, raw[:120])); sys.exit()
-if d.get("decision") != "block":
-    print("FAIL: decision is %r, expected block (without it the turn just ends)" % d.get("decision"))
-elif "Yes, go ahead" not in d.get("reason",""):
-    print("FAIL: reason does not carry the typed text: %r" % d.get("reason")[:160])
-elif "\"v2\"" not in d.get("reason",""):
-    print("FAIL: quotes in the typed text were mangled: %r" % d.get("reason")[:160])
+out=d.get("hookSpecificOutput") or {}
+ctx=out.get("additionalContext","")
+if out.get("hookEventName") != "Stop":
+    print("FAIL: hookEventName is %r, expected Stop" % out.get("hookEventName"))
+elif not ctx:
+    print("FAIL: no additionalContext — without it the turn just ends: %r" % raw[:160])
+elif "Yes, go ahead" not in ctx:
+    print("FAIL: additionalContext does not carry the typed text: %r" % ctx[:160])
+elif "\"v2\"" not in ctx:
+    print("FAIL: quotes in the typed text were mangled: %r" % ctx[:160])
 else:
     print("PASS")
 ')
-    report "23a2. The typed reply comes back as {\"decision\":\"block\",\"reason\":…} with the text intact" "$R_RESULT"
+    report "23a2. The typed reply comes back as hookSpecificOutput.additionalContext with the text intact" "$R_RESULT"
 
     STATE=$(get_state)
     assert "23a3. The hold is released once answered, and the card reports \"sent\"" '
@@ -1757,10 +1763,12 @@ if not raw:
 try: d=json.loads(raw)
 except Exception as e:
     print("FAIL: not JSON (%s): %r" % (e, raw[:120])); sys.exit()
-if d.get("decision") != "block":
-    print("FAIL: decision is %r, expected block" % d.get("decision"))
-elif "skip the migration step" not in d.get("reason",""):
-    print("FAIL: reason does not carry the text: %r" % d.get("reason")[:160])
+out=d.get("hookSpecificOutput") or {}
+ctx=out.get("additionalContext","")
+if out.get("hookEventName") != "PostToolUse":
+    print("FAIL: hookEventName is %r, expected PostToolUse" % out.get("hookEventName"))
+elif "skip the migration step" not in ctx:
+    print("FAIL: additionalContext does not carry the text: %r" % ctx[:160])
 else:
     print("PASS")
 ')

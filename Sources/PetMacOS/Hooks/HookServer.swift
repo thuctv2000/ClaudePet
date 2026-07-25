@@ -24,7 +24,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
     private var pendingQuestionPayloads: [String: Data] = [:]
 
     /// Continuations for `Stop` hooks held open while the user types a reply.
-    /// The response body is the hook's own JSON (`decision: block`) or empty.
+    /// The response body is the hook's own JSON (see `injectionBody`) or empty.
     /// Only touched on `queue`.
     private var pendingReplies: [String: CheckedContinuation<Data, Never>] = [:]
 
@@ -229,7 +229,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in
             petState.apply(event)
             let text = petState.takeQueuedReply(forSession: event.sessionId)
-            self.respond(connection, body: Self.blockBody(text))
+            self.respond(connection, body: Self.injectionBody(text, event: "PostToolUse"))
         }
     }
 
@@ -237,11 +237,24 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// an empty body when there is nothing to say. Built with
     /// `JSONSerialization` rather than string interpolation because the text
     /// is whatever the user typed — quotes, newlines and emoji included.
-    private static func blockBody(_ text: String?) -> Data {
+    ///
+    /// `additionalContext` rather than `decision: "block"`, which is the other
+    /// way to continue a turn. Both re-invoke the model with the text, but
+    /// Claude Code files a block under the same "something went wrong" bucket
+    /// as a crashed hook: in the shipped client a Stop `blockingError` is
+    /// pushed onto the array that raises the **"Stop hook error occurred ·
+    /// ctrl+o to see"** notification, and the transcript labels it `Stop hook
+    /// error:`. Measured side by side in a real TUI, the same message sent as
+    /// `additionalContext` continues the turn identically, raises no
+    /// notification, and reads as `Stop hook feedback:` — which is what a
+    /// message from the user should look like.
+    private static func injectionBody(_ text: String?, event: String) -> Data {
         guard let text, !text.isEmpty else { return Data() }
         let object: [String: Any] = [
-            "decision": "block",
-            "reason": PetState.replyReason(for: text),
+            "hookSpecificOutput": [
+                "hookEventName": event,
+                "additionalContext": PetState.replyReason(for: text),
+            ]
         ]
         return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
     }
@@ -303,7 +316,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
         queue.async { [weak self] in
             guard let self,
                   let continuation = self.pendingReplies.removeValue(forKey: id) else { return }
-            continuation.resume(returning: Self.blockBody(text))
+            continuation.resume(returning: Self.injectionBody(text, event: "Stop"))
         }
     }
 

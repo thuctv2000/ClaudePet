@@ -42,9 +42,9 @@ fi
 
 if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
     # Reply delivery. Both routes answer with either an empty body or the
-    # complete hook JSON — `{"decision":"block","reason":"<what the user typed>"}`
-    # — which is printed verbatim. Claude Code then feeds that reason to Claude
-    # as a user turn and the turn keeps going, which is the entire transport:
+    # complete hook JSON — hookSpecificOutput.additionalContext carrying what the
+    # user typed — which is printed verbatim. Claude Code re-invokes the model
+    # with that text instead of ending the turn, which is the entire transport:
     # no tmux, no accessibility, no extra process. Building the JSON server-side
     # keeps arbitrary user text (quotes, newlines, emoji) out of `sh`.
     #
