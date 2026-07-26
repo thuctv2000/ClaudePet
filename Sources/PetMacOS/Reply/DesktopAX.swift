@@ -298,6 +298,7 @@ enum DesktopAX {
         // a label (VS Code's is literally described "-"), and it doubles as
         // proof that the app registered the text rather than just displaying it.
         let before = enabledButtonIDs(in: scope)
+        let previous = string(prompt, kAXValueAttribute as String) ?? ""
 
         // Writing through AXSelectedText rather than AXValue. A raw AXValue
         // write paints the characters but fires no input event, so a React
@@ -332,8 +333,23 @@ enum DesktopAX {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
             return .success(())
         }
-        // Nothing to press: the text is sitting in the prompt for the user to
-        // send by hand. Reported rather than pretended away.
+        // Nothing became pressable. In VS Code that is not a missing button —
+        // it is the send control staying DISABLED with text visibly in the box,
+        // which proves the extension never registered the write: AX painted the
+        // characters into the DOM but the editor's own state stayed empty. So
+        // reading the value back is not proof of anything; this button is.
+        //
+        // Put the box back the way it was found. Leaving the text behind is
+        // worse than not delivering: it silently pollutes the user's own prompt
+        // with a message that was never sent, and the next attempt stacks
+        // another one on top.
+        AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        var restoreRange = CFRangeMake(0, text.utf16.count)
+        if let range = AXValueCreate(.cfRange, &restoreRange) {
+            AXUIElementSetAttributeValue(prompt, kAXSelectedTextRangeAttribute as CFString, range)
+        }
+        AXUIElementSetAttributeValue(prompt, kAXSelectedTextAttribute as CFString, "" as CFTypeRef)
+        AXUIElementSetAttributeValue(prompt, kAXValueAttribute as CFString, previous as CFTypeRef)
         return .failure(.notSubmitted)
     }
 
