@@ -1187,8 +1187,57 @@ final class PetState {
         } else {
             replyQueue[sessionId, default: []].append(trimmed)
             setReplyStatus(.queued, forSession: sessionId)
+            // A session mid-turn has a hook coming and the queue is enough. One
+            // that already finished its turn has none — nothing in Claude Code
+            // fires again until the user types — so for those the Desktop app
+            // is asked directly. It stays queued if that doesn't work out.
+            let mood = sessions[sessionId]?.mood ?? .idle
+            if mood != .working && mood != .thinking {
+                deliverViaDesktop(forSession: sessionId)
+            }
         }
     }
+
+    /// Last-resort delivery for an idle conversation: type it into the Claude
+    /// Desktop app. Only ever *drains* the queue when the write is confirmed,
+    /// so a failure leaves the message waiting for the next hook instead of
+    /// silently losing it.
+    private func deliverViaDesktop(forSession sessionId: String) {
+        guard DesktopAX.isTrusted else {
+            lastDesktopAttempt = "skipped: Accessibility not granted"
+            return
+        }
+        guard let title = sessionMeta[sessionId]?.name else {
+            lastDesktopAttempt = "skipped: no resolved conversation name for this session"
+            return
+        }
+        guard let text = replyQueue[sessionId]?.first else {
+            lastDesktopAttempt = "skipped: nothing queued"
+            return
+        }
+        lastDesktopAttempt = "trying: \(title)"
+        Task { [weak self] in
+            let result = await Task.detached {
+                DesktopAX.send(text, toConversationTitled: title)
+            }.value
+            guard let self else { return }
+            switch result {
+            case .success:
+                _ = self.dequeueReply(forSession: sessionId)
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.lastDesktopAttempt = "delivered to \(title)"
+            case .failure(let error):
+                // Left in the queue on purpose: a failure here means the next
+                // hook still gets to deliver it.
+                self.lastDesktopAttempt = "failed for \(title): \(error)"
+            }
+        }
+    }
+
+    /// What happened on the most recent Desktop delivery attempt, surfaced in
+    /// `/debug/state`. Every abort path above writes here — silent skips made
+    /// the first round of testing unreadable.
+    private(set) var lastDesktopAttempt: String?
 
     /// Pops the next queued message for a session (used by the `PostToolUse`
     /// route). Returns nil — never blocks — when the queue is empty.
@@ -1743,6 +1792,13 @@ final class PetState {
         /// Each card's reply status ("sent"/"queued"), aligned with
         /// `sessionOrder`; nil where the card shows none.
         let sessionReplyStatuses: [String?]
+        /// Whether the pet holds Accessibility rights — the Desktop fallback
+        /// needs them.
+        let desktopTrusted: Bool
+        /// Outcome of the most recent Desktop delivery attempt, if any. Every
+        /// abort path writes here; silent skips made the first round of
+        /// testing unreadable.
+        let lastDesktopAttempt: String?
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1777,7 +1833,9 @@ final class PetState {
             sessionNames: summaries.map(\.name),
             heldStopSessions: heldStops.keys.sorted(),
             queuedReplySessions: replyQueue.keys.sorted(),
-            sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } }
+            sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } },
+            desktopTrusted: DesktopAX.isTrusted,
+            lastDesktopAttempt: lastDesktopAttempt
         )
     }
 

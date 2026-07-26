@@ -112,6 +112,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugResolveAsk(request, on: connection)
         case "/debug/sendReply":
             handleDebugSendReply(request, on: connection)
+        case "/debug/axdump":
+            handleDebugAXDump(on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -303,6 +305,18 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
     }
 
+    /// Reconnaissance route for the idle-session work: returns Claude.app's
+    /// accessibility tree as plain text (and triggers the one-time system
+    /// permission prompt when the pet isn't trusted yet). Read-only — it never
+    /// clicks or types. Token-gated like everything else here.
+    private func handleDebugAXDump(on connection: NWConnection) {
+        Task { @MainActor in
+            if !DesktopAX.isTrusted { DesktopAX.requestTrust() }
+            let text = DesktopAX.dump()
+            self.respond(connection, body: Data(text.utf8), contentType: "text/plain")
+        }
+    }
+
     // MARK: - AskResolver
 
     func resolveAsk(id: String, decision: PetDecision) {
@@ -354,9 +368,10 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
     }
 
-    private func respond(_ connection: NWConnection, status: String = "200 OK", body: Data = Data()) {
+    private func respond(_ connection: NWConnection, status: String = "200 OK",
+                         body: Data = Data(), contentType: String = "application/json") {
         var head = "HTTP/1.1 \(status)\r\n"
-        head += "Content-Type: application/json\r\n"
+        head += "Content-Type: \(contentType)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Connection: close\r\n\r\n"
         var data = Data(head.utf8)

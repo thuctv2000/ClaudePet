@@ -19,6 +19,7 @@
 		2E14F863C978B9FF29B8D401 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264913139BAFFC11AAC17636 /* MarkdownText.swift */; };
 		36B3296733EAFE8F5A0933A9 /* row06_confused.gif in Resources */ = {isa = PBXBuildFile; fileRef = 4D1CD144D41D371A0252D3E8 /* row06_confused.gif */; };
 		37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */; };
+		3C77A6F382135080C926FAEF /* DesktopAX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9554D831D7E980888939AA6F /* DesktopAX.swift */; };
 		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
 		44FF783EA8DF34F30132ADA9 /* row02_excited.gif in Resources */ = {isa = PBXBuildFile; fileRef = FEBC9D848881BAAD98BBADE0 /* row02_excited.gif */; };
 		58196C45A95107617A11A251 /* row08_upset.gif in Resources */ = {isa = PBXBuildFile; fileRef = D820094C6D3161FB739F8AA1 /* row08_upset.gif */; };
@@ -69,6 +70,7 @@
 		858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedSpriteView.swift; sourceTree = "<group>"; };
 		8F6FD6735778E95F873D3BCF /* QuestionDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDetector.swift; sourceTree = "<group>"; };
 		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
+		9554D831D7E980888939AA6F /* DesktopAX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAX.swift; sourceTree = "<group>"; };
 		A10753CA32DC12C3E85FA958 /* PetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetStore.swift; sourceTree = "<group>"; };
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
 		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 				60DBE02103BE5B9DEE670B5C /* Hooks */,
 				4756521A0DCCC4E29BF9949C /* Install */,
 				DD860E2F098D2F09F110AB1B /* Onboarding */,
+				C726105966D96E4486DD9578 /* Reply */,
 				B005A15F5E555D278AB9C085 /* Resources */,
 				2AD5AD954394A47B008E8B62 /* Sprites */,
 				932F9248A5EB563281B49789 /* State */,
@@ -210,6 +213,14 @@
 				F83020535917ED3CD4C35874 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		C726105966D96E4486DD9578 /* Reply */ = {
+			isa = PBXGroup;
+			children = (
+				9554D831D7E980888939AA6F /* DesktopAX.swift */,
+			);
+			path = Reply;
 			sourceTree = "<group>";
 		};
 		D2ABD055CCD03283D0A941A9 /* Products */ = {
@@ -317,6 +328,7 @@
 				2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */,
 				0DC9F1D0615DCC29AAFDA479 /* ClaudeCodeAvailability.swift in Sources */,
 				202C8A943F4B6E3A8FD086BA /* DesignKit.swift in Sources */,
+				3C77A6F382135080C926FAEF /* DesktopAX.swift in Sources */,
 				2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */,
 				1469F41B1496F30B4B708EB1 /* HookModels.swift in Sources */,
 				2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */,
