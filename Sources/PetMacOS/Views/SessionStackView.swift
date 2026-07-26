@@ -386,16 +386,45 @@ private struct SessionCardView: View {
 
     /// What happened to the last message sent from this card. Auto-clears in
     /// `PetState` after ~20s.
+    private func icon(for status: PetState.ReplyStatus) -> String {
+        switch status {
+        case .sent: return "checkmark.circle.fill"
+        case .queued: return "clock.fill"
+        case .stuck: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func label(for status: PetState.ReplyStatus) -> String {
+        switch status {
+        case .sent: return tr("Sent to Claude")
+        case .queued: return tr("Queued — goes out at Claude's next step")
+        case .stuck: return tr("Can't reach this session while it's idle — type in its own window")
+        }
+    }
+
+    private func colour(for status: PetState.ReplyStatus) -> Color {
+        switch status {
+        case .sent: return .green
+        case .queued: return .orange
+        case .stuck: return .red
+        }
+    }
+
     @ViewBuilder
     private var replyStatusLine: some View {
         if let status = summary.replyStatus {
-            HStack(spacing: 4) {
-                Image(systemName: status == .sent ? "checkmark.circle.fill" : "clock.fill")
-                Text(status == .sent ? tr("Sent to Claude") : tr("Queued — goes out at Claude's next step"))
+            // Three outcomes, three lines. "Queued" used to cover the stuck
+            // case too, which read as "arriving shortly" for a message that
+            // would never arrive — the single most misleading thing the card
+            // did.
+            HStack(alignment: .top, spacing: 4) {
+                Image(systemName: icon(for: status))
+                Text(label(for: status))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(status == .sent ? Color.green : Color.orange)
-            .lineLimit(1)
+            .foregroundStyle(colour(for: status))
+            .lineLimit(2)
         }
     }
 

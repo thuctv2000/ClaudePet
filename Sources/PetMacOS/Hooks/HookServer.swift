@@ -95,7 +95,11 @@ final class HookServer: AskResolver, @unchecked Sendable {
         case "/event":
             if let event = try? JSONDecoder().decode(HookEvent.self, from: request.body) {
                 let petState = self.petState
-                Task { @MainActor in petState.apply(event) }
+                let tty = request.headers["x-pet-tty"]
+                Task { @MainActor in
+                    petState.rememberTty(tty, for: event.sessionId)
+                    petState.apply(event)
+                }
             }
             respond(connection)
         case "/ask":
@@ -112,8 +116,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugResolveAsk(request, on: connection)
         case "/debug/sendReply":
             handleDebugSendReply(request, on: connection)
-        case "/debug/axdump":
-            handleDebugAXDump(on: connection)
+        case let path where path.hasPrefix("/debug/axdump"):
+            handleDebugAXDump(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -228,7 +232,9 @@ final class HookServer: AskResolver, @unchecked Sendable {
     private func handleDeliver(_ request: HTTPRequest, on connection: NWConnection) {
         let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
         let petState = self.petState
+        let tty = request.headers["x-pet-tty"]
         Task { @MainActor in
+            petState.rememberTty(tty, for: event.sessionId)
             petState.apply(event)
             let text = petState.takeQueuedReply(forSession: event.sessionId)
             self.respond(connection, body: Self.injectionBody(text, event: "PostToolUse"))
@@ -309,10 +315,18 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// accessibility tree as plain text (and triggers the one-time system
     /// permission prompt when the pet isn't trusted yet). Read-only — it never
     /// clicks or types. Token-gated like everything else here.
-    private func handleDebugAXDump(on connection: NWConnection) {
+    private func handleDebugAXDump(_ request: HTTPRequest, on connection: NWConnection) {
+        // ?bundle=<id> so the same probe can look at VS Code (or any other
+        // Electron host) instead of only Claude.app.
+        let bundle = request.path.split(separator: "?").dropFirst().first
+            .flatMap { query -> String? in
+                query.split(separator: "&")
+                    .first { $0.hasPrefix("bundle=") }
+                    .map { String($0.dropFirst("bundle=".count)) }
+            } ?? DesktopAX.bundleID
         Task { @MainActor in
             if !DesktopAX.isTrusted { DesktopAX.requestTrust() }
-            let text = DesktopAX.dump()
+            let text = DesktopAX.dump(bundle: bundle)
             self.respond(connection, body: Data(text.utf8), contentType: "text/plain")
         }
     }

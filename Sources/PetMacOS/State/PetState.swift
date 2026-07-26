@@ -264,8 +264,26 @@ final class PetState {
         var name: String?
         var tag: String?
         var project: String?
+        /// Controlling terminal of the session ("/dev/ttys003"), or nil for a
+        /// Desktop-app session. Reported by the hook, which inherits it from
+        /// `claude` — an exact handle, unlike the Desktop app's title match.
+        var tty: String?
+        /// Transcript path, kept because the folder it sits in identifies the
+        /// session's project directory, which is how a missing `tty` is
+        /// recovered later (see `TerminalBridge.discoverTty`).
+        var transcriptPath: String?
     }
     private var sessionMeta: [String: SessionMeta] = [:]
+
+    /// Records which terminal a session runs in (nil / empty for the Desktop
+    /// app). Refreshed on every event: resuming a session in another window
+    /// gives it a new tty, and a stale one would address the wrong tab.
+    func rememberTty(_ tty: String?, for sessionId: String?) {
+        guard let sid = sessionId else { return }
+        var meta = sessionMeta[sid] ?? SessionMeta()
+        meta.tty = (tty?.isEmpty == false) ? tty : nil
+        sessionMeta[sid] = meta
+    }
 
     /// Captures/refreshes the display metadata for the event's session. The
     /// name is re-resolved on every event (cheap: `SessionNameResolver`
@@ -278,6 +296,9 @@ final class PetState {
             meta.name = name
         }
         if meta.tag == nil { meta.tag = event.sessionTag }
+        if let transcript = event.transcriptPath, !transcript.isEmpty {
+            meta.transcriptPath = transcript
+        }
         // A session's project never changes, but the reported `cwd` does: the
         // Bash tool keeps a persistent shell, so once a command `cd`s
         // somewhere every following tool event reports *that* folder -- the
@@ -372,6 +393,12 @@ final class PetState {
         /// Parked in the queue — Claude is mid-turn, so it goes out at the
         /// next `PostToolUse` or when the turn ends.
         case queued
+        /// The session is idle and no surface would take the message: it is
+        /// still queued, but nothing will deliver it until that session runs
+        /// again. Saying "queued" here would be a lie — it is the difference
+        /// between "arriving shortly" and "never", and the card used to show
+        /// the same word for both.
+        case stuck
     }
 
     /// One card per conversation, ordered so the session with the NEWEST
@@ -1019,6 +1046,19 @@ final class PetState {
     /// desktop app batch-bumping `lastFocusedAt` on its own restart, and means
     /// the user genuinely looked at the conversation after it finished.
     private func viewedDismissEligible(sessionId: String, focusDate: Date) -> Bool {
+        // This rule predates the reply box, and the two collided: the card is
+        // no longer only a notice, it is the ONLY place to type an answer. So
+        // retiring it because the user is looking at the conversation would
+        // take away the reply box at exactly the moment it is needed — and if
+        // a Stop hook is being held, it strands that hook until its timeout
+        // while nothing on screen says anything is waiting.
+        //
+        // "Done" therefore has to mean nobody is waiting on anybody, not
+        // merely that no task is running.
+        guard heldStops[sessionId] == nil else { return false }
+        guard replyQueue[sessionId] == nil else { return false }
+        guard sessions[sessionId]?.mood != .asking else { return false }
+
         func mine(_ items: [TaskItem]) -> [TaskItem] {
             items.filter { ($0.sessionId ?? Self.noSessionKey) == sessionId }
         }
@@ -1026,6 +1066,9 @@ final class PetState {
               mine(backgroundTasks).isEmpty else { return false }
         let completed = mine(completedNotices)
         guard !completed.isEmpty else { return false }
+        // A question card is Claude waiting for a human; looking at the
+        // conversation is not the same as answering it.
+        guard !completed.contains(where: { $0.kind == .question }) else { return false }
         let lastEventAt = sessions[sessionId]?.lastEventAt
             ?? completed.map(\.startedAt).max() ?? .distantPast
         return focusDate > lastEventAt
@@ -1193,7 +1236,7 @@ final class PetState {
             // is asked directly. It stays queued if that doesn't work out.
             let mood = sessions[sessionId]?.mood ?? .idle
             if mood != .working && mood != .thinking {
-                deliverViaDesktop(forSession: sessionId)
+                deliverToIdleSession(sessionId)
             }
         }
     }
@@ -1202,6 +1245,65 @@ final class PetState {
     /// Desktop app. Only ever *drains* the queue when the write is confirmed,
     /// so a failure leaves the message waiting for the next hook instead of
     /// silently losing it.
+    /// Routes an idle session's message to whichever surface actually hosts
+    /// it. The terminal path is preferred wherever a tty is known: it addresses
+    /// the exact tab by an OS identity, while the Desktop path can only match a
+    /// conversation title and has to refuse when that is ambiguous.
+    private func deliverToIdleSession(_ sessionId: String) {
+        if let tty = resolvedTty(forSession: sessionId) {
+            deliverViaTerminal(forSession: sessionId, tty: tty)
+        } else {
+            deliverViaDesktop(forSession: sessionId)
+        }
+    }
+
+    /// The session's tty: what the hook reported, or — when it never did —
+    /// worked out from the running `claude` processes. The second path matters
+    /// precisely here: an idle session emits no events, so a pet restart (or a
+    /// session that last spoke to an older hook script) leaves the reported
+    /// value nil for exactly the sessions this feature exists to reach.
+    private func resolvedTty(forSession sessionId: String) -> String? {
+        if let known = sessionMeta[sessionId]?.tty { return known }
+        guard let transcript = sessionMeta[sessionId]?.transcriptPath else { return nil }
+        let folder = URL(fileURLWithPath: transcript).deletingLastPathComponent().lastPathComponent
+        guard let found = TerminalBridge.discoverTty(projectFolder: folder) else { return nil }
+        sessionMeta[sessionId]?.tty = found
+        return found
+    }
+
+    private func deliverViaTerminal(forSession sessionId: String, tty: String) {
+        guard let text = replyQueue[sessionId]?.first else {
+            lastDesktopAttempt = "skipped: nothing queued"
+            return
+        }
+        lastDesktopAttempt = "trying terminal \(tty)"
+        Task { [weak self] in
+            let result = await Task.detached { TerminalBridge.send(text, toTty: tty) }.value
+            guard let self else { return }
+            switch result {
+            case .success:
+                _ = self.dequeueReply(forSession: sessionId)
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.lastDesktopAttempt = "delivered to terminal \(tty)"
+            case .failure(let error):
+                self.lastDesktopAttempt = "terminal \(tty) failed: \(error)"
+                // A tty the pet cannot script (VS Code's integrated terminal,
+                // Ghostty, kitty…) has no idle route at all — fall through to
+                // the window-driving hosts before calling it stuck.
+                self.deliverViaDesktop(forSession: sessionId)
+            }
+        }
+    }
+
+    /// Host apps whose prompt the pet can drive, tried in order. Each one is
+    /// asked whether it owns a conversation by this name; the first that says
+    /// yes takes the message, and a host that doesn't recognise it fails with
+    /// `conversationNotFound` and costs nothing.
+    private static let promptHosts: [(name: String, bundle: String)] = [
+        ("Claude Desktop", DesktopAX.bundleID),
+        ("VS Code", "com.microsoft.VSCode"),
+    ]
+
     private func deliverViaDesktop(forSession sessionId: String) {
         guard DesktopAX.isTrusted else {
             lastDesktopAttempt = "skipped: Accessibility not granted"
@@ -1216,21 +1318,30 @@ final class PetState {
             return
         }
         lastDesktopAttempt = "trying: \(title)"
+        let hosts = Self.promptHosts
         Task { [weak self] in
-            let result = await Task.detached {
-                DesktopAX.send(text, toConversationTitled: title)
+            let outcome = await Task.detached { () -> (String, Bool) in
+                var notes: [String] = []
+                for host in hosts {
+                    switch DesktopAX.send(text, toConversationTitled: title, bundle: host.bundle) {
+                    case .success:
+                        return ("delivered to \(title) via \(host.name)", true)
+                    case .failure(let error):
+                        notes.append("\(host.name): \(error)")
+                    }
+                }
+                return ("no host took \(title) — " + notes.joined(separator: "; "), false)
             }.value
             guard let self else { return }
-            switch result {
-            case .success:
+            if outcome.1 {
                 _ = self.dequeueReply(forSession: sessionId)
                 self.setReplyStatus(.sent, forSession: sessionId)
-                self.lastDesktopAttempt = "delivered to \(title)"
-            case .failure(let error):
-                // Left in the queue on purpose: a failure here means the next
-                // hook still gets to deliver it.
-                self.lastDesktopAttempt = "failed for \(title): \(error)"
+            } else {
+                self.setReplyStatus(.stuck, forSession: sessionId)
             }
+            // On failure the message stays queued on purpose: the next hook
+            // still gets to deliver it.
+            self.lastDesktopAttempt = outcome.0
         }
     }
 

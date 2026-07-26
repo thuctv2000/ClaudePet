@@ -31,8 +31,10 @@ enum DesktopAX {
         AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
-    static var runningApp: NSRunningApplication? {
-        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == bundleID }
+    static var runningApp: NSRunningApplication? { app(bundleID) }
+
+    static func app(_ identifier: String) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == identifier }
     }
 
     // MARK: - Attribute helpers
@@ -63,14 +65,14 @@ enum DesktopAX {
     /// it once an assistive client asks — so `AXManualAccessibility` is set
     /// first and the walk waits a beat for the tree to appear. Without that the
     /// app looks like it has zero windows even when trust is granted.
-    static func dump(maxDepth: Int = 24) -> String {
+    static func dump(bundle: String = bundleID, maxDepth: Int = 24) -> String {
         var out: [String] = ["trusted: \(isTrusted)"]
         guard isTrusted else {
             out.append("not trusted — grant Accessibility to PetMacOS and retry")
             return out.joined(separator: "\n")
         }
-        guard let app = runningApp else {
-            out.append("Claude.app is not running")
+        guard let app = app(bundle) else {
+            out.append("\(bundle) is not running")
             return out.joined(separator: "\n")
         }
 
@@ -227,63 +229,80 @@ enum DesktopAX {
         case notSubmitted
     }
 
-    /// Types `text` into the Desktop app's prompt for the conversation named
-    /// `title`, and submits it.
+    /// Types `text` into the prompt of the conversation named `title` in one
+    /// of the supported host apps, and submits it.
     ///
     /// Every step is checked rather than assumed, because the failure this
-    /// guards against is delivering a message into the WRONG conversation:
-    ///  - the sidebar row must match the title EXACTLY once (zero or several
-    ///    matches abort — the pet keeps the message queued instead),
-    ///  - after pressing the row, the focused element must actually be the
-    ///    prompt (`AXTextArea` described "Prompt"), not whatever else the app
-    ///    focused,
-    ///  - the text is read back before the Return key is sent, so nothing is
-    ///    submitted that we cannot see.
-    static func send(_ text: String, toConversationTitled title: String) -> Result<Void, SendError> {
+    /// guards against is delivering into the WRONG conversation. The two hosts
+    /// identify a conversation differently:
+    ///  - Claude Desktop lists them in a sidebar, so the matching row is
+    ///    pressed to open it (exactly one row must match, or this gives up),
+    ///  - VS Code gives each session its own window titled "<name> — <folder>",
+    ///    so the matching window is used directly and nothing is clicked.
+    static func send(
+        _ text: String, toConversationTitled title: String, bundle: String = bundleID
+    ) -> Result<Void, SendError> {
         guard isTrusted else { return .failure(.notTrusted) }
-        guard let app = runningApp else { return .failure(.appNotRunning) }
+        guard let app = app(bundle) else { return .failure(.appNotRunning) }
 
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        let allWindows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
 
-        var matches: [AXUIElement] = []
-        for window in windows { collectRows(window, title: title, into: &matches, depth: 0) }
-        guard !matches.isEmpty else { return .failure(.conversationNotFound(title)) }
-        guard matches.count == 1 else {
-            return .failure(.ambiguousConversation(title, matches.count))
+        // Scope: for VS Code the session IS a window; for Claude Desktop every
+        // window is a candidate and the sidebar row picks the conversation.
+        var scope = allWindows
+        if bundle != bundleID {
+            let matching = allWindows.filter { window in
+                guard let windowTitle = string(window, kAXTitleAttribute as String) else { return false }
+                return windowTitle == title || windowTitle.hasPrefix(title + " — ")
+                    || windowTitle.hasPrefix(title + " - ")
+            }
+            guard !matching.isEmpty else { return .failure(.conversationNotFound(title)) }
+            guard matching.count == 1 else {
+                return .failure(.ambiguousConversation(title, matching.count))
+            }
+            scope = matching
+        } else {
+            var rows: [AXUIElement] = []
+            for window in allWindows { collectRows(window, title: title, into: &rows, depth: 0) }
+            guard !rows.isEmpty else { return .failure(.conversationNotFound(title)) }
+            guard rows.count == 1 else {
+                return .failure(.ambiguousConversation(title, rows.count))
+            }
+            AXUIElementPerformAction(rows[0], kAXPressAction as CFString)
+            Thread.sleep(forTimeInterval: 0.8)
         }
 
-        AXUIElementPerformAction(matches[0], kAXPressAction as CFString)
-        Thread.sleep(forTimeInterval: 0.8)
-
         // Deliberately NOT via `AXFocusedUIElement`: that only answers while
-        // Claude.app is the active application, so a background pet always got
-        // nil back and gave up. Poking each web area builds its tree instead,
-        // after which the prompt is an ordinary walkable element — no need to
-        // steal the user's focus.
+        // the host app is active, so a background pet always got nil back.
+        // Poking each web area builds its tree instead, after which the prompt
+        // is an ordinary walkable element — no need to steal the user's focus.
         var webAreas: [AXUIElement] = []
-        for window in windows { collectWebAreas(window, into: &webAreas, depth: 0) }
+        for window in scope { collectWebAreas(window, into: &webAreas, depth: 0) }
         for area in webAreas {
             AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         }
         Thread.sleep(forTimeInterval: 2.0)
 
         var prompts: [AXUIElement] = []
-        for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
-        // Exactly one prompt is expected: only the open conversation has one.
-        // Anything else means the app is in a shape this code doesn't model,
-        // and typing blind into it is precisely what must not happen.
+        for window in scope { collectPrompts(window, into: &prompts, depth: 0) }
         guard prompts.count == 1 else {
             return .failure(.promptNotFocused("prompts=\(prompts.count)"))
         }
         let prompt = prompts[0]
 
+        // Which controls are live BEFORE typing. Both hosts disable their send
+        // button while the box is empty, so the button that switches on after
+        // the write is the send control — a far sturdier signal than matching
+        // a label (VS Code's is literally described "-"), and it doubles as
+        // proof that the app registered the text rather than just displaying it.
+        let before = enabledButtonIDs(in: scope)
+
         // Writing through AXSelectedText rather than AXValue. A raw AXValue
         // write paints the characters but fires no input event, so a React
-        // editor still believes the box is empty — the text is visible and yet
-        // unsendable, which is exactly the "typed but no Enter" symptom.
-        // Replacing the selection is the path a real keystroke takes.
+        // editor still believes the box is empty — visible yet unsendable,
+        // which is exactly the "typed but no Enter" symptom.
         AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         Thread.sleep(forTimeInterval: 0.2)
         let existing = (string(prompt, kAXValueAttribute as String) ?? "").utf16.count
@@ -292,36 +311,86 @@ enum DesktopAX {
             AXUIElementSetAttributeValue(prompt, kAXSelectedTextRangeAttribute as CFString, range)
         }
         AXUIElementSetAttributeValue(prompt, kAXSelectedTextAttribute as CFString, text as CFTypeRef)
-        Thread.sleep(forTimeInterval: 0.3)
+        Thread.sleep(forTimeInterval: 0.4)
         if string(prompt, kAXValueAttribute as String) != text {
-            // Fall back to the blunt write; better a visible message the user
-            // can send by hand than nothing at all.
             AXUIElementSetAttributeValue(prompt, kAXValueAttribute as CFString, text as CFTypeRef)
-            Thread.sleep(forTimeInterval: 0.25)
+            Thread.sleep(forTimeInterval: 0.3)
             guard string(prompt, kAXValueAttribute as String) == text else {
                 return .failure(.verificationFailed)
             }
         }
 
-        // Prefer the app's own send control: pressing it needs no key events
-        // and no activation. While Claude is working that button reads "Stop",
-        // so it is matched by name and never pressed blind by position.
-        var buttons: [AXUIElement] = []
-        for window in windows { collectSendButtons(window, into: &buttons, depth: 0) }
-        if let send = buttons.first {
+        Thread.sleep(forTimeInterval: 0.4)
+        if let send = newlyEnabledButton(in: scope, comparedTo: before) {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
             return .success(())
         }
-
-        // No send control found: Return aimed at the process. This is the path
-        // that did NOT submit in testing (Chromium ignores key events while it
-        // isn't frontmost), so it is the fallback rather than the plan.
-        let source = CGEventSource(stateID: .hidSystemState)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
-        down?.postToPid(app.processIdentifier)
-        up?.postToPid(app.processIdentifier)
+        // Named fallback, for a host that keeps its send button always enabled.
+        var named: [AXUIElement] = []
+        for window in scope { collectSendButtons(window, into: &named, depth: 0) }
+        if let send = named.first {
+            AXUIElementPerformAction(send, kAXPressAction as CFString)
+            return .success(())
+        }
+        // Nothing to press: the text is sitting in the prompt for the user to
+        // send by hand. Reported rather than pretended away.
         return .failure(.notSubmitted)
+    }
+
+    /// Identity of every enabled button in scope. AXUIElement isn't Hashable,
+    /// so buttons are keyed by position+size+label, which is stable across the
+    /// few hundred milliseconds between the two scans.
+    private static func enabledButtonIDs(in scope: [AXUIElement]) -> Set<String> {
+        var ids = Set<String>()
+        for window in scope { collectButtonIDs(window, into: &ids, depth: 0, enabledOnly: true) }
+        return ids
+    }
+
+    private static func newlyEnabledButton(
+        in scope: [AXUIElement], comparedTo before: Set<String>
+    ) -> AXUIElement? {
+        var candidates: [(String, AXUIElement)] = []
+        for window in scope { collectButtons(window, into: &candidates, depth: 0) }
+        return candidates.first { id, _ in !before.contains(id) }?.1
+    }
+
+    private static func buttonIdentity(_ element: AXUIElement) -> String {
+        let label = string(element, kAXDescriptionAttribute as String)
+            ?? string(element, kAXTitleAttribute as String) ?? "-"
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        if let raw = attribute(element, kAXPositionAttribute as String) {
+            AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cgPoint, &point)
+        }
+        if let raw = attribute(element, kAXSizeAttribute as String) {
+            AXValueGetValue(unsafeBitCast(raw, to: AXValue.self), .cgSize, &size)
+        }
+        return "\(label)@\(Int(point.x)),\(Int(point.y)) \(Int(size.width))x\(Int(size.height))"
+    }
+
+    private static func collectButtonIDs(
+        _ element: AXUIElement, into ids: inout Set<String>, depth: Int, enabledOnly: Bool
+    ) {
+        guard depth < 30 else { return }
+        if string(element, kAXRoleAttribute as String) == (kAXButtonRole as String) {
+            let enabled = (attribute(element, kAXEnabledAttribute as String) as? NSNumber)?
+                .boolValue ?? true
+            if !enabledOnly || enabled { ids.insert(buttonIdentity(element)) }
+        }
+        for child in children(element) {
+            collectButtonIDs(child, into: &ids, depth: depth + 1, enabledOnly: enabledOnly)
+        }
+    }
+
+    private static func collectButtons(
+        _ element: AXUIElement, into found: inout [(String, AXUIElement)], depth: Int
+    ) {
+        guard depth < 30 else { return }
+        if string(element, kAXRoleAttribute as String) == (kAXButtonRole as String),
+           (attribute(element, kAXEnabledAttribute as String) as? NSNumber)?.boolValue ?? true {
+            found.append((buttonIdentity(element), element))
+        }
+        for child in children(element) { collectButtons(child, into: &found, depth: depth + 1) }
     }
 
     /// Buttons that look like the prompt's send control. "Send feedback" is
@@ -353,14 +422,19 @@ enum DesktopAX {
         for child in children(element) { collectWebAreas(child, into: &found, depth: depth + 1) }
     }
 
-    /// The message box of whichever conversation is open, identified by the
-    /// role + "Prompt" description seen on the real app.
+    /// How each host app labels its message box. Claude Desktop says "Prompt";
+    /// the VS Code extension says "Message input".
+    static let promptDescriptions: Set<String> = ["Prompt", "Message input"]
+
+    /// The message box of whichever conversation is open, identified by role +
+    /// one of the known descriptions.
     private static func collectPrompts(
         _ element: AXUIElement, into found: inout [AXUIElement], depth: Int
     ) {
         guard depth < 30 else { return }
         if string(element, kAXRoleAttribute as String) == (kAXTextAreaRole as String),
-           string(element, kAXDescriptionAttribute as String) == "Prompt" {
+           let desc = string(element, kAXDescriptionAttribute as String),
+           promptDescriptions.contains(desc) {
             found.append(element)
         }
         for child in children(element) { collectPrompts(child, into: &found, depth: depth + 1) }

@@ -62,18 +62,36 @@ struct StatusDot: View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .overlay(
-                Circle()
-                    .stroke(color.opacity(0.45), lineWidth: 3)
-                    .scaleEffect(on ? 1.9 : 1.0)
-                    .opacity(on ? 0 : 0.9)
-            )
-            .onAppear {
-                guard pulsing else { return }
-                withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) {
-                    on = true
+            .overlay {
+                // The ring exists only while the state is live, so a finished
+                // session leaves a plain dot instead of a halo frozen mid-flight.
+                if pulsing {
+                    Circle()
+                        .stroke(color.opacity(0.45), lineWidth: 3)
+                        .scaleEffect(on ? 1.9 : 1.0)
+                        .opacity(on ? 0 : 0.9)
                 }
             }
+            .onAppear { setPulse(pulsing) }
+            .onChange(of: pulsing) { _, new in setPulse(new) }
+    }
+
+    /// Starting the animation in `onAppear` alone isn't enough: rows are reused
+    /// across mood changes (`ForEach` keys them by session id) and the menu bar
+    /// panel is built once and merely hidden, so `onAppear` fires long before
+    /// `pulsing` flips either way. And `repeatForever` never stops on its own —
+    /// setting `on` back with animations disabled is what actually cancels it;
+    /// otherwise the dot keeps pulsing forever, even with the panel closed.
+    private func setPulse(_ active: Bool) {
+        if active {
+            withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) {
+                on = true
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { on = false }
+        }
     }
 }
 

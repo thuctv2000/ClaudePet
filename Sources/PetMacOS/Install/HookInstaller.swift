@@ -245,6 +245,16 @@ enum HookInstaller {
     TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$CONFIG")
     [ -n "$PORT" ] || exit 0
     PAYLOAD=$(cat)
+    # The session's controlling terminal ("??" for a Desktop-app session). The
+    # hook is a child of `claude`, so this is that session's tty -- the exact
+    # handle used to address a terminal session. Header, so the JSON is never
+    # rewritten in sh.
+    TTY=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+    case "$TTY" in
+        ''|'??') PET_TTY="" ;;
+        /dev/*)  PET_TTY="$TTY" ;;
+        *)       PET_TTY="/dev/$TTY" ;;
+    esac
     if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
         # Reply delivery. The server answers with an empty body or the complete
         # hook JSON (hookSpecificOutput.additionalContext), printed verbatim —
@@ -252,7 +262,7 @@ enum HookInstaller {
         # Building it server-side keeps arbitrary typed text out of sh.
         if [ "$MODE" = "stop" ]; then ROUTE=/stop; LIMIT=150; else ROUTE=/deliver; LIMIT=10; fi
         RESPONSE=$(curl -s -m "$LIMIT" -X POST "http://127.0.0.1:$PORT$ROUTE" \\
-            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
         [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
         exit 0
@@ -261,7 +271,7 @@ enum HookInstaller {
         # AskUserQuestion: block for the user's answer regardless of permission
         # mode. Server returns the full hookSpecificOutput JSON; print verbatim.
         RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \\
-            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
         [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
         exit 0
@@ -274,7 +284,7 @@ enum HookInstaller {
         TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
         [ "$TOOL" = "AskUserQuestion" ] && exit 0
         RESPONSE=$(curl -s -m 300 -X POST "http://127.0.0.1:$PORT/ask" \\
-            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
         case "$RESPONSE" in
             *'"decision":"deny"'*)
@@ -286,7 +296,7 @@ enum HookInstaller {
         exit 0
     fi
     curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \\
-        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+        -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
         --data-binary "$PAYLOAD" >/dev/null 2>&1
     exit 0
     """

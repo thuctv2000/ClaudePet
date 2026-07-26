@@ -361,6 +361,22 @@
         }
       }
     },
+    "Can't reach this session while it's idle — type in its own window": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach this session while it's idle — type in its own window"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phiên đang rảnh, pet không với tới — gõ thẳng ở cửa sổ của nó"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "vi": {

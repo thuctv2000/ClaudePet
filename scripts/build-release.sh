@@ -146,7 +146,12 @@ else
 fi
 
 log "Signing main app bundle: $APP_PATH"
+# --entitlements is NOT optional here: this re-sign replaces whatever xcodebuild
+# embedded, so leaving it out silently strips the apple-events entitlement and
+# the pet loses the ability to script Terminal.app — only in release builds,
+# which is the worst place to find out.
 codesign --force --options runtime --timestamp \
+  --entitlements "$ROOT_DIR/Support/PetMacOS.entitlements" \
   --sign "$DEVELOPER_ID" \
   "$APP_PATH"
 

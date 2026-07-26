@@ -37,6 +37,11 @@ targets:
         SUFeedURL: https://raw.githubusercontent.com/thuctv2000/ClaudePet/main/appcast.xml
         SUPublicEDKey: xv9p3qTJNcq3r+SH/wzsQYsYuSlGDGtPnieC/wELvRE=
         SUEnableAutomaticChecks: true
+        # Shown in the macOS Automation permission prompt when the pet first
+        # types a reply into a Terminal.app / iTerm2 session.
+        NSAppleEventsUsageDescription: >-
+          PetMacOS uses Automation to type your reply into the Terminal window
+          running that Claude Code session.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.desktoppet.PetMacOS
@@ -48,6 +53,10 @@ targets:
         CODE_SIGN_STYLE: Automatic
         MARKETING_VERSION: "1.6.0"
         ENABLE_HARDENED_RUNTIME: YES
+        # Apple-events entitlement: without it a hardened-runtime app cannot
+        # script Terminal.app at all. scripts/build-release.sh must pass the
+        # same file to codesign, or its re-sign silently drops it.
+        CODE_SIGN_ENTITLEMENTS: Support/PetMacOS.entitlements
         SWIFT_STRICT_CONCURRENCY: complete
     scheme:
       testTargets: []

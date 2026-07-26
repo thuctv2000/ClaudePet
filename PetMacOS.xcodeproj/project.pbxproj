@@ -47,6 +47,7 @@
 		F1B1646AF5E03013464B8F69 /* PetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10753CA32DC12C3E85FA958 /* PetStore.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
 		FAC5DF96ED0EEBB59EFBA97B /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CE15D8703CA77D630E924A /* L10n.swift */; };
+		FF9B54742ABBF3A8A6A18F96 /* TerminalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CC34CAAB2DC0827B8598CAC /* TerminalBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -54,6 +55,7 @@
 		138F5150AE1102DD27B7D5F1 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		164AB034348168F4D3506854 /* row05_waving.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row05_waving.gif; sourceTree = "<group>"; };
 		1A1856172CA59DCF33645C4E /* row09_celebrate.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row09_celebrate.gif; sourceTree = "<group>"; };
+		1CC34CAAB2DC0827B8598CAC /* TerminalBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalBridge.swift; sourceTree = "<group>"; };
 		203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStackView.swift; sourceTree = "<group>"; };
 		21C4408F8BA234F15C7709DE /* ClaudeCodeAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeCodeAvailability.swift; sourceTree = "<group>"; };
 		264913139BAFFC11AAC17636 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
@@ -219,6 +221,7 @@
 			isa = PBXGroup;
 			children = (
 				9554D831D7E980888939AA6F /* DesktopAX.swift */,
+				1CC34CAAB2DC0827B8598CAC /* TerminalBridge.swift */,
 			);
 			path = Reply;
 			sourceTree = "<group>";
@@ -351,6 +354,7 @@
 				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
 				96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */,
 				8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */,
+				FF9B54742ABBF3A8A6A18F96 /* TerminalBridge.swift in Sources */,
 				3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */,
 				C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */,
 			);
@@ -426,6 +430,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/PetMacOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -446,6 +451,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/PetMacOS.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
