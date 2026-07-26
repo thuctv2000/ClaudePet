@@ -1887,6 +1887,91 @@ rm -f "$R_OUT_END"
 restore_config
 
 # ============================================================================
+# TEST 24 — Viewing a conversation must not retire a card that is still the
+# user's only way to answer.
+#
+# The dismiss-on-view rule predates the reply box: it made sense when a card
+# was purely a notice. Once the card became the ONLY place to type a reply,
+# retiring it took the reply box away at the exact moment it was needed, and a
+# held Stop hook was left stranded with nothing on screen explaining why. The
+# rule now requires that nobody is waiting on anybody — not merely that no task
+# is running. Both halves are tested: the protection AND the original behaviour
+# it must not break.
+#
+# `markConversationViewed` is normally driven by SessionFocusMonitor watching
+# the desktop app, so tests reach it through /debug/markViewed.
+# ============================================================================
+V_CWD="/tmp/e2eviewed"
+
+mark_viewed() {
+    python3 -c 'import json,sys;print(json.dumps({"sessionId":sys.argv[1]}))' "$1" \
+        | curl -s -m 5 -X POST "$BASE/debug/markViewed" \
+            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+            --data-binary @- >/dev/null 2>&1
+}
+
+# 24a — a turn that ended in a QUESTION survives being looked at.
+V_SID_Q="v1aaaa0000000000000000000000000001"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$V_SID_Q\",\"cwd\":\"$V_CWD\",\"last_assistant_message\":\"Should I delete the old migrations?\"}"
+sleep 1
+mark_viewed "$V_SID_Q"
+# The dismiss is deferred by minCardOnScreenSeconds (12s) and re-checked, so
+# waiting past that is what actually exercises the rule.
+sleep 14
+STATE=$(get_state)
+assert "24a. Viewing a conversation that ended on a question keeps its card (the reply box must survive)" '
+mine=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$V_SID_Q"'"]
+if not mine:
+    print("FAIL: the question card was dismissed — the user has nowhere left to answer")
+elif mine[0].get("kind") != "question":
+    print("FAIL: card kind is %r, expected question" % mine[0].get("kind"))
+else:
+    print("PASS")
+' "$STATE"
+
+# 24b — control: an ordinary completed card still goes away when viewed, so the
+# fix above narrowed the rule rather than disabling it.
+V_SID_DONE="v2bbbb0000000000000000000000000002"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$V_SID_DONE\",\"cwd\":\"$V_CWD\",\"last_assistant_message\":\"Done. Removed the unused imports.\"}"
+sleep 1
+mark_viewed "$V_SID_DONE"
+sleep 14
+STATE=$(get_state)
+assert "24b. A plain completed card is still retired when viewed (the rule was narrowed, not switched off)" '
+mine=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$V_SID_DONE"'"]
+if mine:
+    print("FAIL: still on screen (kind=%r) — dismiss-on-view stopped working" % mine[0].get("kind"))
+else:
+    print("PASS")
+' "$STATE"
+
+# 24c — a card with an undelivered message must survive too: dropping it would
+# take away the only place showing that something is still pending.
+V_SID_QUEUE="v3cccc0000000000000000000000000003"
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$V_SID_QUEUE\",\"cwd\":\"$V_CWD\"}"
+sleep 0.4
+send_reply "$V_SID_QUEUE" "khoan, dung xoa gi ca"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$V_SID_QUEUE\",\"cwd\":\"$V_CWD\",\"last_assistant_message\":\"All finished.\"}"
+sleep 1
+mark_viewed "$V_SID_QUEUE"
+sleep 14
+STATE=$(get_state)
+assert "24c. A card whose message is still queued survives being viewed" '
+queued="'"$V_SID_QUEUE"'" in s.get("queuedReplySessions",[])
+mine=[c for c in s["completedNotices"] if c.get("sessionId") == "'"$V_SID_QUEUE"'"]
+if not queued:
+    print("SKIP: the message was delivered before the check, nothing left pending")
+elif not mine:
+    print("FAIL: card dismissed while a message was still waiting to be delivered")
+else:
+    print("PASS")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$V_SID_Q\",\"cwd\":\"$V_CWD\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$V_SID_DONE\",\"cwd\":\"$V_CWD\"}"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$V_SID_QUEUE\",\"cwd\":\"$V_CWD\"}"
+
+# ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
 # ~1.1MB (the app resets it once it passes ~1MB).
 # ============================================================================

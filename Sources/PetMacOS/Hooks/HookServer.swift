@@ -116,6 +116,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugResolveAsk(request, on: connection)
         case "/debug/sendReply":
             handleDebugSendReply(request, on: connection)
+        case "/debug/markViewed":
+            handleDebugMarkViewed(request, on: connection)
         case let path where path.hasPrefix("/debug/axdump"):
             handleDebugAXDump(request, on: connection)
         default:
@@ -307,6 +309,21 @@ final class HookServer: AskResolver, @unchecked Sendable {
         let petState = self.petState
         Task { @MainActor in
             petState.sendReply(text, forSession: sessionId)
+            self.respond(connection)
+        }
+    }
+
+    /// Test-only route that stands in for `SessionFocusMonitor` noticing the
+    /// user opened a conversation in the desktop app. The dismiss rule it
+    /// drives is the one that used to yank the reply box away, so it needs a
+    /// regression test and there is no other way to trigger it from outside.
+    /// Body: `{"sessionId":"…"}`.
+    private func handleDebugMarkViewed(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let sessionId = object?["sessionId"] as? String ?? ""
+        let petState = self.petState
+        Task { @MainActor in
+            petState.markConversationViewed(sessionId: sessionId, at: Date())
             self.respond(connection)
         }
     }
