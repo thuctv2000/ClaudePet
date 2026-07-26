@@ -350,8 +350,132 @@ enum DesktopAX {
         }
         AXUIElementSetAttributeValue(prompt, kAXSelectedTextAttribute as CFString, "" as CFTypeRef)
         AXUIElementSetAttributeValue(prompt, kAXValueAttribute as CFString, previous as CFTypeRef)
+
+        // Last resort: type it the way a person would. The AX write is
+        // invisible to this app's editor, but real key events are not — they
+        // go through the same path as the keyboard, so the editor's own state
+        // updates and its send button comes alive.
+        //
+        // The catch is that Chromium only accepts key events while it is the
+        // active app (postToPid alone is dropped), so the app has to be brought
+        // forward for the moment it takes to type. The previously-active app is
+        // put back straight after, so the interruption is a blink rather than a
+        // change of context.
+        if typeWithRealKeys(text, into: prompt, app: app) {
+            return .success(())
+        }
         return .failure(.notSubmitted)
     }
+
+
+    /// Types `text` into `prompt` with real key events and presses Return.
+    /// Returns false if the app could not be brought forward.
+    private static func typeWithRealKeys(
+        _ text: String, into prompt: AXUIElement, app: NSRunningApplication
+    ) -> Bool {
+        let previouslyActive = NSWorkspace.shared.frontmostApplication
+        guard app.activate(options: []) else { return false }
+        Thread.sleep(forTimeInterval: 0.5)
+        // Put the caret in the message box rather than wherever the app last
+        // had focus — activating a window does not choose a field.
+        AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        let source = CGEventSource(stateID: .hidSystemState)
+        // Sent as unicode payloads rather than key codes: the message can hold
+        // any script (Vietnamese, emoji) and there is no layout that maps those
+        // to virtual keys. Chunked because a single event carries a limited
+        // string, and paced so a busy renderer does not drop characters.
+        for chunk in text.chunks(ofUTF16Length: 16) {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            else { continue }
+            var utf16 = Array(chunk.utf16)
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+            event.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        Thread.sleep(forTimeInterval: 0.35)
+        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)?
+            .post(tap: .cghidEventTap)
+        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)?
+            .post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.3)
+
+        previouslyActive?.activate(options: [])
+        return true
+    }
+
+
+    // MARK: - VS Code: the extension's own URI handler
+
+    /// Delivers into a VS Code session through the extension's registered URI
+    /// handler, then presses its send button.
+    ///
+    /// Writing the prompt with accessibility does not work here: the text
+    /// appears in the box but the editor never registers it, and its send
+    /// button stays disabled. Both states were observed side by side in the
+    /// same window — an AX-written box with a dead button, and a URI-written
+    /// box with a live one.
+    ///
+    /// The extension registers `vscode://<id>/open?session=…&prompt=…`
+    /// (`registerUriHandler` in its bundle, routing to
+    /// `claude-vscode.primaryEditor.open`). That is the app's own input path,
+    /// so the text lands properly — it just isn't submitted, which is what the
+    /// button press is for. It also takes the **session id**, so this is the
+    /// only surface addressed by an exact identifier rather than a title.
+    static func sendViaVSCodeURI(_ text: String, sessionId: String) -> Result<Void, SendError> {
+        guard isTrusted else { return .failure(.notTrusted) }
+        guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
+
+        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        var windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        var areas: [AXUIElement] = []
+        for window in windows { collectWebAreas(window, into: &areas, depth: 0) }
+        for area in areas {
+            AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        }
+        Thread.sleep(forTimeInterval: 1.0)
+        // The send button is disabled while the box is empty, so whichever one
+        // switches on after the prompt arrives is the one belonging to it.
+        let before = enabledButtonIDs(in: windows)
+
+        var components = URLComponents()
+        components.scheme = "vscode"
+        components.host = "anthropic.claude-code"
+        components.path = "/open"
+        components.queryItems = [
+            URLQueryItem(name: "session", value: sessionId),
+            URLQueryItem(name: "prompt", value: text),
+        ]
+        guard let url = components.url else { return .failure(.verificationFailed) }
+        NSWorkspace.shared.open(url)
+        Thread.sleep(forTimeInterval: 3.0)
+
+        // Re-read: opening the URI can create a new panel/window.
+        windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        areas = []
+        for window in windows { collectWebAreas(window, into: &areas, depth: 0) }
+        for area in areas {
+            AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        }
+        Thread.sleep(forTimeInterval: 1.5)
+
+        var prompts: [AXUIElement] = []
+        for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
+        guard prompts.contains(where: { string($0, kAXValueAttribute as String) == text }) else {
+            return .failure(.promptNotFocused("prompt did not receive the text"))
+        }
+        guard let send = newlyEnabledButton(in: windows, comparedTo: before) else {
+            // Text is in the box and properly registered — the user can send it
+            // by hand — but the pet could not find the control to do it.
+            return .failure(.notSubmitted)
+        }
+        AXUIElementPerformAction(send, kAXPressAction as CFString)
+        return .success(())
+    }
+
+    static let vscodeBundleID = "com.microsoft.VSCode"
 
     /// Identity of every enabled button in scope. AXUIElement isn't Hashable,
     /// so buttons are keyed by position+size+label, which is stable across the
@@ -483,5 +607,23 @@ enum DesktopAX {
     private static func clip(_ text: String, _ limit: Int = 90) -> String {
         let flat = text.replacingOccurrences(of: "\n", with: "⏎")
         return flat.count <= limit ? flat : String(flat.prefix(limit)) + "…"
+    }
+}
+
+private extension String {
+    /// Splits into pieces of at most `length` UTF-16 units, without cutting a
+    /// character in half (an emoji is several units and must stay whole).
+    func chunks(ofUTF16Length length: Int) -> [String] {
+        var result: [String] = []
+        var current = ""
+        for character in self {
+            if current.utf16.count + character.utf16.count > length, !current.isEmpty {
+                result.append(current)
+                current = ""
+            }
+            current.append(character)
+        }
+        if !current.isEmpty { result.append(current) }
+        return result
     }
 }

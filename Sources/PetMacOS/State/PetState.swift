@@ -1301,7 +1301,6 @@ final class PetState {
     /// `conversationNotFound` and costs nothing.
     private static let promptHosts: [(name: String, bundle: String)] = [
         ("Claude Desktop", DesktopAX.bundleID),
-        ("VS Code", "com.microsoft.VSCode"),
     ]
 
     private func deliverViaDesktop(forSession sessionId: String) {
@@ -1322,6 +1321,15 @@ final class PetState {
         Task { [weak self] in
             let outcome = await Task.detached { () -> (String, Bool) in
                 var notes: [String] = []
+                // VS Code first, and by session id rather than by name: its
+                // extension registers a URI handler that takes both, which is
+                // the only exact address any of these surfaces offers.
+                switch DesktopAX.sendViaVSCodeURI(text, sessionId: sessionId) {
+                case .success:
+                    return ("delivered to \(title) via VS Code (uri)", true)
+                case .failure(let error):
+                    notes.append("VS Code: \(error)")
+                }
                 for host in hosts {
                     switch DesktopAX.send(text, toConversationTitled: title, bundle: host.bundle) {
                     case .success:
