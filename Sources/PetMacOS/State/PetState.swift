@@ -1230,14 +1230,35 @@ final class PetState {
         } else {
             replyQueue[sessionId, default: []].append(trimmed)
             setReplyStatus(.queued, forSession: sessionId)
-            // A session mid-turn has a hook coming and the queue is enough. One
-            // that already finished its turn has none — nothing in Claude Code
-            // fires again until the user types — so for those the Desktop app
-            // is asked directly. It stays queued if that doesn't work out.
-            let mood = sessions[sessionId]?.mood ?? .idle
-            if mood != .working && mood != .thinking {
-                deliverToIdleSession(sessionId)
-            }
+            scheduleIdleDelivery(forSession: sessionId)
+        }
+    }
+
+    /// Gives the hook path first refusal on a queued message, then delivers it
+    /// by hand if nothing came to collect it.
+    ///
+    /// The hook path is the better one wherever it is available — no window is
+    /// touched and no focus is stolen — but it only exists while a session is
+    /// still running. A session that has finished its turn fires nothing at all
+    /// until the user types, so its messages would sit in the queue forever.
+    ///
+    /// Deciding between the two by mood was wrong, and this is the bug it
+    /// caused: mood is a snapshot of the **last event seen**, so a session that
+    /// has been sitting idle for an hour still reads `working` from the turn
+    /// before, and its message was queued and never delivered. Mood is only a
+    /// hint about how long to wait now — a session that looks busy is given
+    /// longer for a hook to turn up, and either way the message goes out.
+    private func scheduleIdleDelivery(forSession sessionId: String) {
+        let mood = sessions[sessionId]?.mood ?? .idle
+        let grace: Double = (mood == .working || mood == .thinking) ? 12 : 1.5
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))
+            guard let self else { return }
+            // Anything a hook already collected is gone from the queue, so
+            // there is nothing here to deliver twice.
+            guard self.replyQueue[sessionId]?.isEmpty == false else { return }
+            guard self.heldStops[sessionId] == nil else { return }
+            self.deliverToIdleSession(sessionId)
         }
     }
 
@@ -1260,7 +1281,7 @@ final class PetState {
         switch origin.surface {
         case .cli:
             guard let tty = resolvedTty(forSession: sessionId) else {
-                lastDesktopAttempt = "terminal session, but no scriptable terminal owns it"
+                noteAttempt("terminal session, but no scriptable terminal owns it", for: sessionId)
                 setReplyStatus(.stuck, forSession: sessionId)
                 return
             }
@@ -1297,21 +1318,21 @@ final class PetState {
     private func deliverViaTerminal(
         forSession sessionId: String, tty: String, thenTryHosts: Bool
     ) {
-        guard let text = replyQueue[sessionId]?.first else {
-            lastDesktopAttempt = "skipped: nothing queued"
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
             return
         }
-        lastDesktopAttempt = "trying terminal \(tty)"
+        noteAttempt("trying terminal \(tty)", for: sessionId)
         Task { [weak self] in
             let result = await Task.detached { TerminalBridge.send(text, toTty: tty) }.value
             guard let self else { return }
             switch result {
             case .success:
-                _ = self.dequeueReply(forSession: sessionId)
                 self.setReplyStatus(.sent, forSession: sessionId)
-                self.lastDesktopAttempt = "delivered to terminal \(tty)"
+                self.noteAttempt("delivered to terminal \(tty)", for: sessionId)
             case .failure(let error):
-                self.lastDesktopAttempt = "terminal \(tty) failed: \(error)"
+                self.requeueReply(text, forSession: sessionId)
+                self.noteAttempt("terminal \(tty) failed: \(error)", for: sessionId)
                 // A tty the pet cannot script (VS Code's integrated terminal,
                 // Ghostty, kitty…) has no idle route at all. Only a session of
                 // unknown origin is worth offering to the hosts after this; a
@@ -1335,18 +1356,19 @@ final class PetState {
 
     private func deliverViaDesktop(forSession sessionId: String) {
         guard DesktopAX.isTrusted else {
-            lastDesktopAttempt = "skipped: Accessibility not granted"
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
             return
         }
         guard let title = sessionMeta[sessionId]?.name else {
-            lastDesktopAttempt = "skipped: no resolved conversation name for this session"
+            noteAttempt("skipped: no resolved conversation name for this session",
+                        for: sessionId)
             return
         }
-        guard let text = replyQueue[sessionId]?.first else {
-            lastDesktopAttempt = "skipped: nothing queued"
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
             return
         }
-        lastDesktopAttempt = "trying: \(title)"
+        noteAttempt("trying: \(title)", for: sessionId)
         let hosts = Self.promptHosts
         Task { [weak self] in
             let outcome = await Task.detached { () -> (String, Bool) in
@@ -1363,14 +1385,14 @@ final class PetState {
             }.value
             guard let self else { return }
             if outcome.1 {
-                _ = self.dequeueReply(forSession: sessionId)
                 self.setReplyStatus(.sent, forSession: sessionId)
             } else {
+                self.requeueReply(text, forSession: sessionId)
                 self.setReplyStatus(.stuck, forSession: sessionId)
             }
-            // On failure the message stays queued on purpose: the next hook
-            // still gets to deliver it.
-            self.lastDesktopAttempt = outcome.0
+            // On failure the message goes back in the queue on purpose: the
+            // next hook still gets to deliver it.
+            self.noteAttempt(outcome.0, for: sessionId)
         }
     }
 
@@ -1379,15 +1401,15 @@ final class PetState {
     /// have to match a conversation title and refuse when it is ambiguous.
     private func deliverViaVSCode(forSession sessionId: String, workspace: String?) {
         guard DesktopAX.isTrusted else {
-            lastDesktopAttempt = "skipped: Accessibility not granted"
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
             return
         }
-        guard let text = replyQueue[sessionId]?.first else {
-            lastDesktopAttempt = "skipped: nothing queued"
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
             return
         }
         let label = sessionMeta[sessionId]?.name ?? String(sessionId.prefix(8))
-        lastDesktopAttempt = "trying VS Code: \(label)"
+        noteAttempt("trying VS Code: \(label)", for: sessionId)
         Task { [weak self] in
             let result = await Task.detached {
                 DesktopAX.sendToVSCode(text, sessionId: sessionId, workspace: workspace)
@@ -1395,22 +1417,35 @@ final class PetState {
             guard let self else { return }
             switch result {
             case .success:
-                _ = self.dequeueReply(forSession: sessionId)
                 self.setReplyStatus(.sent, forSession: sessionId)
-                self.lastDesktopAttempt = "delivered to \(label) via VS Code"
+                self.noteAttempt("delivered to \(label) via VS Code", for: sessionId)
             case .failure(let error):
-                // Stays queued: the next hook this session fires can still
-                // carry it.
+                // Back in the queue: the next hook this session fires can
+                // still carry it.
+                self.requeueReply(text, forSession: sessionId)
                 self.setReplyStatus(.stuck, forSession: sessionId)
-                self.lastDesktopAttempt = "VS Code \(label) failed: \(error)"
+                self.noteAttempt("VS Code \(label) failed: \(error)", for: sessionId)
             }
         }
     }
 
-    /// What happened on the most recent Desktop delivery attempt, surfaced in
+    /// What happened on the most recent delivery attempt, surfaced in
     /// `/debug/state`. Every abort path above writes here — silent skips made
     /// the first round of testing unreadable.
     private(set) var lastDesktopAttempt: String?
+
+    /// The same note, but kept per session.
+    ///
+    /// One shared field was not enough to debug with: several sessions can be
+    /// queued at once, so the note explaining why a message did not go out gets
+    /// overwritten by the next session's attempt before anyone reads it. That
+    /// happened on the first real failure report and left nothing to go on.
+    private(set) var replyAttempts: [String: String] = [:]
+
+    private func noteAttempt(_ note: String, for sessionId: String) {
+        lastDesktopAttempt = note
+        replyAttempts[sessionId] = note
+    }
 
     /// Pops the next queued message for a session (used by the `PostToolUse`
     /// route). Returns nil — never blocks — when the queue is empty.
@@ -1418,6 +1453,16 @@ final class PetState {
         guard let sid = sessionId, let text = dequeueReply(forSession: sid) else { return nil }
         setReplyStatus(.sent, forSession: sid)
         return text
+    }
+
+    /// Puts a message back at the head of the queue after a failed delivery.
+    ///
+    /// Delivery takes the message OUT of the queue before it starts, because
+    /// typing it into a window takes seconds and a hook arriving in the middle
+    /// would otherwise collect the same message and send it twice. Whatever
+    /// fails then has to hand it back.
+    private func requeueReply(_ text: String, forSession sessionId: String) {
+        replyQueue[sessionId, default: []].insert(text, at: 0)
     }
 
     private func dequeueReply(forSession sessionId: String) -> String? {
@@ -1972,6 +2017,8 @@ final class PetState {
         /// abort path writes here; silent skips made the first round of
         /// testing unreadable.
         let lastDesktopAttempt: String?
+        /// Per-session delivery notes, `"<sessionId>: <note>"` sorted by id.
+        let replyAttempts: [String]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -2008,7 +2055,9 @@ final class PetState {
             queuedReplySessions: replyQueue.keys.sorted(),
             sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } },
             desktopTrusted: DesktopAX.isTrusted,
-            lastDesktopAttempt: lastDesktopAttempt
+            lastDesktopAttempt: lastDesktopAttempt,
+            replyAttempts: replyAttempts.sorted { $0.key < $1.key }
+                .map { "\($0.key): \($0.value)" }
         )
     }
 

@@ -227,6 +227,10 @@ enum DesktopAX {
         /// Text is in the prompt but nothing submitted it — the message is
         /// sitting there for the user to send by hand.
         case notSubmitted
+        /// The host app would not come to the front, so key events could not be
+        /// aimed at it. Nothing was typed: they would have gone to whatever app
+        /// *was* in front.
+        case appNotFrontmost
     }
 
     /// Types `text` into the prompt of the conversation named `title` in one
@@ -361,21 +365,27 @@ enum DesktopAX {
         // forward for the moment it takes to type. The previously-active app is
         // put back straight after, so the interruption is a blink rather than a
         // change of context.
-        if typeWithRealKeys(text, into: prompt, app: app) {
-            return .success(())
+        if let failure = typeWithRealKeys(text, into: prompt, app: app) {
+            return .failure(failure)
         }
-        return .failure(.notSubmitted)
+        return .success(())
     }
 
 
     /// Types `text` into `prompt` with real key events and presses Return.
-    /// Returns false if the app could not be brought forward.
+    /// Returns nil on success, or why it gave up without typing anything.
     private static func typeWithRealKeys(
         _ text: String, into prompt: AXUIElement, app: NSRunningApplication
-    ) -> Bool {
+    ) -> SendError? {
         let previouslyActive = NSWorkspace.shared.frontmostApplication
-        guard app.activate(options: []) else { return false }
-        Thread.sleep(forTimeInterval: 0.5)
+        app.activate(options: [])
+        // Waited on, not assumed. These events are posted to the HID tap, which
+        // means they land in whichever app is frontmost — so an activation that
+        // was refused or is merely slow would type the message into the user's
+        // editor instead. `activate` returning true only says the request was
+        // accepted, which is why the answer is read back from the workspace.
+        guard waitUntilFrontmost(app, upTo: 2.5) else { return .appNotFrontmost }
+        Thread.sleep(forTimeInterval: 0.3)
         // Put the caret in the message box rather than wherever the app last
         // had focus — activating a window does not choose a field.
         AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
@@ -402,7 +412,19 @@ enum DesktopAX {
         Thread.sleep(forTimeInterval: 0.3)
 
         previouslyActive?.activate(options: [])
-        return true
+        return nil
+    }
+
+    private static func waitUntilFrontmost(
+        _ app: NSRunningApplication, upTo seconds: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier
+                == app.processIdentifier { return true }
+            Thread.sleep(forTimeInterval: 0.15)
+        } while Date() < deadline
+        return false
     }
 
 
@@ -465,8 +487,8 @@ enum DesktopAX {
         guard let prompt = waitForFocusedPrompt(in: ax, upTo: 6.0) else {
             return .failure(.promptNotFocused(focusDescription(ax)))
         }
-        guard typeWithRealKeys(text, into: prompt, app: app) else {
-            return .failure(.notSubmitted)
+        if let failure = typeWithRealKeys(text, into: prompt, app: app) {
+            return .failure(failure)
         }
         // Submitting empties the box. Anything still in it means the Return
         // didn't take, and the user is looking at unsent text.
