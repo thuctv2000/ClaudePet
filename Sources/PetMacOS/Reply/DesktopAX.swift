@@ -537,10 +537,16 @@ enum DesktopAX {
         // the window still climbed a place in the on-screen order on every
         // send, and `panel.reveal()` is what is left doing it.
         let alreadyOpen = conversation.map { activeTab(in: ax, titled: $0) } ?? false
-        if case .success(let note) = quietSend(
-            text, url: alreadyOpen ? nil : url, ax: ax, pid: app.processIdentifier
-        ) {
+        let quietNote: String
+        switch quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
+                         pid: app.processIdentifier) {
+        case .success(let note):
             return .success(alreadyOpen ? note : "revealed, " + note)
+        case .failure(let error):
+            // Carried into the final note. Without it a quiet attempt that gave
+            // up was invisible: the log said the message arrived the loud way
+            // and never said why the quiet way was refused.
+            quietNote = "quiet gave up (\(error)), so "
         }
 
         // Escalation. Chromium can drop key events aimed at a background
@@ -568,7 +574,7 @@ enum DesktopAX {
         // didn't take, and the user is looking at unsent text.
         let leftover = string(prompt, kAXValueAttribute as String) ?? ""
         guard !leftover.contains(text) else { return .failure(.notSubmitted) }
-        return .success("front, " + channel)
+        return .success(quietNote + "front, " + channel)
     }
 
     /// Delivers without activating VS Code, or reports why it couldn't.
@@ -733,10 +739,18 @@ enum DesktopAX {
         for area in areas {
             AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         }
-        Thread.sleep(forTimeInterval: 0.8)
-        var prompts: [AXUIElement] = []
-        for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
-        return prompts
+        // Two waits, because the first poke of a cold tree is the slow one:
+        // Chromium builds nothing for accessibility until asked, and a tree
+        // that has never been asked takes noticeably longer than one already
+        // built. Finding no message box here does not mean there is none — it
+        // sends the whole delivery down the loud path.
+        for wait in [0.8, 1.8] {
+            Thread.sleep(forTimeInterval: wait)
+            var prompts: [AXUIElement] = []
+            for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
+            if !prompts.isEmpty { return prompts }
+        }
+        return []
     }
 
     /// What did hold focus, for the failure message. The message-box count goes

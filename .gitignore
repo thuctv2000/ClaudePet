@@ -5,8 +5,11 @@
 xcuserdata/
 *.xcuserstate
 
-# Release build artifacts (archive, .app, .dmg)
-build/release/
+# Release build artifacts (archive, .app, .dmg). The whole directory, not just
+# release/: it also holds a .metadata_never_index marker that keeps Spotlight
+# from indexing the built .app — without it every build shows up alongside the
+# installed one in Spotlight and Launchpad.
+build/
 
 # Tài liệu nội bộ — chỉ giữ local
 CLAUDE.md

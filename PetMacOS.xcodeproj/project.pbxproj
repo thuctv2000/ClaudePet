@@ -445,7 +445,7 @@
 				);
 				MARKETING_VERSION = 1.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
-				PRODUCT_NAME = PetMacOS;
+				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 			};
@@ -466,7 +466,7 @@
 				);
 				MARKETING_VERSION = 1.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
-				PRODUCT_NAME = PetMacOS;
+				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 			};

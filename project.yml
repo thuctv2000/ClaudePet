@@ -40,12 +40,17 @@ targets:
         # Shown in the macOS Automation permission prompt when the pet first
         # types a reply into a Terminal.app / iTerm2 session.
         NSAppleEventsUsageDescription: >-
-          PetMacOS uses Automation to type your reply into the Terminal window
+          ClaudePet uses Automation to type your reply into the Terminal window
           running that Claude Code session.
     settings:
       base:
+        # Deliberately still says PetMacOS. The bundle id is what the system
+        # keys the Accessibility (TCC) grant and the Sparkle update feed to —
+        # renaming it would silently revoke the pet's permission to type into
+        # other apps and orphan every copy already installed. Only the product
+        # NAME is user-visible.
         PRODUCT_BUNDLE_IDENTIFIER: com.desktoppet.PetMacOS
-        PRODUCT_NAME: PetMacOS
+        PRODUCT_NAME: ClaudePet
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # No DEVELOPMENT_TEAM here on purpose: forks/contributors build with
         # ad-hoc local signing out of the box. Release signing is injected by
