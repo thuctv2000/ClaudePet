@@ -258,6 +258,8 @@ enum DesktopAX {
 
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        let restored = unminimiseIfNeeded(ax)
+        defer { reminimise(restored, app: app) }
         let allWindows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
 
         // Scope: for VS Code the session IS a window; for Claude Desktop every
@@ -522,10 +524,16 @@ enum DesktopAX {
         // the typing starts, and the app to go back to is the one the user was
         // actually in (usually the pet, whose reply box gets focus back).
         let previouslyActive = NSWorkspace.shared.frontmostApplication
-        defer { previouslyActive?.activate(options: []) }
-
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        // Noted and undone whatever route the message ends up taking: the loud
+        // path activates the app, which un-minimises the window as a side
+        // effect, so without this one reply left it open for good.
+        let restored = unminimiseIfNeeded(ax)
+        defer {
+            previouslyActive?.activate(options: [])
+            reminimise(restored, app: app)
+        }
 
         var components = URLComponents()
         components.scheme = "vscode"
@@ -758,6 +766,37 @@ enum DesktopAX {
     private static func yieldKeyboard() {
         DispatchQueue.main.async { NSApp.deactivate() }
         Thread.sleep(forTimeInterval: 0.35)
+    }
+
+    /// A window macOS has stopped rendering cannot be typed into: its message
+    /// box refuses keyboard focus, and focus is what every path here needs. So
+    /// a minimized window is brought back — but only the WINDOW. The app stays
+    /// where it was in the running order, so the window the user is actually
+    /// working in keeps the front and the keyboard.
+    ///
+    /// Returns the window that was restored, for `reminimise` to put back.
+    private static func unminimiseIfNeeded(_ ax: AXUIElement) -> AXUIElement? {
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        guard let minimized = windows.first(where: { window in
+            (attribute(window, kAXMinimizedAttribute as String) as? NSNumber)?.boolValue ?? false
+        }) else { return nil }
+        AXUIElementSetAttributeValue(
+            minimized, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        Thread.sleep(forTimeInterval: 0.9)
+        return minimized
+    }
+
+    /// Puts a window the pet un-minimised back the way it found it.
+    ///
+    /// Skipped when the app is frontmost by the time this runs, which means the
+    /// user has clicked into the window while it was up: re-minimising a window
+    /// somebody just started using is worse than leaving it open.
+    private static func reminimise(_ window: AXUIElement?, app: NSRunningApplication) {
+        guard let window else { return }
+        Thread.sleep(forTimeInterval: 0.4)
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier
+            != app.processIdentifier else { return }
+        AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
     }
 
     /// Blocks until the app reports SOMETHING focused, or the time runs out.
