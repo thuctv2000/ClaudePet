@@ -1227,7 +1227,12 @@ final class PetState {
         if let id = heldStops.removeValue(forKey: sessionId) {
             resolver?.resolveReply(id: id, text: trimmed)
             setReplyStatus(.sent, forSession: sessionId)
+            appendLog("reply session=\(Self.shortId(sessionId))"
+                + " typed, went straight into a held hook (\(trimmed.count) chars)")
         } else {
+            appendLog("reply session=\(Self.shortId(sessionId))"
+                + " typed, queued (\(trimmed.count) chars,"
+                + " mood \(sessions[sessionId]?.mood ?? .idle))")
             replyQueue[sessionId, default: []].append(trimmed)
             setReplyStatus(.queued, forSession: sessionId)
             scheduleIdleDelivery(forSession: sessionId)
@@ -1248,17 +1253,27 @@ final class PetState {
     /// before, and its message was queued and never delivered. Mood is only a
     /// hint about how long to wait now — a session that looks busy is given
     /// longer for a hook to turn up, and either way the message goes out.
-    private func scheduleIdleDelivery(forSession sessionId: String) {
+    private func scheduleIdleDelivery(forSession sessionId: String, attempt: Int = 1) {
         let mood = sessions[sessionId]?.mood ?? .idle
-        let grace: Double = (mood == .working || mood == .thinking) ? 12 : 1.5
+        let grace: Double = attempt > 1 ? 6 : ((mood == .working || mood == .thinking) ? 12 : 1.5)
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))
             guard let self else { return }
             // Anything a hook already collected is gone from the queue, so
-            // there is nothing here to deliver twice.
+            // there is nothing here to deliver twice. The same check is what
+            // makes the retry below safe: a delivery in flight has taken its
+            // message out of the queue, so this finds nothing and stands down.
             guard self.replyQueue[sessionId]?.isEmpty == false else { return }
             guard self.heldStops[sessionId] == nil else { return }
             self.deliverToIdleSession(sessionId)
+            // One retry. Driving another app's window is timing-dependent — the
+            // panel may still be building, or the user may have clicked
+            // somewhere mid-flight — and for an idle session a single failure
+            // is permanent: no hook will ever come to carry the message
+            // instead.
+            if attempt < 2 {
+                self.scheduleIdleDelivery(forSession: sessionId, attempt: attempt + 1)
+            }
         }
     }
 
@@ -1445,6 +1460,16 @@ final class PetState {
     private func noteAttempt(_ note: String, for sessionId: String) {
         lastDesktopAttempt = note
         replyAttempts[sessionId] = note
+        // Also to events.log, because the map above only keeps the LATEST note
+        // per session and has no clock. A failure followed by a success reads
+        // exactly like a session that never failed — which is precisely the
+        // question "it works sometimes" needs answered. The log has timestamps
+        // and keeps the whole run.
+        appendLog("reply session=\(Self.shortId(sessionId)) \(note)")
+    }
+
+    private static func shortId(_ sessionId: String) -> String {
+        String(sessionId.prefix(8))
     }
 
     /// Pops the next queued message for a session (used by the `PostToolUse`
@@ -1452,6 +1477,7 @@ final class PetState {
     func takeQueuedReply(forSession sessionId: String?) -> String? {
         guard let sid = sessionId, let text = dequeueReply(forSession: sid) else { return nil }
         setReplyStatus(.sent, forSession: sid)
+        appendLog("reply session=\(Self.shortId(sid)) collected by a hook (\(text.count) chars)")
         return text
     }
 

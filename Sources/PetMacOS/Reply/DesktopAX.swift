@@ -558,10 +558,15 @@ enum DesktopAX {
                     return focused
                 }
             }
+            // Tried on every pass, not once the deadline has expired. Revealing
+            // a panel that is ALREADY the active tab changes no session, and the
+            // webview only focuses its box when the session changes — so in that
+            // case focus never moves and waiting the full window just to find
+            // the same single box is dead time.
+            let prompts = allPrompts(in: ax)
+            if prompts.count == 1 { return prompts[0] }
         } while Date() < deadline
-
-        let prompts = allPrompts(in: ax)
-        return prompts.count == 1 ? prompts[0] : nil
+        return nil
     }
 
     /// Every message box in the app. The web areas are poked first: an Electron
