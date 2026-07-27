@@ -14,7 +14,7 @@
             <sparkle:version>1.6.0</sparkle:version>
             <sparkle:shortVersionString>1.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.6.0/PetMacOS-1.6.0.dmg" length="6784084" type="application/octet-stream" sparkle:edSignature="1qhddUNAkp81uqnc0UxhE9z9cEWD9+7Xa3lwnsfjXGtFAEWe22Y/ACW2irs3aRMSrpL3BtHCPvNsP3KCZ2dPAg=="/>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.6.0/PetMacOS-1.6.0.dmg" length="6785946" type="application/octet-stream" sparkle:edSignature="N6tEudkgoLFk5g9UUW0bZu6ykunqRiqVilImiDppDuAuF3NrfGoy4hOznVZGXB9t4NqkHBx7yXR4y0IgG9kVDw=="/>
         </item>
         <item>
             <title>1.5.2</title>

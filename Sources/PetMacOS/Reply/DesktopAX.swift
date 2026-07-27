@@ -470,9 +470,25 @@ enum DesktopAX {
         guard isTrusted else { return .failure(.notTrusted) }
         guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
 
+        // Captured here rather than inside `typeWithRealKeys`, which by then
+        // would only see VS Code — this function brings it forward well before
+        // the typing starts, and the app to go back to is the one the user was
+        // actually in (usually the pet, whose reply box gets focus back).
+        let previouslyActive = NSWorkspace.shared.frontmostApplication
+        defer { previouslyActive?.activate(options: []) }
+
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         if let workspace { raiseWindow(in: ax, forWorkspace: workspace) }
+
+        // Brought forward BEFORE the URI, not as a side effect of it.
+        // `AXFocusedUIElement` on an application answers nil while that app is
+        // in the background, and the pet is the frontmost app at the moment the
+        // user presses Return in the reply box — which is why this failed with
+        // "nothing focused" from the pet and worked when run from a shell with
+        // VS Code already in front.
+        app.activate(options: [])
+        guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
 
         var components = URLComponents()
         components.scheme = "vscode"
@@ -480,11 +496,13 @@ enum DesktopAX {
         components.path = "/open"
         components.queryItems = [URLQueryItem(name: "session", value: sessionId)]
         guard let url = components.url else { return .failure(.verificationFailed) }
-        NSWorkspace.shared.open(url)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.open(url, configuration: configuration)
 
         // Revealing a panel is quick; building one for a session being resumed
         // is not, and the webview only focuses its box once that is done.
-        guard let prompt = waitForFocusedPrompt(in: ax, upTo: 6.0) else {
+        guard let prompt = focusedPrompt(in: ax, upTo: 6.0) else {
             return .failure(.promptNotFocused(focusDescription(ax)))
         }
         if let failure = typeWithRealKeys(text, into: prompt, app: app) {
@@ -515,39 +533,66 @@ enum DesktopAX {
         }
     }
 
-    /// Polls `AXFocusedUIElement` until it is one of the known message boxes.
+    /// The message box that is ready to receive typing.
     ///
-    /// Focus is the check, not a convenience: it is the app itself saying which
-    /// session's box is ready to receive typing. Refusing when focus is
-    /// anywhere else is what keeps the reply out of a source file or a fresh,
-    /// unrelated conversation.
-    private static func waitForFocusedPrompt(
+    /// Focus is asked first because it is the app itself saying which session's
+    /// box is live, and refusing when focus is elsewhere is what keeps a reply
+    /// out of a source file or an unrelated conversation.
+    ///
+    /// When focus cannot be read at all, the tree is walked instead — but only
+    /// one answer is accepted: exactly one message box in the whole app. The
+    /// URI has already revealed the right session's panel, so a single box is
+    /// unambiguous, while two mean two Claude panels are open and there is no
+    /// way to tell them apart from out here. Guessing between them is the one
+    /// mistake worth failing to avoid.
+    private static func focusedPrompt(
         in ax: AXUIElement, upTo seconds: TimeInterval
     ) -> AXUIElement? {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             Thread.sleep(forTimeInterval: 0.4)
-            guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String) else {
-                continue
-            }
-            let focused = unsafeBitCast(reference, to: AXUIElement.self)
-            if let description = string(focused, kAXDescriptionAttribute as String),
-               promptDescriptions.contains(description) {
-                return focused
+            if let reference = attribute(ax, kAXFocusedUIElementAttribute as String) {
+                let focused = unsafeBitCast(reference, to: AXUIElement.self)
+                if let description = string(focused, kAXDescriptionAttribute as String),
+                   promptDescriptions.contains(description) {
+                    return focused
+                }
             }
         } while Date() < deadline
-        return nil
+
+        let prompts = allPrompts(in: ax)
+        return prompts.count == 1 ? prompts[0] : nil
     }
 
-    /// What did hold focus, for the failure message.
+    /// Every message box in the app. The web areas are poked first: an Electron
+    /// tree is not built for accessibility until something asks for it, and
+    /// without that the walk finds nothing at all.
+    private static func allPrompts(in ax: AXUIElement) -> [AXUIElement] {
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        var areas: [AXUIElement] = []
+        for window in windows { collectWebAreas(window, into: &areas, depth: 0) }
+        for area in areas {
+            AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        }
+        Thread.sleep(forTimeInterval: 0.8)
+        var prompts: [AXUIElement] = []
+        for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
+        return prompts
+    }
+
+    /// What did hold focus, for the failure message. The message-box count goes
+    /// in too: "nothing focused" alone never said whether the panel simply
+    /// wasn't there or whether two of them made the choice ambiguous.
     private static func focusDescription(_ ax: AXUIElement) -> String {
+        let boxes = allPrompts(in: ax).count
+        let frontmost = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String) else {
-            return "nothing focused"
+            return "nothing focused, \(boxes) message box(es), front app \(frontmost)"
         }
         let focused = unsafeBitCast(reference, to: AXUIElement.self)
         let role = string(focused, kAXRoleAttribute as String) ?? "?"
         let description = string(focused, kAXDescriptionAttribute as String) ?? "-"
-        return "focus is \(role)/\(description)"
+        return "focus is \(role)/\(description), \(boxes) message box(es)"
     }
 
     static let vscodeBundleID = "com.microsoft.VSCode"

@@ -469,7 +469,6 @@ TIMEOUT_DESC="e2e-bg-timeout-$$"
 TIMEOUT_TRANSCRIPT="/tmp/petmacos_e2e_bg_timeout_$$.jsonl"
 printf '{"type":"user","message":"seed"}\n' > "$TIMEOUT_TRANSCRIPT"
 
-ORIG_CONFIG_BG=$(cat "$CONFIG")
 python3 - "$CONFIG" <<'PYEOF'
 import json, sys
 path = sys.argv[1]
@@ -487,7 +486,20 @@ sleep 0.6
 # (plus the ~2s poll cadence) and confirm the card retires on its own.
 sleep 6
 
-printf '%s' "$ORIG_CONFIG_BG" > "$CONFIG"
+# Deleted rather than restored from a copy taken before the override. A run
+# killed between the two lines used to leave the 3-second timeout behind, and
+# the next run would then capture *that* as the original and put it back — so
+# one interrupted run left every background card on the machine expiring after
+# three seconds, for good.
+python3 - "$CONFIG" <<'PYEOF'
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+cfg.pop("backgroundTimeoutSeconds", None)
+with open(path, "w") as f:
+    json.dump(cfg, f)
+PYEOF
 rm -f "$TIMEOUT_TRANSCRIPT"
 
 STATE=$(get_state)
