@@ -1972,6 +1972,85 @@ post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$V_SID_DONE\",\
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$V_SID_QUEUE\",\"cwd\":\"$V_CWD\"}"
 
 # ============================================================================
+# TEST 25 — Which surface hosts a session, read from its transcript.
+#
+# This is the routing decision for a reply to an idle session, and each wrong
+# answer has its own cost. Sending a terminal session's id to VS Code makes the
+# extension open a NEW conversation and put the reply in it; sending a VS Code
+# session to the Desktop app just fails. So the check is not "does it usually
+# guess right" but "does it read what Claude Code actually recorded".
+# ============================================================================
+SURF_DIR="/tmp/petmacos_e2e_surface_$$"
+mkdir -p "$SURF_DIR"
+cleanup_surface() { rm -rf "$SURF_DIR"; }
+trap 'cleanup; cleanup_surface' EXIT
+
+# Writes one transcript line the way Claude Code does: an entrypoint plus the
+# session's real cwd, on the record that carries the user's prompt.
+write_record() {
+    python3 -c '
+import json,sys
+path,entrypoint,cwd=sys.argv[1:4]
+with open(path,"a") as f:
+    f.write(json.dumps({"type":"user","userType":"external",
+                        "entrypoint":entrypoint,"cwd":cwd,
+                        "version":"2.1.220"})+"\n")
+' "$1" "$2" "$3"
+}
+
+surface_of() {
+    python3 -c 'import json,sys;print(json.dumps({"transcriptPath":sys.argv[1]}))' "$1" \
+        | curl -s -m 5 -X POST "$BASE/debug/surface" \
+            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" --data-binary @-
+}
+
+# 25a — a terminal session.
+S_CLI="$SURF_DIR/cli.jsonl"
+write_record "$S_CLI" "cli" "/Users/me/proj"
+assert "25a. A transcript written by the CLI reads as a terminal session" '
+print("PASS" if s.get("surface") == "cli" else "FAIL: got %r" % s)
+' "$(surface_of "$S_CLI")"
+
+# 25b — a VS Code session, with the cwd that picks its window.
+S_CODE="$SURF_DIR/code.jsonl"
+write_record "$S_CODE" "claude-vscode" "/Users/me/ClaudePet"
+assert "25b. A VS Code session is recognised, with the workspace to target" '
+ok = s.get("surface") == "claude-vscode" and s.get("cwd") == "/Users/me/ClaudePet"
+print("PASS" if ok else "FAIL: got %r" % s)
+' "$(surface_of "$S_CODE")"
+
+# 25c — the Desktop app.
+S_APP="$SURF_DIR/app.jsonl"
+write_record "$S_APP" "claude-desktop" "/Users/me/proj"
+assert "25c. A Desktop app session is recognised" '
+print("PASS" if s.get("surface") == "claude-desktop" else "FAIL: got %r" % s)
+' "$(surface_of "$S_APP")"
+
+# 25d — a session that started in the app and was resumed in a terminal must
+# report where it is NOW. The newest record wins, not the first.
+S_MOVED="$SURF_DIR/moved.jsonl"
+write_record "$S_MOVED" "claude-desktop" "/Users/me/proj"
+write_record "$S_MOVED" "cli" "/Users/me/proj"
+assert "25d. A session that moved surface reports the newest one" '
+print("PASS" if s.get("surface") == "cli" else "FAIL: got %r" % s)
+' "$(surface_of "$S_MOVED")"
+
+# 25e — no entrypoint recorded (an old transcript). Unknown must stay unknown:
+# it is what keeps the pet from firing a guess at VS Code.
+S_BARE="$SURF_DIR/bare.jsonl"
+python3 -c 'open("'"$S_BARE"'","w").write("{\"type\":\"mode\",\"mode\":\"normal\"}\n")'
+assert "25e. A transcript with no entrypoint reads as unknown, not as a guess" '
+print("PASS" if s.get("surface") == "?" else "FAIL: got %r" % s)
+' "$(surface_of "$S_BARE")"
+
+# 25f — a path that is not there at all (session ended, file cleaned up).
+assert "25f. A missing transcript reads as unknown instead of failing" '
+print("PASS" if s.get("surface") == "?" else "FAIL: got %r" % s)
+' "$(surface_of "$SURF_DIR/not_here.jsonl")"
+
+cleanup_surface
+
+# ============================================================================
 # TEST 6 — Log rotation safety: after the whole suite, events.log stays under
 # ~1.1MB (the app resets it once it passes ~1MB).
 # ============================================================================

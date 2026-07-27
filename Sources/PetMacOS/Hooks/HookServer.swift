@@ -120,6 +120,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugMarkViewed(request, on: connection)
         case let path where path.hasPrefix("/debug/axdump"):
             handleDebugAXDump(request, on: connection)
+        case "/debug/surface":
+            handleDebugSurface(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -346,6 +348,23 @@ final class HookServer: AskResolver, @unchecked Sendable {
             let text = DesktopAX.dump(bundle: bundle)
             self.respond(connection, body: Data(text.utf8), contentType: "text/plain")
         }
+    }
+
+    /// Reports which surface a transcript says its session runs on. Body:
+    /// `{"transcriptPath":"…"}` → `{"surface":"cli","cwd":"…"}`.
+    ///
+    /// Exists so the routing decision can be tested against a real file
+    /// without a real session: the answer decides whether a reply is typed
+    /// into a terminal, into VS Code, or into the Desktop app, and the cost of
+    /// getting it wrong is a message delivered somewhere it was never meant
+    /// to go.
+    private func handleDebugSurface(_ request: HTTPRequest, on connection: NWConnection) {
+        let payload = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let origin = SessionOrigin.read(transcriptPath: payload?["transcriptPath"] as? String)
+        var answer: [String: Any] = ["surface": origin.surface.rawValue]
+        if let cwd = origin.cwd { answer["cwd"] = cwd }
+        let body = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data()
+        respond(connection, body: body, contentType: "application/json")
     }
 
     // MARK: - AskResolver

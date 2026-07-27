@@ -1246,14 +1246,37 @@ final class PetState {
     /// so a failure leaves the message waiting for the next hook instead of
     /// silently losing it.
     /// Routes an idle session's message to whichever surface actually hosts
-    /// it. The terminal path is preferred wherever a tty is known: it addresses
-    /// the exact tab by an OS identity, while the Desktop path can only match a
-    /// conversation title and has to refuse when that is ambiguous.
+    /// it, as recorded in its own transcript (`SessionOrigin`).
+    ///
+    /// This used to be a guess — try the terminal if a tty is known, otherwise
+    /// offer the message to every window-driving host in turn — and the guess
+    /// was not survivable. Offering a session id to VS Code that its extension
+    /// cannot place makes it open a **new conversation** and put the reply
+    /// there, so a terminal session that the pet failed to reach by tty could
+    /// end up starting a stray VS Code session. Each surface is now asked only
+    /// about sessions it actually owns.
     private func deliverToIdleSession(_ sessionId: String) {
-        if let tty = resolvedTty(forSession: sessionId) {
-            deliverViaTerminal(forSession: sessionId, tty: tty)
-        } else {
+        let origin = SessionOrigin.read(transcriptPath: sessionMeta[sessionId]?.transcriptPath)
+        switch origin.surface {
+        case .cli:
+            guard let tty = resolvedTty(forSession: sessionId) else {
+                lastDesktopAttempt = "terminal session, but no scriptable terminal owns it"
+                setReplyStatus(.stuck, forSession: sessionId)
+                return
+            }
+            deliverViaTerminal(forSession: sessionId, tty: tty, thenTryHosts: false)
+        case .vscode:
+            deliverViaVSCode(forSession: sessionId, workspace: origin.cwd)
+        case .desktop:
             deliverViaDesktop(forSession: sessionId)
+        case .unknown:
+            // No transcript, or one too old to carry an entrypoint. The two
+            // surfaces that refuse harmlessly when a session isn't theirs.
+            if let tty = resolvedTty(forSession: sessionId) {
+                deliverViaTerminal(forSession: sessionId, tty: tty, thenTryHosts: true)
+            } else {
+                deliverViaDesktop(forSession: sessionId)
+            }
         }
     }
 
@@ -1271,7 +1294,9 @@ final class PetState {
         return found
     }
 
-    private func deliverViaTerminal(forSession sessionId: String, tty: String) {
+    private func deliverViaTerminal(
+        forSession sessionId: String, tty: String, thenTryHosts: Bool
+    ) {
         guard let text = replyQueue[sessionId]?.first else {
             lastDesktopAttempt = "skipped: nothing queued"
             return
@@ -1288,9 +1313,14 @@ final class PetState {
             case .failure(let error):
                 self.lastDesktopAttempt = "terminal \(tty) failed: \(error)"
                 // A tty the pet cannot script (VS Code's integrated terminal,
-                // Ghostty, kitty…) has no idle route at all — fall through to
-                // the window-driving hosts before calling it stuck.
-                self.deliverViaDesktop(forSession: sessionId)
+                // Ghostty, kitty…) has no idle route at all. Only a session of
+                // unknown origin is worth offering to the hosts after this; a
+                // transcript that says `cli` has already ruled them out.
+                if thenTryHosts {
+                    self.deliverViaDesktop(forSession: sessionId)
+                } else {
+                    self.setReplyStatus(.stuck, forSession: sessionId)
+                }
             }
         }
     }
@@ -1321,15 +1351,6 @@ final class PetState {
         Task { [weak self] in
             let outcome = await Task.detached { () -> (String, Bool) in
                 var notes: [String] = []
-                // VS Code first, and by session id rather than by name: its
-                // extension registers a URI handler that takes both, which is
-                // the only exact address any of these surfaces offers.
-                switch DesktopAX.sendViaVSCodeURI(text, sessionId: sessionId) {
-                case .success:
-                    return ("delivered to \(title) via VS Code (uri)", true)
-                case .failure(let error):
-                    notes.append("VS Code: \(error)")
-                }
                 for host in hosts {
                     switch DesktopAX.send(text, toConversationTitled: title, bundle: host.bundle) {
                     case .success:
@@ -1350,6 +1371,39 @@ final class PetState {
             // On failure the message stays queued on purpose: the next hook
             // still gets to deliver it.
             self.lastDesktopAttempt = outcome.0
+        }
+    }
+
+    /// Delivery into a VS Code extension session. Addressed by **session id**,
+    /// the only exact identifier any of these surfaces accepts — the others
+    /// have to match a conversation title and refuse when it is ambiguous.
+    private func deliverViaVSCode(forSession sessionId: String, workspace: String?) {
+        guard DesktopAX.isTrusted else {
+            lastDesktopAttempt = "skipped: Accessibility not granted"
+            return
+        }
+        guard let text = replyQueue[sessionId]?.first else {
+            lastDesktopAttempt = "skipped: nothing queued"
+            return
+        }
+        let label = sessionMeta[sessionId]?.name ?? String(sessionId.prefix(8))
+        lastDesktopAttempt = "trying VS Code: \(label)"
+        Task { [weak self] in
+            let result = await Task.detached {
+                DesktopAX.sendToVSCode(text, sessionId: sessionId, workspace: workspace)
+            }.value
+            guard let self else { return }
+            switch result {
+            case .success:
+                _ = self.dequeueReply(forSession: sessionId)
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.lastDesktopAttempt = "delivered to \(label) via VS Code"
+            case .failure(let error):
+                // Stays queued: the next hook this session fires can still
+                // carry it.
+                self.setReplyStatus(.stuck, forSession: sessionId)
+                self.lastDesktopAttempt = "VS Code \(label) failed: \(error)"
+            }
         }
     }
 

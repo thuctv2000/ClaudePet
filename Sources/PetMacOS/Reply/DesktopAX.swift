@@ -408,99 +408,124 @@ enum DesktopAX {
 
     // MARK: - VS Code: the extension's own URI handler
 
-    /// Delivers into a VS Code session through the extension's registered URI
-    /// handler, then presses its send button.
+    /// Delivers into a VS Code session by revealing its panel through the
+    /// extension's URI handler and then typing with real key events.
     ///
-    /// Writing the prompt with accessibility does not work here: the text
-    /// appears in the box but the editor never registers it, and its send
-    /// button stays disabled. Both states were observed side by side in the
-    /// same window — an AX-written box with a dead button, and a URI-written
-    /// box with a live one.
+    /// ## Why not just hand the URI the text
     ///
-    /// The extension registers `vscode://<id>/open?session=…&prompt=…`
-    /// (`registerUriHandler` in its bundle, routing to
-    /// `claude-vscode.primaryEditor.open`). That is the app's own input path,
-    /// so the text lands properly — it just isn't submitted, which is what the
-    /// button press is for. It also takes the **session id**, so this is the
-    /// only surface addressed by an exact identifier rather than a title.
-    static func sendViaVSCodeURI(_ text: String, sessionId: String) -> Result<Void, SendError> {
+    /// The handler accepts `vscode://<id>/open?session=…&prompt=…` and it is
+    /// tempting to stop there. Reading what the extension does with each half
+    /// says otherwise — the `session` is precise and the `prompt` is a trap:
+    ///
+    ///  - `createPanel` looks the session id up in its `sessionPanels` map. A
+    ///    hit reveals that panel and **discards the prompt** outright ("Session
+    ///    is already open. Your prompt was not applied — enter it manually").
+    ///  - A miss creates a panel and passes the prompt into the webview, where
+    ///    `initialPrompt` reaches `setInputText` — it fills the box and never
+    ///    submits. So even the branch that "works" leaves the message sitting
+    ///    there unsent.
+    ///  - Worse, that map is per VS Code **window** and the webview resolves
+    ///    the id against its own workspace's session list. An id it cannot
+    ///    resolve falls through to `createSession()`: a brand new conversation,
+    ///    with the pet's message prefilled into it. Three different outcomes
+    ///    from one call, which is exactly what was observed.
+    ///
+    /// So the prompt parameter is dropped and only `session` is sent. All three
+    /// branches then converge on the one thing they share — the right panel is
+    /// revealed and its message box takes focus — and the text is typed from
+    /// there. Accessibility cannot type it: a value written that way appears in
+    /// the box but the editor never registers it and its send button stays
+    /// disabled (observed side by side with a properly filled one).
+    ///
+    /// `workspace` is the session's own directory, used to bring the VS Code
+    /// window that has that folder open to the front first. Without it the URI
+    /// goes to whichever window was last active, and a window whose workspace
+    /// doesn't hold the session is precisely the one that starts a new
+    /// conversation instead of resuming.
+    static func sendToVSCode(
+        _ text: String, sessionId: String, workspace: String?
+    ) -> Result<Void, SendError> {
         guard isTrusted else { return .failure(.notTrusted) }
         guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
 
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        var windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
-        var areas: [AXUIElement] = []
-        for window in windows { collectWebAreas(window, into: &areas, depth: 0) }
-        for area in areas {
-            AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        }
-        Thread.sleep(forTimeInterval: 1.0)
-        // The send button is disabled while the box is empty, so whichever one
-        // switches on after the prompt arrives is the one belonging to it.
-        let before = enabledButtonIDs(in: windows)
+        if let workspace { raiseWindow(in: ax, forWorkspace: workspace) }
 
         var components = URLComponents()
         components.scheme = "vscode"
         components.host = "anthropic.claude-code"
         components.path = "/open"
-        components.queryItems = [
-            URLQueryItem(name: "session", value: sessionId),
-            URLQueryItem(name: "prompt", value: text),
-        ]
+        components.queryItems = [URLQueryItem(name: "session", value: sessionId)]
         guard let url = components.url else { return .failure(.verificationFailed) }
         NSWorkspace.shared.open(url)
-        Thread.sleep(forTimeInterval: 3.0)
 
-        // Re-read: opening the URI can create a new panel/window.
-        windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
-        areas = []
-        for window in windows { collectWebAreas(window, into: &areas, depth: 0) }
-        for area in areas {
-            AXUIElementSetAttributeValue(area, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        // Revealing a panel is quick; building one for a session being resumed
+        // is not, and the webview only focuses its box once that is done.
+        guard let prompt = waitForFocusedPrompt(in: ax, upTo: 6.0) else {
+            return .failure(.promptNotFocused(focusDescription(ax)))
         }
-        Thread.sleep(forTimeInterval: 1.5)
-
-        var prompts: [AXUIElement] = []
-        for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
-        if prompts.contains(where: { string($0, kAXValueAttribute as String) == text }) {
-            guard let send = newlyEnabledButton(in: windows, comparedTo: before) else {
-                // Text is in the box and properly registered — the user can
-                // send it by hand — but the control to do it wasn't found.
-                return .failure(.notSubmitted)
-            }
-            AXUIElementPerformAction(send, kAXPressAction as CFString)
-            return .success(())
-        }
-
-        // The prompt was dropped, which happens for the case this feature is
-        // actually about. The extension applies a URI prompt only when it
-        // CREATES a panel; for a session already on screen it reveals the panel
-        // and discards the text outright:
-        //
-        //   if (panel) { panel.reveal();
-        //                if (prompt) showInformationMessage(
-        //                  "Session is already open. Your prompt was not applied…") }
-        //
-        // The reveal is still worth having — it brought the right session's
-        // panel to the front — so typing carries on from there. Real key events
-        // are used because an accessibility write is invisible to this editor
-        // (its send button stays disabled), and they only land while the app is
-        // active, which the reveal has just arranged.
-        guard let focusedRef = attribute(ax, kAXFocusedUIElementAttribute as String) else {
-            return .failure(.promptNotFocused("revealed but no focused element"))
-        }
-        let focused = unsafeBitCast(focusedRef, to: AXUIElement.self)
-        guard promptDescriptions.contains(string(focused, kAXDescriptionAttribute as String) ?? "")
-        else {
-            // Refuse rather than type into whatever else holds focus.
-            return .failure(.promptNotFocused(
-                "focus is on \(string(focused, kAXDescriptionAttribute as String) ?? "?")"))
-        }
-        guard typeWithRealKeys(text, into: focused, app: app) else {
+        guard typeWithRealKeys(text, into: prompt, app: app) else {
             return .failure(.notSubmitted)
         }
+        // Submitting empties the box. Anything still in it means the Return
+        // didn't take, and the user is looking at unsent text.
+        let leftover = string(prompt, kAXValueAttribute as String) ?? ""
+        guard !leftover.contains(text) else { return .failure(.notSubmitted) }
         return .success(())
+    }
+
+    /// Brings the VS Code window holding `workspace` to the front, so the URI
+    /// that follows is handled by that window. Titles end in the folder name
+    /// ("PetState.swift — ClaudePet"), which is all there is to match on.
+    private static func raiseWindow(in ax: AXUIElement, forWorkspace workspace: String) {
+        let folder = URL(fileURLWithPath: workspace).lastPathComponent
+        guard !folder.isEmpty else { return }
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        for window in windows {
+            guard let title = string(window, kAXTitleAttribute as String),
+                  title == folder || title.hasSuffix(" — " + folder)
+                    || title.hasSuffix(" - " + folder) else { continue }
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            AXUIElementSetAttributeValue(ax, kAXFocusedWindowAttribute as String as CFString, window)
+            Thread.sleep(forTimeInterval: 0.3)
+            return
+        }
+    }
+
+    /// Polls `AXFocusedUIElement` until it is one of the known message boxes.
+    ///
+    /// Focus is the check, not a convenience: it is the app itself saying which
+    /// session's box is ready to receive typing. Refusing when focus is
+    /// anywhere else is what keeps the reply out of a source file or a fresh,
+    /// unrelated conversation.
+    private static func waitForFocusedPrompt(
+        in ax: AXUIElement, upTo seconds: TimeInterval
+    ) -> AXUIElement? {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            Thread.sleep(forTimeInterval: 0.4)
+            guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String) else {
+                continue
+            }
+            let focused = unsafeBitCast(reference, to: AXUIElement.self)
+            if let description = string(focused, kAXDescriptionAttribute as String),
+               promptDescriptions.contains(description) {
+                return focused
+            }
+        } while Date() < deadline
+        return nil
+    }
+
+    /// What did hold focus, for the failure message.
+    private static func focusDescription(_ ax: AXUIElement) -> String {
+        guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String) else {
+            return "nothing focused"
+        }
+        let focused = unsafeBitCast(reference, to: AXUIElement.self)
+        let role = string(focused, kAXRoleAttribute as String) ?? "?"
+        let description = string(focused, kAXDescriptionAttribute as String) ?? "-"
+        return "focus is \(role)/\(description)"
     }
 
     static let vscodeBundleID = "com.microsoft.VSCode"

@@ -22,6 +22,7 @@
 		3C77A6F382135080C926FAEF /* DesktopAX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9554D831D7E980888939AA6F /* DesktopAX.swift */; };
 		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
 		44FF783EA8DF34F30132ADA9 /* row02_excited.gif in Resources */ = {isa = PBXBuildFile; fileRef = FEBC9D848881BAAD98BBADE0 /* row02_excited.gif */; };
+		490E8A28E61E5189A6221291 /* SessionSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4022EAF8FECCF8DFFF68C12D /* SessionSurface.swift */; };
 		58196C45A95107617A11A251 /* row08_upset.gif in Resources */ = {isa = PBXBuildFile; fileRef = D820094C6D3161FB739F8AA1 /* row08_upset.gif */; };
 		66AC3F8D76FD4C6A284CB463 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */; };
 		69EA1544436FDDD492C59D61 /* row03_thinking.gif in Resources */ = {isa = PBXBuildFile; fileRef = C8D162AD016C6CF991997B8C /* row03_thinking.gif */; };
@@ -61,6 +62,7 @@
 		264913139BAFFC11AAC17636 /* MarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownText.swift; sourceTree = "<group>"; };
 		32008F7B35E7946ACD461B43 /* HookModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookModels.swift; sourceTree = "<group>"; };
 		33CE15D8703CA77D630E924A /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
+		4022EAF8FECCF8DFFF68C12D /* SessionSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionSurface.swift; sourceTree = "<group>"; };
 		48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopoverView.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
 		4D1CD144D41D371A0252D3E8 /* row06_confused.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row06_confused.gif; sourceTree = "<group>"; };
@@ -221,6 +223,7 @@
 			isa = PBXGroup;
 			children = (
 				9554D831D7E980888939AA6F /* DesktopAX.swift */,
+				4022EAF8FECCF8DFFF68C12D /* SessionSurface.swift */,
 				1CC34CAAB2DC0827B8598CAC /* TerminalBridge.swift */,
 			);
 			path = Reply;
@@ -350,6 +353,7 @@
 				F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */,
 				AAC9D795C18743ECBA05054E /* SessionNames.swift in Sources */,
 				37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */,
+				490E8A28E61E5189A6221291 /* SessionSurface.swift in Sources */,
 				878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */,
 				F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */,
 				96BD0AFAE5CFE22F2FC52C10 /* SpriteImporter.swift in Sources */,
