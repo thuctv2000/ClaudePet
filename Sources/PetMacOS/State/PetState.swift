@@ -1427,7 +1427,8 @@ final class PetState {
         noteAttempt("trying VS Code: \(label)", for: sessionId)
         Task { [weak self] in
             let result = await Task.detached {
-                DesktopAX.sendToVSCode(text, sessionId: sessionId, workspace: workspace)
+                DesktopAX.sendToVSCode(text, sessionId: sessionId, workspace: workspace,
+                                       conversation: label)
             }.value
             guard let self else { return }
             switch result {

@@ -505,7 +505,7 @@ enum DesktopAX {
     /// doesn't hold the session is precisely the one that starts a new
     /// conversation instead of resuming.
     static func sendToVSCode(
-        _ text: String, sessionId: String, workspace: String?
+        _ text: String, sessionId: String, workspace: String?, conversation: String?
     ) -> Result<String, SendError> {
         guard isTrusted else { return .failure(.notTrusted) }
         guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
@@ -519,7 +519,6 @@ enum DesktopAX {
 
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        if let workspace { raiseWindow(in: ax, forWorkspace: workspace) }
 
         var components = URLComponents()
         components.scheme = "vscode"
@@ -528,19 +527,27 @@ enum DesktopAX {
         components.queryItems = [URLQueryItem(name: "session", value: sessionId)]
         guard let url = components.url else { return .failure(.verificationFailed) }
 
-        // Quiet attempt first: reveal the panel without pulling VS Code to the
-        // front, and address the keys to its process. Nothing here needs the
-        // app to be active — the message box is found by walking the tree, not
-        // by asking who has focus — so if the editor accepts the keys anyway,
-        // the user's window never changes.
-        if case .success(let note) = quietSend(text, url: url, ax: ax, pid: app.processIdentifier) {
-            return .success(note)
+        // Quiet attempt first: nothing in it needs the app to be active. The
+        // message box is found by walking the tree rather than by asking who
+        // has focus, and the keys are addressed to the process.
+        //
+        // The URI is skipped entirely when the panel is already the window's
+        // active tab, because revealing it is what lifts VS Code above the
+        // user's other windows — measured, not assumed: with the raise removed
+        // the window still climbed a place in the on-screen order on every
+        // send, and `panel.reveal()` is what is left doing it.
+        let alreadyOpen = conversation.map { activeTab(in: ax, titled: $0) } ?? false
+        if case .success(let note) = quietSend(
+            text, url: alreadyOpen ? nil : url, ax: ax, pid: app.processIdentifier
+        ) {
+            return .success(alreadyOpen ? note : "revealed, " + note)
         }
 
         // Escalation. Chromium can drop key events aimed at a background
         // window, and `AXFocusedUIElement` answers nil for a background app —
         // both of which the quiet attempt verifies rather than assumes. Only
         // when it comes back empty-handed is the interruption worth it.
+        if let workspace { raiseWindow(in: ax, forWorkspace: workspace) }
         app.activate(options: [])
         guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
         let configuration = NSWorkspace.OpenConfiguration()
@@ -576,12 +583,14 @@ enum DesktopAX {
     /// Anything left behind is cleaned up before giving up: half a message
     /// sitting in the user's prompt box is worse than no delivery at all.
     private static func quietSend(
-        _ text: String, url: URL, ax: AXUIElement, pid: pid_t
+        _ text: String, url: URL?, ax: AXUIElement, pid: pid_t
     ) -> Result<String, SendError> {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        NSWorkspace.shared.open(url, configuration: configuration)
-        Thread.sleep(forTimeInterval: 1.2)
+        if let url {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = false
+            NSWorkspace.shared.open(url, configuration: configuration)
+            Thread.sleep(forTimeInterval: 1.2)
+        }
 
         let prompts = allPrompts(in: ax)
         guard prompts.count == 1 else {
@@ -615,6 +624,28 @@ enum DesktopAX {
         return .failure(.notSubmitted)
     }
 
+    /// Whether a VS Code window is currently showing the conversation named
+    /// `title` as its active tab.
+    ///
+    /// A window's title is "<active tab> — <folder>", and the extension names
+    /// each panel after its conversation. So a match means the panel the
+    /// message is for is the one already on screen — there is nothing to
+    /// reveal, and the reveal is the part the user sees.
+    ///
+    /// This is a weaker identity than the session id the URI carries: two
+    /// conversations could share a name. It is only trusted alongside the
+    /// caller's other guard, that the whole app has exactly one message box —
+    /// so the panel matched here is also the only one that could receive the
+    /// text.
+    private static func activeTab(in ax: AXUIElement, titled title: String) -> Bool {
+        guard !title.isEmpty else { return false }
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        return windows.contains { window in
+            guard let name = string(window, kAXTitleAttribute as String) else { return false }
+            return name == title || name.hasPrefix(title + " — ") || name.hasPrefix(title + " - ")
+        }
+    }
+
     /// Empties a message box the pet filled but could not send, so a failed
     /// quiet attempt leaves no trace for the user to delete by hand.
     private static func clearPrompt(_ prompt: AXUIElement, pid: pid_t) {
@@ -635,6 +666,12 @@ enum DesktopAX {
     /// Brings the VS Code window holding `workspace` to the front, so the URI
     /// that follows is handled by that window. Titles end in the folder name
     /// ("PetState.swift — ClaudePet"), which is all there is to match on.
+    ///
+    /// Only for the escalation path. `AXRaise` lifts a window above every other
+    /// window WITHOUT making its app frontmost — which is why the pet could
+    /// report a quiet delivery, with the frontmost app unchanged the whole
+    /// time, while the user watched VS Code jump into view anyway. Both
+    /// observations were true; they were about different things.
     private static func raiseWindow(in ax: AXUIElement, forWorkspace workspace: String) {
         let folder = URL(fileURLWithPath: workspace).lastPathComponent
         guard !folder.isEmpty else { return }
