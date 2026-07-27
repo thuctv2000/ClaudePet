@@ -1358,7 +1358,7 @@ final class PetState {
                     // A tty that no scriptable terminal owns is usually VS
                     // Code's integrated one — the tty is real, the terminal
                     // just isn't AppleScript-able.
-                    self.deliverViaVSCodeTerminal(forSession: sessionId)
+                    self.deliverViaVSCodeTerminal(forSession: sessionId, tty: tty)
                 }
             }
         }
@@ -1457,7 +1457,23 @@ final class PetState {
     /// message that landed makes Claude Code fire `UserPromptSubmit` within a
     /// second or two, and that event arrives through the hook already
     /// installed. No event means the keys went nowhere useful.
-    private func deliverViaVSCodeTerminal(forSession sessionId: String) {
+    private func deliverViaVSCodeTerminal(forSession sessionId: String, tty: String) {
+        // The bridge extension first: it hands the text to VS Code's own
+        // `Terminal.sendText`, which writes into the pty without touching a
+        // window — no activation, no focus, and it works while the window is
+        // minimised. Everything below it is UI automation and behaves like it.
+        if let text = replyQueue[sessionId]?.first {
+            switch VSCodeBridge.send(text, toTty: tty) {
+            case .success(let name):
+                _ = dequeueReply(forSession: sessionId)
+                setReplyStatus(.sent, forSession: sessionId)
+                noteAttempt("delivered to \(name) via the VS Code bridge extension",
+                            for: sessionId)
+                return
+            case .failure(let error):
+                noteAttempt("bridge extension: \(error)", for: sessionId)
+            }
+        }
         guard DesktopAX.isTrusted else {
             noteAttempt("skipped: Accessibility not granted", for: sessionId)
             return

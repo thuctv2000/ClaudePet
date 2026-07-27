@@ -17,6 +17,7 @@
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
 		2CAB282A633F8B582CC24492 /* AnimatedSpriteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */; };
 		2E14F863C978B9FF29B8D401 /* MarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 264913139BAFFC11AAC17636 /* MarkdownText.swift */; };
+		2E37036A80FC74F7A32E7B76 /* VSCodeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4216369DC1E8F62CCB895F6 /* VSCodeBridge.swift */; };
 		36B3296733EAFE8F5A0933A9 /* row06_confused.gif in Resources */ = {isa = PBXBuildFile; fileRef = 4D1CD144D41D371A0252D3E8 /* row06_confused.gif */; };
 		37D6B34FC82BA53F0FB275EF /* SessionStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */; };
 		3C77A6F382135080C926FAEF /* DesktopAX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9554D831D7E980888939AA6F /* DesktopAX.swift */; };
@@ -85,6 +86,7 @@
 		D820094C6D3161FB739F8AA1 /* row08_upset.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row08_upset.gif; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
 		E28ECD8768DD110746936318 /* DesignKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignKit.swift; sourceTree = "<group>"; };
+		E4216369DC1E8F62CCB895F6 /* VSCodeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSCodeBridge.swift; sourceTree = "<group>"; };
 		E46998C00ABB596885D703B7 /* UsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageMonitor.swift; sourceTree = "<group>"; };
 		E46A5EB32015467C559F4AC3 /* SessionNames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionNames.swift; sourceTree = "<group>"; };
 		E9EA210F5F58D661BB87B9AF /* row07_sleeping.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row07_sleeping.gif; sourceTree = "<group>"; };
@@ -225,6 +227,7 @@
 				9554D831D7E980888939AA6F /* DesktopAX.swift */,
 				4022EAF8FECCF8DFFF68C12D /* SessionSurface.swift */,
 				1CC34CAAB2DC0827B8598CAC /* TerminalBridge.swift */,
+				E4216369DC1E8F62CCB895F6 /* VSCodeBridge.swift */,
 			);
 			path = Reply;
 			sourceTree = "<group>";
@@ -361,6 +364,7 @@
 				FF9B54742ABBF3A8A6A18F96 /* TerminalBridge.swift in Sources */,
 				3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */,
 				C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */,
+				2E37036A80FC74F7A32E7B76 /* VSCodeBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
