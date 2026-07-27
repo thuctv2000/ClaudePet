@@ -402,14 +402,14 @@ enum DesktopAX {
         if postKeys(text, to: app.processIdentifier, source: nil, submit: true),
            delivered(prompt, before: before, text: text) {
             previouslyActive?.activate(options: [])
-            return .success("pid")
+            return .success("pid keys")
         }
         let source = CGEventSource(stateID: .hidSystemState)
         _ = postKeys(text, to: nil, source: source, submit: true)
         Thread.sleep(forTimeInterval: 0.3)
 
         previouslyActive?.activate(options: [])
-        return .success("hid")
+        return .success("hid keys")
     }
 
     /// Types `text` and optionally Return, either into one process (`pid`) or
@@ -521,21 +521,28 @@ enum DesktopAX {
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
         if let workspace { raiseWindow(in: ax, forWorkspace: workspace) }
 
-        // Brought forward BEFORE the URI, not as a side effect of it.
-        // `AXFocusedUIElement` on an application answers nil while that app is
-        // in the background, and the pet is the frontmost app at the moment the
-        // user presses Return in the reply box — which is why this failed with
-        // "nothing focused" from the pet and worked when run from a shell with
-        // VS Code already in front.
-        app.activate(options: [])
-        guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
-
         var components = URLComponents()
         components.scheme = "vscode"
         components.host = "anthropic.claude-code"
         components.path = "/open"
         components.queryItems = [URLQueryItem(name: "session", value: sessionId)]
         guard let url = components.url else { return .failure(.verificationFailed) }
+
+        // Quiet attempt first: reveal the panel without pulling VS Code to the
+        // front, and address the keys to its process. Nothing here needs the
+        // app to be active — the message box is found by walking the tree, not
+        // by asking who has focus — so if the editor accepts the keys anyway,
+        // the user's window never changes.
+        if case .success(let note) = quietSend(text, url: url, ax: ax, pid: app.processIdentifier) {
+            return .success(note)
+        }
+
+        // Escalation. Chromium can drop key events aimed at a background
+        // window, and `AXFocusedUIElement` answers nil for a background app —
+        // both of which the quiet attempt verifies rather than assumes. Only
+        // when it comes back empty-handed is the interruption worth it.
+        app.activate(options: [])
+        guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.open(url, configuration: configuration)
@@ -554,7 +561,75 @@ enum DesktopAX {
         // didn't take, and the user is looking at unsent text.
         let leftover = string(prompt, kAXValueAttribute as String) ?? ""
         guard !leftover.contains(text) else { return .failure(.notSubmitted) }
-        return .success(channel)
+        return .success("front, " + channel)
+    }
+
+    /// Delivers without activating VS Code, or reports why it couldn't.
+    ///
+    /// Every step is checked, because a background app is exactly where silent
+    /// failure lives: keys aimed at a backgrounded Chromium window may simply
+    /// be dropped. So the text goes in WITHOUT a Return first and the box is
+    /// read back — that is the proof the editor took the keys, and it is
+    /// unambiguous in a way "the box is empty afterwards" never is (empty also
+    /// means nothing ever arrived).
+    ///
+    /// Anything left behind is cleaned up before giving up: half a message
+    /// sitting in the user's prompt box is worse than no delivery at all.
+    private static func quietSend(
+        _ text: String, url: URL, ax: AXUIElement, pid: pid_t
+    ) -> Result<String, SendError> {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.open(url, configuration: configuration)
+        Thread.sleep(forTimeInterval: 1.2)
+
+        let prompts = allPrompts(in: ax)
+        guard prompts.count == 1 else {
+            return .failure(.promptNotFocused("\(prompts.count) message boxes, quiet"))
+        }
+        let prompt = prompts[0]
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        let before = enabledButtonIDs(in: windows)
+
+        postKeys(text, to: pid, source: nil, submit: false)
+        guard (string(prompt, kAXValueAttribute as String) ?? "").contains(text) else {
+            return .failure(.notSubmitted)
+        }
+
+        // The send button coming alive is the editor confirming it registered
+        // the text as input rather than merely painting it (an accessibility
+        // write leaves the button dead). Pressing it needs no focus at all.
+        if let send = newlyEnabledButton(in: windows, comparedTo: before) {
+            AXUIElementPerformAction(send, kAXPressAction as CFString)
+            Thread.sleep(forTimeInterval: 0.5)
+            if !(string(prompt, kAXValueAttribute as String) ?? "").contains(text) {
+                return .success("quiet, send button")
+            }
+        }
+        postKeys("", to: pid, source: nil, submit: true)
+        if !(string(prompt, kAXValueAttribute as String) ?? "").contains(text) {
+            return .success("quiet, return key")
+        }
+
+        clearPrompt(prompt, pid: pid)
+        return .failure(.notSubmitted)
+    }
+
+    /// Empties a message box the pet filled but could not send, so a failed
+    /// quiet attempt leaves no trace for the user to delete by hand.
+    private static func clearPrompt(_ prompt: AXUIElement, pid: pid_t) {
+        guard let source = CGEventSource(stateID: .hidSystemState) else { return }
+        for (key, flags) in [(CGKeyCode(0), CGEventFlags.maskCommand),   // Cmd-A
+                             (CGKeyCode(51), CGEventFlags(rawValue: 0))] {  // Delete
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+            else { return }
+            down.flags = flags
+            up.flags = flags
+            down.postToPid(pid)
+            up.postToPid(pid)
+            Thread.sleep(forTimeInterval: 0.15)
+        }
     }
 
     /// Brings the VS Code window holding `workspace` to the front, so the URI
