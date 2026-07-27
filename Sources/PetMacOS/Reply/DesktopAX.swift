@@ -707,22 +707,47 @@ enum DesktopAX {
         // the wrong one means its name won't match, and nothing is typed.
         app.activate(options: [])
         guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
+        // Waited for, not assumed. `AXFocusedUIElement` reads nil for an app in
+        // the background and does not become readable the instant the app comes
+        // forward — and asking too early is not a harmless miss here, because
+        // the answer decides whether to press a TOGGLE.
+        waitForFocusToSettle(ax, upTo: 2.0)
 
-        // ⌃` toggles: it focuses the panel, but hides it when the panel already
-        // has focus. So it is only sent when focus is somewhere else.
+        // ⌃` shows and focuses the panel, but HIDES it when the panel already
+        // has focus. Sending it on a stale "focus isn't the terminal" therefore
+        // does the exact opposite of what is wanted, and leaves the panel shut
+        // for the next attempt too — which is why deliveries alternated between
+        // working and failing.
+        var toggled = false
         if !focusIsTerminal(ax, named: sessionName) {
             postKey(50, flags: .maskControl, to: app.processIdentifier)
-            Thread.sleep(forTimeInterval: 0.8)
+            Thread.sleep(forTimeInterval: 0.9)
+            toggled = true
         }
         // The check that keeps a reply out of the user's source file: nothing
         // is typed unless the thing holding focus says it is this session's
         // terminal.
         guard focusIsTerminal(ax, named: sessionName) else {
+            // Undo, so a failed attempt does not leave the panel hidden behind
+            // the user's editor.
+            if toggled {
+                postKey(50, flags: .maskControl, to: app.processIdentifier)
+                Thread.sleep(forTimeInterval: 0.5)
+            }
             return .failure(.boxWouldNotFocus)
         }
 
         postKeys(text, to: app.processIdentifier, source: nil, submit: true)
         return .success("vscode terminal")
+    }
+
+    /// Blocks until the app reports SOMETHING focused, or the time runs out.
+    private static func waitForFocusToSettle(_ ax: AXUIElement, upTo seconds: TimeInterval) {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if attribute(ax, kAXFocusedUIElementAttribute as String) != nil { return }
+            Thread.sleep(forTimeInterval: 0.15)
+        } while Date() < deadline
     }
 
     /// Whether keyboard focus is on the terminal running `name`.
