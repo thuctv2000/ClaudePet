@@ -1449,31 +1449,58 @@ final class PetState {
         }
     }
 
-    /// Why a session in VS Code's integrated terminal gets no delivery.
+    /// Types into a session running in VS Code's integrated terminal.
     ///
-    /// The session is found — Claude Code writes its own name into the terminal
-    /// title (the transcript's `ai-title`), VS Code puts that on the button
-    /// that focuses the terminal, and the pet can press it. What does not work
-    /// is getting the text in afterwards: pressing that button and sending keys
-    /// produced no reaction from the session, quietly or with VS Code brought
-    /// to the front, so whatever received those keystrokes was not the
-    /// terminal.
-    ///
-    /// The generic routes are closed too. `TIOCSTI`, the ioctl that pushes
-    /// characters into another session's tty, returns EPERM on macOS even for a
-    /// tty the same user owns (measured). And unlike the Claude panel, the
-    /// terminal exposes no text area in the accessibility tree — dumping VS
-    /// Code shows exactly two, the editor and the panel's message box — so
-    /// there is nothing to focus deliberately and nothing to read back.
-    ///
-    /// That last part is why this refuses rather than trying anyway. Typing
-    /// blind into VS Code means typing into whatever holds focus, which is
-    /// usually the editor: the message would land in the user's source file,
-    /// and nothing here could even tell that it had.
+    /// Alone among the surfaces this one cannot be read back — the terminal is
+    /// not in the accessibility tree — so `DesktopAX` can only report that the
+    /// keys were sent. The confirmation comes from the session instead: a
+    /// message that landed makes Claude Code fire `UserPromptSubmit` within a
+    /// second or two, and that event arrives through the hook already
+    /// installed. No event means the keys went nowhere useful.
     private func deliverViaVSCodeTerminal(forSession sessionId: String) {
-        noteAttempt("VS Code's integrated terminal cannot be typed into"
-                    + " — see deliverViaVSCodeTerminal", for: sessionId)
-        setReplyStatus(.stuck, forSession: sessionId)
+        guard DesktopAX.isTrusted else {
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            return
+        }
+        // Found by the title CLAUDE CODE gave the session, not by the pet's own
+        // name for it — the two are different strings and only the first is on
+        // screen.
+        let origin = SessionOrigin.read(transcriptPath: sessionMeta[sessionId]?.transcriptPath)
+        guard let name = origin.terminalTitle else {
+            noteAttempt("skipped: transcript has no ai-title to find the terminal by",
+                        for: sessionId)
+            setReplyStatus(.stuck, forSession: sessionId)
+            return
+        }
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
+            return
+        }
+        noteAttempt("trying VS Code terminal: \(name)", for: sessionId)
+        Task { [weak self] in
+            guard let self else { return }
+            let before = self.sessions[sessionId]?.lastEventAt
+            let result = await Task.detached {
+                DesktopAX.sendToVSCodeTerminal(text, sessionName: name)
+            }.value
+            if case .failure(let error) = result {
+                self.noteAttempt("VS Code terminal \(name) failed: \(error)", for: sessionId)
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+                return
+            }
+            try? await Task.sleep(for: .seconds(6))
+            if let after = self.sessions[sessionId]?.lastEventAt, after != before {
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.noteAttempt("delivered to \(name) via VS Code terminal"
+                                 + " (confirmed by the session's own hook)", for: sessionId)
+            } else {
+                self.noteAttempt("VS Code terminal \(name): keys sent, no hook followed",
+                                 for: sessionId)
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+            }
+        }
     }
 
     /// What happened on the most recent delivery attempt, surfaced in

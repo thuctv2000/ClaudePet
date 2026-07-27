@@ -657,6 +657,212 @@ enum DesktopAX {
         return .failure(.notSubmitted)
     }
 
+    // MARK: - VS Code: the integrated terminal
+
+    /// Types into a Claude Code session running in VS Code's integrated
+    /// terminal, found by the name Claude Code puts in the terminal title.
+    ///
+    /// ## How the terminal is reached
+    ///
+    /// The terminal is absent from the accessibility tree — until it has
+    /// keyboard focus, at which point it appears as an `AXTextField` named
+    /// "Terminal 1, ✳ <session>". That single fact supplies both halves of
+    /// this: a way in, and a way to check we are in the right place.
+    ///
+    /// Focus is moved with ⌃`, the shortcut the panel's own tab is labelled
+    /// with. Two other routes were measured and do NOT work: pressing the
+    /// terminal's tab button focuses the BUTTON (`AXFocusedUIElement`
+    /// afterwards is `AXButton/Focus Terminal`), and ⌘↓ — the hint printed on
+    /// that same button — moves focus nowhere at all, while ⇧⌘E in the same run
+    /// moved it to the Explorer, proving the keys themselves arrive.
+    ///
+    /// ## Why this one has to come to the front
+    ///
+    /// Unlike the Claude panel, this cannot be done quietly: a keyboard
+    /// shortcut aimed at a background VS Code is dropped, and the shortcut is
+    /// the only way in. Plain text keys do arrive at a background window, which
+    /// is what made the earlier attempts look so close — the text was being
+    /// typed with nothing focused to receive it.
+    static func sendToVSCodeTerminal(
+        _ text: String, sessionName: String
+    ) -> Result<String, SendError> {
+        guard isTrusted else { return .failure(.notTrusted) }
+        guard !sessionName.isEmpty else { return .failure(.conversationNotFound("")) }
+        guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
+
+        let previouslyActive = NSWorkspace.shared.frontmostApplication
+        defer { previouslyActive?.activate(options: []) }
+
+        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Deliberately NOT pressing the terminal's tab button first. It looks
+        // like the way to choose between several terminals, but it focuses the
+        // BUTTON, and the shortcut sent afterwards then acts on the panel
+        // rather than moving into the terminal — the whole delivery stopped
+        // working with that step in and started working with it out.
+        //
+        // Which terminal ends up focused is instead settled by the check below:
+        // the wrong one means its name won't match, and nothing is typed.
+        app.activate(options: [])
+        guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
+
+        // ⌃` toggles: it focuses the panel, but hides it when the panel already
+        // has focus. So it is only sent when focus is somewhere else.
+        if !focusIsTerminal(ax, named: sessionName) {
+            postKey(50, flags: .maskControl, to: app.processIdentifier)
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        // The check that keeps a reply out of the user's source file: nothing
+        // is typed unless the thing holding focus says it is this session's
+        // terminal.
+        guard focusIsTerminal(ax, named: sessionName) else {
+            return .failure(.boxWouldNotFocus)
+        }
+
+        postKeys(text, to: app.processIdentifier, source: nil, submit: true)
+        return .success("vscode terminal")
+    }
+
+    /// Whether keyboard focus is on the terminal running `name`.
+    ///
+    /// A focused VS Code terminal shows up as an `AXTextField` whose
+    /// description carries its title — "Terminal 1, ✳ Fix the parser …" — so
+    /// this is a genuine identity check rather than a guess about layout.
+    private static func focusIsTerminal(_ ax: AXUIElement, named name: String) -> Bool {
+        guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String)
+        else { return false }
+        let focused = unsafeBitCast(reference, to: AXUIElement.self)
+        guard string(focused, kAXRoleAttribute as String) == (kAXTextFieldRole as String)
+        else { return false }
+        let description = string(focused, kAXDescriptionAttribute as String) ?? ""
+        return description.contains("Terminal") && description.contains(name)
+    }
+
+    private static func postKey(_ key: CGKeyCode, flags: CGEventFlags, to pid: pid_t) {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        else { return }
+        down.flags = flags
+        up.flags = flags
+        down.postToPid(pid)
+        up.postToPid(pid)
+    }
+
+    // MARK: - VS Code terminal probe
+
+    /// Types into VS Code without touching focus at all, for the one question
+    /// the pet cannot answer by itself: if the user has clicked into the
+    /// terminal, do synthesized keys reach it?
+    ///
+    /// A yes means focus is the only missing piece and worth hunting; a no
+    /// means terminals do not take these keys and the surface is closed. Every
+    /// other measurement so far conflates the two.
+    static func typeIntoVSCodeUnfocused(_ text: String) -> String {
+        guard let app = app(vscodeBundleID) else { return "VS Code not running" }
+        postKeys(text, to: app.processIdentifier, source: nil, submit: true)
+        return "typed \(text.count) chars at whatever holds focus in VS Code"
+    }
+
+    /// Parks focus in the Claude panel's message box, then sends ⌘↓ and types.
+    ///
+    /// The one experiment that isolates the shortcut: focus starts somewhere
+    /// harmless and definitely NOT the terminal, so if the text arrives in the
+    /// session then ⌘↓ moved it there. Everything before this conflated the
+    /// shortcut with VS Code not being frontmost.
+    static func probeShortcutFocus(_ text: String) -> String {
+        guard let app = app(vscodeBundleID) else { return "VS Code not running" }
+        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        var out: [String] = []
+        // Parked with ⇧⌘E (focus the Explorer) rather than an accessibility
+        // write, which this editor ignored. The Explorer is the safe place to
+        // be wrong: text typed there is type-ahead search, so if ⌘↓ turns out
+        // not to work the message is discarded instead of landing in a file.
+        postKey(14, flags: [.maskCommand, .maskShift], to: app.processIdentifier)
+        Thread.sleep(forTimeInterval: 0.8)
+        out.append("focus parked: \(focusDescription(ax))")
+        // ⌃` — what the panel's own tab is labelled with. ⌘↓ is only a hint on
+        // the tab item and moved focus nowhere (measured, with ⇧⌘E proving in
+        // the same run that shortcuts do arrive).
+        postKey(50, flags: .maskControl, to: app.processIdentifier)
+        Thread.sleep(forTimeInterval: 0.8)
+        out.append("after ctrl-backtick: \(focusDescription(ax))")
+        postKeys(text, to: app.processIdentifier, source: nil, submit: true)
+        out.append("typed")
+        return out.joined(separator: "\n")
+    }
+
+    /// Presses the button that focuses the terminal named `name` and reports
+    /// what holds focus before and after, so "the keys went nowhere" can be
+    /// pinned on focus or on the keys.
+    static func probeTerminalFocus(named name: String, activate: Bool) -> String {
+        guard isTrusted else { return "not trusted" }
+        guard let app = app(vscodeBundleID) else { return "VS Code not running" }
+        let ax = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        Thread.sleep(forTimeInterval: 1.0)
+
+        var out: [String] = ["focus before: \(focusDescription(ax))"]
+        if activate {
+            app.activate(options: [])
+            out.append("frontmost: \(waitUntilFrontmost(app, upTo: 3.0))")
+            out.append("focus after activate: \(focusDescription(ax))")
+        }
+
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        var buttons: [(String, AXUIElement)] = []
+        for window in windows { collectNamedButtons(window, into: &buttons, depth: 0) }
+        let matches = buttons.filter { $0.0.contains(name) }
+        out.append("buttons matching \"\(name)\": \(matches.count)")
+        for (label, _) in matches.prefix(4) { out.append("  candidate: \(label)") }
+        guard let target = matches.first?.1 else { return out.joined(separator: "\n") }
+
+        var actions: CFArray?
+        if AXUIElementCopyActionNames(target, &actions) == .success,
+           let list = actions as? [String] {
+            out.append("actions: \(list.joined(separator: ","))")
+        }
+        AXUIElementPerformAction(target, kAXPressAction as CFString)
+        Thread.sleep(forTimeInterval: 1.0)
+        out.append("focus after press: \(focusDescription(ax))")
+        postKey(125, flags: .maskCommand, to: app.processIdentifier)
+        Thread.sleep(forTimeInterval: 1.0)
+        out.append("focus after cmd-down: \(focusDescription(ax))")
+        return out.joined(separator: "\n")
+    }
+
+    /// Every button, labelled by its description plus any static text under it.
+    private static func collectNamedButtons(
+        _ element: AXUIElement, into found: inout [(String, AXUIElement)], depth: Int
+    ) {
+        guard depth < 30 else { return }
+        if string(element, kAXRoleAttribute as String) == (kAXButtonRole as String) {
+            var label = string(element, kAXDescriptionAttribute as String) ?? ""
+            let texts = labels(of: element, depth: 0)
+            if !texts.isEmpty { label += " | " + texts.joined(separator: " / ") }
+            found.append((label, element))
+        }
+        for child in children(element) {
+            collectNamedButtons(child, into: &found, depth: depth + 1)
+        }
+    }
+
+    private static func labels(of element: AXUIElement, depth: Int) -> [String] {
+        guard depth < 4 else { return [] }
+        var out: [String] = []
+        for child in children(element) {
+            if string(child, kAXRoleAttribute as String) == (kAXStaticTextRole as String),
+               let value = string(child, kAXValueAttribute as String) {
+                out.append(value)
+            }
+            out += labels(of: child, depth: depth + 1)
+        }
+        return out
+    }
+
     /// Whether a VS Code window is currently showing the conversation named
     /// `title` as its active tab.
     ///
