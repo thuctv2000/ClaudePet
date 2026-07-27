@@ -522,10 +522,24 @@ enum DesktopAX {
         // the typing starts, and the app to go back to is the one the user was
         // actually in (usually the pet, whose reply box gets focus back).
         let previouslyActive = NSWorkspace.shared.frontmostApplication
-        defer { previouslyActive?.activate(options: []) }
-
         let ax = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetAttributeValue(ax, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        // Noted before anything touches the window, and put back at the end
+        // whatever route the message took. The loud path un-minimises as a side
+        // effect of activating the app, so without this a single reply left the
+        // user's window sitting open for good.
+        let minimized = minimizedWindow(in: ax)
+        defer {
+            previouslyActive?.activate(options: [])
+            if let minimized,
+               NSWorkspace.shared.frontmostApplication?.processIdentifier
+                != app.processIdentifier {
+                Thread.sleep(forTimeInterval: 0.4)
+                AXUIElementSetAttributeValue(
+                    minimized, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+            }
+        }
 
         var components = URLComponents()
         components.scheme = "vscode"
@@ -544,16 +558,24 @@ enum DesktopAX {
         // the window still climbed a place in the on-screen order on every
         // send, and `panel.reveal()` is what is left doing it.
         let alreadyOpen = conversation.map { activeTab(in: ax, titled: $0) } ?? false
-        let quietNote: String
-        switch quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
-                         pid: app.processIdentifier) {
-        case .success(let note):
-            return .success(alreadyOpen ? note : "revealed, " + note)
-        case .failure(let error):
-            // Carried into the final note. Without it a quiet attempt that gave
-            // up was invisible: the log said the message arrived the loud way
-            // and never said why the quiet way was refused.
-            quietNote = "quiet gave up (\(error)), so "
+        var quietNote = ""
+        // Skipped outright for a minimized window, because it cannot succeed
+        // and it is not free: keys never reach a window macOS has stopped
+        // rendering, while the focus write it makes first appears to RESTORE
+        // the window. That is what the user saw — the window popped open, then
+        // the un-minimise step below found nothing left to un-minimise and the
+        // whole thing fell through to the loud path.
+        if minimized == nil {
+            switch quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
+                             pid: app.processIdentifier) {
+            case .success(let note):
+                return .success(alreadyOpen ? note : "revealed, " + note)
+            case .failure(let error):
+                // Carried into the final note. Without it a quiet attempt that
+                // gave up was invisible: the log said the message arrived the
+                // loud way and never said why the quiet way was refused.
+                quietNote = "quiet gave up (\(error)), so "
+            }
         }
 
         // A minimized window is the one state the quiet path genuinely cannot
@@ -563,19 +585,17 @@ enum DesktopAX {
         // quietly keeps the app out of the foreground, so the window the user
         // is actually working in stays in front and keeps the keyboard, and
         // the pet puts the window back the way it found it afterwards.
-        if let restored = unminimise(in: ax) {
-            let retry = quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
-                                  pid: app.processIdentifier)
-            // Left alone if the user has started using the window in the
-            // meantime — re-minimising a window someone just clicked into
-            // would be worse than leaving it open.
-            if NSWorkspace.shared.frontmostApplication?.processIdentifier
-                != app.processIdentifier {
-                AXUIElementSetAttributeValue(
-                    restored, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
-            }
-            if case .success(let note) = retry {
+        var minimisedNote = "not minimised, "
+        if let minimized {
+            AXUIElementSetAttributeValue(
+                minimized, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            Thread.sleep(forTimeInterval: 1.0)
+            switch quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
+                             pid: app.processIdentifier) {
+            case .success(let note):
                 return .success(quietNote + "unminimised, " + note)
+            case .failure(let error):
+                minimisedNote = "unminimised but \(error), "
             }
         }
 
@@ -604,7 +624,7 @@ enum DesktopAX {
         // didn't take, and the user is looking at unsent text.
         let leftover = string(prompt, kAXValueAttribute as String) ?? ""
         guard !leftover.contains(text) else { return .failure(.notSubmitted) }
-        return .success(quietNote + "front, " + channel)
+        return .success(quietNote + minimisedNote + "front, " + channel)
     }
 
     /// Delivers without activating VS Code, or reports why it couldn't.
@@ -680,20 +700,12 @@ enum DesktopAX {
         return .failure(.notSubmitted)
     }
 
-    /// Brings a minimized window back on screen and returns it, so the caller
-    /// can put it back. Returns nil when nothing was minimized.
-    private static func unminimise(in ax: AXUIElement) -> AXUIElement? {
+    /// The app's minimized window, if it has one.
+    private static func minimizedWindow(in ax: AXUIElement) -> AXUIElement? {
         let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
-        for window in windows {
-            let minimized = (attribute(window, kAXMinimizedAttribute as String) as? NSNumber)?
-                .boolValue ?? false
-            guard minimized else { continue }
-            AXUIElementSetAttributeValue(
-                window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            Thread.sleep(forTimeInterval: 0.8)
-            return window
+        return windows.first { window in
+            (attribute(window, kAXMinimizedAttribute as String) as? NSNumber)?.boolValue ?? false
         }
-        return nil
     }
 
     /// Whether a VS Code window is currently showing the conversation named
