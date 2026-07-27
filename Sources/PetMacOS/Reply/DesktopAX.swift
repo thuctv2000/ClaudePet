@@ -231,6 +231,13 @@ enum DesktopAX {
         /// aimed at it. Nothing was typed: they would have gone to whatever app
         /// *was* in front.
         case appNotFrontmost
+        /// The message box would not take keyboard focus, so nothing was typed.
+        /// Typing anyway would have put the message wherever focus actually
+        /// was — the user's open source file, most likely.
+        case boxWouldNotFocus
+        /// The box had focus and the keys were sent, but the text never showed
+        /// up in it.
+        case keysIgnored
     }
 
     /// Types `text` into the prompt of the conversation named `title` in one
@@ -603,12 +610,32 @@ enum DesktopAX {
             return .failure(.promptNotFocused("\(prompts.count) message boxes, quiet"))
         }
         let prompt = prompts[0]
+
+        // Focus is put in the box FIRST, and checked.
+        //
+        // This was missing, and it was the whole failure — plus a hazard worse
+        // than the failure. Keys addressed to a process go to whatever holds
+        // focus INSIDE that process, and there is no reason for that to be the
+        // message box: the user is usually in their editor. So the quiet
+        // attempt typed the pet's message into whatever the user had open,
+        // found the box unchanged, and reported "notSubmitted" as if nothing
+        // had happened.
+        //
+        // Earlier tests passed because a loud delivery had just left focus
+        // sitting in the message box — the tested state was one the pet had
+        // arranged for itself, not the state a user is ever in.
+        AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        Thread.sleep(forTimeInterval: 0.4)
+        let focused = (attribute(prompt, kAXFocusedAttribute as String) as? NSNumber)?
+            .boolValue ?? false
+        guard focused else { return .failure(.boxWouldNotFocus) }
+
         let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
         let before = enabledButtonIDs(in: windows)
 
         postKeys(text, to: pid, source: nil, submit: false)
         guard (string(prompt, kAXValueAttribute as String) ?? "").contains(text) else {
-            return .failure(.notSubmitted)
+            return .failure(.keysIgnored)
         }
 
         // The send button coming alive is the editor confirming it registered
