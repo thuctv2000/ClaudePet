@@ -556,6 +556,29 @@ enum DesktopAX {
             quietNote = "quiet gave up (\(error)), so "
         }
 
+        // A minimized window is the one state the quiet path genuinely cannot
+        // work around: macOS stops rendering it, so its message box refuses
+        // focus and there is nothing to type into. It has to come back on
+        // screen — but only the WINDOW does. Un-minimising it and retrying
+        // quietly keeps the app out of the foreground, so the window the user
+        // is actually working in stays in front and keeps the keyboard, and
+        // the pet puts the window back the way it found it afterwards.
+        if let restored = unminimise(in: ax) {
+            let retry = quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
+                                  pid: app.processIdentifier)
+            // Left alone if the user has started using the window in the
+            // meantime — re-minimising a window someone just clicked into
+            // would be worse than leaving it open.
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier
+                != app.processIdentifier {
+                AXUIElementSetAttributeValue(
+                    restored, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
+            }
+            if case .success(let note) = retry {
+                return .success(quietNote + "unminimised, " + note)
+            }
+        }
+
         // Escalation. Chromium can drop key events aimed at a background
         // window, and `AXFocusedUIElement` answers nil for a background app —
         // both of which the quiet attempt verifies rather than assumes. Only
@@ -655,6 +678,22 @@ enum DesktopAX {
 
         clearPrompt(prompt, pid: pid)
         return .failure(.notSubmitted)
+    }
+
+    /// Brings a minimized window back on screen and returns it, so the caller
+    /// can put it back. Returns nil when nothing was minimized.
+    private static func unminimise(in ax: AXUIElement) -> AXUIElement? {
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        for window in windows {
+            let minimized = (attribute(window, kAXMinimizedAttribute as String) as? NSNumber)?
+                .boolValue ?? false
+            guard minimized else { continue }
+            AXUIElementSetAttributeValue(
+                window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            Thread.sleep(forTimeInterval: 0.8)
+            return window
+        }
+        return nil
     }
 
     /// Whether a VS Code window is currently showing the conversation named

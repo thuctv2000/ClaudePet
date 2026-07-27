@@ -14,7 +14,7 @@
             <sparkle:version>1.6.0</sparkle:version>
             <sparkle:shortVersionString>1.6.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.6.0/ClaudePet-1.6.0.dmg" length="6789589" type="application/octet-stream" sparkle:edSignature="DfpXxspbyeJMxLVxq/weAIKrqAfF4ikukGmBJvp8OhMAFun63qUEFkMHCkNH3BoZK2sQ4Dzw13m63/rcwC3XDA=="/>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.6.0/ClaudePet-1.6.0.dmg" length="6790599" type="application/octet-stream" sparkle:edSignature="PKZSXvVQ9VaOs9JjE21ps8AKrL65+wi/6ZHny4Mm0I2Wa3Qfti/v/SYYJze1jXvKT0hcQl8ADr1WDszG1JgoCw=="/>
         </item>
         <item>
             <title>1.5.2</title>
