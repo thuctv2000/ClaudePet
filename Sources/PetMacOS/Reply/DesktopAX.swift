@@ -705,6 +705,17 @@ enum DesktopAX {
         //
         // Which terminal ends up focused is instead settled by the check below:
         // the wrong one means its name won't match, and nothing is typed.
+        // The pet lets go of the keyboard first.
+        //
+        // Its window is a `.nonactivatingPanel`, which holds the key window
+        // while ANOTHER app is frontmost — so after the user presses Return in
+        // the reply box, VS Code can be the frontmost application and still not
+        // own the keyboard. `activate` then does nothing (it is already
+        // frontmost), the ⌃` never reaches it, and the focus check fails. That
+        // is exactly the case the user hit: sending failed while looking at VS
+        // Code, and started working as soon as another app was brought forward,
+        // because only then did `activate` have something to do.
+        yieldKeyboard()
         app.activate(options: [])
         guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
         // Waited for, not assumed. `AXFocusedUIElement` reads nil for an app in
@@ -739,6 +750,14 @@ enum DesktopAX {
 
         postKeys(text, to: app.processIdentifier, source: nil, submit: true)
         return .success("vscode terminal")
+    }
+
+    /// Gives up the pet's own key window, so the app about to be driven can
+    /// take it. Dispatched to the main thread because `NSApp` may only be
+    /// touched there, and this runs on a detached delivery task.
+    private static func yieldKeyboard() {
+        DispatchQueue.main.async { NSApp.deactivate() }
+        Thread.sleep(forTimeInterval: 0.35)
     }
 
     /// Blocks until the app reports SOMETHING focused, or the time runs out.
