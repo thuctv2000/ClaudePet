@@ -278,6 +278,8 @@ final class PetState {
         /// session's project directory, which is how a missing `tty` is
         /// recovered later (see `TerminalBridge.discoverTty`).
         var transcriptPath: String?
+        /// Cached answer for the card label; see `surface(forKey:)`.
+        var surface: SessionSurface?
     }
     private var sessionMeta: [String: SessionMeta] = [:]
 
@@ -360,6 +362,13 @@ final class PetState {
         /// The project (cwd folder name) this conversation runs in, shown as
         /// a small caption under the name; nil when never seen on an event.
         let project: String?
+        /// Which program is hosting this conversation, from the transcript's
+        /// own `entrypoint`. Shown next to the project because several
+        /// conversations in the same folder look identical otherwise — and
+        /// because it explains the pet's behaviour: a reply reaches each
+        /// surface a different way, and only some of them can be reached
+        /// while the conversation sits idle.
+        let surface: SessionSurface
         /// This session's own mood (drives the card's status icon).
         let mood: Mood
         /// Ordering key: the session's own last hook event (or, for a
@@ -451,6 +460,7 @@ final class PetState {
                 id: key == Self.noSessionKey ? "" : key,
                 name: displayName(forKey: key),
                 project: sessionMeta[key]?.project,
+                surface: surface(forKey: key),
                 mood: mood,
                 lastEventAt: lastEventAt,
                 latestRunning: running.first,       // runningTasks is newest-first
@@ -1553,6 +1563,22 @@ final class PetState {
         String(sessionId.prefix(8))
     }
 
+    /// Where a conversation lives, resolved once and remembered.
+    ///
+    /// Reading it means parsing the tail of the transcript, which is fine once
+    /// per session but not on every redraw — and the cards redraw constantly.
+    /// Delivery deliberately does NOT use this cache: a session that gets
+    /// resumed somewhere else changes surface, and routing a message by a
+    /// stale answer is how a reply ends up in the wrong window.
+    private func surface(forKey key: String) -> SessionSurface {
+        if let known = sessionMeta[key]?.surface { return known }
+        guard let transcript = sessionMeta[key]?.transcriptPath else { return .unknown }
+        let resolved = SessionOrigin.read(transcriptPath: transcript).surface
+        guard resolved != .unknown else { return .unknown }   // retry once it has content
+        sessionMeta[key]?.surface = resolved
+        return resolved
+    }
+
     /// Pops the next queued message for a session (used by the `PostToolUse`
     /// route). Returns nil — never blocks — when the queue is empty.
     func takeQueuedReply(forSession sessionId: String?) -> String? {
@@ -2126,6 +2152,8 @@ final class PetState {
         let lastDesktopAttempt: String?
         /// Per-session delivery notes, `"<sessionId>: <note>"` sorted by id.
         let replyAttempts: [String]
+        /// Which surface each card reports, aligned with `sessionOrder`.
+        let sessionSurfaces: [String]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -2164,7 +2192,8 @@ final class PetState {
             desktopTrusted: DesktopAX.isTrusted,
             lastDesktopAttempt: lastDesktopAttempt,
             replyAttempts: replyAttempts.sorted { $0.key < $1.key }
-                .map { "\($0.key): \($0.value)" }
+                .map { "\($0.key): \($0.value)" },
+            sessionSurfaces: summaries.map { $0.surface.rawValue }
         )
     }
 

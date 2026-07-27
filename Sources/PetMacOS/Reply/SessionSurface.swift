@@ -18,6 +18,27 @@ enum SessionSurface: String {
     case desktop = "claude-desktop"
     case vscode = "claude-vscode"
     case unknown = "?"
+
+    /// What to call it on a card. Deliberately the name of the app the user
+    /// would go to, not the value in the file.
+    var label: String? {
+        switch self {
+        case .cli: return "Terminal"
+        case .desktop: return "Claude"
+        case .vscode: return "VS Code"
+        case .unknown: return nil
+        }
+    }
+
+    /// SF Symbol for the same.
+    var symbol: String? {
+        switch self {
+        case .cli: return "terminal"
+        case .desktop: return "bubble.left.and.bubble.right"
+        case .vscode: return "chevron.left.forwardslash.chevron.right"
+        case .unknown: return nil
+        }
+    }
 }
 
 /// What the transcript says about where a session lives.

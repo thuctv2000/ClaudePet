@@ -255,12 +255,26 @@ private struct SessionCardView: View {
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let project = summary.project {
-                    Text(project)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                // Project and host on one line: two conversations in the same
+                // folder are told apart by where they run, and where they run
+                // is also what decides how a reply gets to them.
+                HStack(spacing: 4) {
+                    if let project = summary.project {
+                        Text(project)
+                            .lineLimit(1)
+                    }
+                    if let label = summary.surface.label, let symbol = summary.surface.symbol {
+                        if summary.project != nil {
+                            Text("·")
+                        }
+                        Image(systemName: symbol)
+                            .font(.system(size: 8))
+                        Text(label)
+                            .lineLimit(1)
+                    }
                 }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
             }
             Button {
                 onDismissCard(summary.id)
