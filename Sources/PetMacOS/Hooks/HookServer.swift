@@ -363,6 +363,7 @@ final class HookServer: AskResolver, @unchecked Sendable {
         let origin = SessionOrigin.read(transcriptPath: payload?["transcriptPath"] as? String)
         var answer: [String: Any] = ["surface": origin.surface.rawValue]
         if let cwd = origin.cwd { answer["cwd"] = cwd }
+        if let title = origin.terminalTitle { answer["terminalTitle"] = title }
         let body = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data()
         respond(connection, body: body, contentType: "application/json")
     }

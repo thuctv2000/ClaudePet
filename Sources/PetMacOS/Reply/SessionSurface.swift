@@ -28,8 +28,16 @@ struct SessionOrigin {
     /// a hook payload this one is not disturbed by a `cd` inside a Bash tool
     /// call, because it is written when the user's prompt is recorded.
     let cwd: String?
+    /// The name Claude Code gives this session in the terminal title, from the
+    /// transcript's newest `ai-title` record.
+    ///
+    /// This is not the same string as the pet's own session name, which comes
+    /// from the first prompt: a session whose pet card reads "hi" showed up in
+    /// VS Code's terminal as "Dự án này là gì". Matching the wrong one is how
+    /// the pet failed to find the terminal it was looking straight at.
+    let terminalTitle: String?
 
-    static let unknown = SessionOrigin(surface: .unknown, cwd: nil)
+    static let unknown = SessionOrigin(surface: .unknown, cwd: nil, terminalTitle: nil)
 
     /// Reads the newest record that carries an `entrypoint`.
     ///
@@ -52,16 +60,25 @@ struct SessionOrigin {
         // throwing the whole read away.
         let text = String(decoding: data, as: UTF8.self)
 
+        var surface: SessionSurface?
+        var cwd: String?
+        var terminalTitle: String?
         for line in text.split(separator: "\n").reversed() {
-            guard line.contains("\"entrypoint\"") else { continue }
-            guard let object = try? JSONSerialization
-                .jsonObject(with: Data(line.utf8)) as? [String: Any],
-                  let entrypoint = object["entrypoint"] as? String else { continue }
-            return SessionOrigin(
-                surface: SessionSurface(rawValue: entrypoint) ?? .unknown,
-                cwd: object["cwd"] as? String
-            )
+            let hasEntrypoint = line.contains("\"entrypoint\"")
+            let hasTitle = line.contains("\"ai-title\"")
+            guard hasEntrypoint || hasTitle,
+                  let object = try? JSONSerialization
+                    .jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+            if surface == nil, let entrypoint = object["entrypoint"] as? String {
+                surface = SessionSurface(rawValue: entrypoint) ?? .unknown
+                cwd = object["cwd"] as? String
+            }
+            if terminalTitle == nil, let title = object["aiTitle"] as? String {
+                terminalTitle = title
+            }
+            if surface != nil, terminalTitle != nil { break }
         }
-        return .unknown
+        guard let surface else { return .unknown }
+        return SessionOrigin(surface: surface, cwd: cwd, terminalTitle: terminalTitle)
     }
 }

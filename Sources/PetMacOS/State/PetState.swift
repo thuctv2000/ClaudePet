@@ -1355,7 +1355,10 @@ final class PetState {
                 if thenTryHosts {
                     self.deliverViaDesktop(forSession: sessionId)
                 } else {
-                    self.setReplyStatus(.stuck, forSession: sessionId)
+                    // A tty that no scriptable terminal owns is usually VS
+                    // Code's integrated one — the tty is real, the terminal
+                    // just isn't AppleScript-able.
+                    self.deliverViaVSCodeTerminal(forSession: sessionId)
                 }
             }
         }
@@ -1444,6 +1447,33 @@ final class PetState {
                 self.noteAttempt("VS Code \(label) failed: \(error)", for: sessionId)
             }
         }
+    }
+
+    /// Why a session in VS Code's integrated terminal gets no delivery.
+    ///
+    /// The session is found — Claude Code writes its own name into the terminal
+    /// title (the transcript's `ai-title`), VS Code puts that on the button
+    /// that focuses the terminal, and the pet can press it. What does not work
+    /// is getting the text in afterwards: pressing that button and sending keys
+    /// produced no reaction from the session, quietly or with VS Code brought
+    /// to the front, so whatever received those keystrokes was not the
+    /// terminal.
+    ///
+    /// The generic routes are closed too. `TIOCSTI`, the ioctl that pushes
+    /// characters into another session's tty, returns EPERM on macOS even for a
+    /// tty the same user owns (measured). And unlike the Claude panel, the
+    /// terminal exposes no text area in the accessibility tree — dumping VS
+    /// Code shows exactly two, the editor and the panel's message box — so
+    /// there is nothing to focus deliberately and nothing to read back.
+    ///
+    /// That last part is why this refuses rather than trying anyway. Typing
+    /// blind into VS Code means typing into whatever holds focus, which is
+    /// usually the editor: the message would land in the user's source file,
+    /// and nothing here could even tell that it had.
+    private func deliverViaVSCodeTerminal(forSession sessionId: String) {
+        noteAttempt("VS Code's integrated terminal cannot be typed into"
+                    + " — see deliverViaVSCodeTerminal", for: sessionId)
+        setReplyStatus(.stuck, forSession: sessionId)
     }
 
     /// What happened on the most recent delivery attempt, surfaced in
