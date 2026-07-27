@@ -12,6 +12,7 @@
 		16910DCDF23C4D0B37308E0F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F83020535917ED3CD4C35874 /* Assets.xcassets */; };
 		1F5CB0110DB520925CBD6CAE /* row04_working_laptop.gif in Resources */ = {isa = PBXBuildFile; fileRef = 64D29260A65C99A06B79D9EF /* row04_working_laptop.gif */; };
 		202C8A943F4B6E3A8FD086BA /* DesignKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28ECD8768DD110746936318 /* DesignKit.swift */; };
+		206F61CDC4E5EBCF94148893 /* VSCodeExtensionInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9ABDD24A19F1DA609E5FF0 /* VSCodeExtensionInstaller.swift */; };
 		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
 		23D9E75B487868EC1F211F24 /* QuestionDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6FD6735778E95F873D3BCF /* QuestionDetector.swift */; };
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
@@ -24,6 +25,7 @@
 		3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */; };
 		44FF783EA8DF34F30132ADA9 /* row02_excited.gif in Resources */ = {isa = PBXBuildFile; fileRef = FEBC9D848881BAAD98BBADE0 /* row02_excited.gif */; };
 		490E8A28E61E5189A6221291 /* SessionSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4022EAF8FECCF8DFFF68C12D /* SessionSurface.swift */; };
+		4A5D122724475030A0BF1C2C /* vscode-extension in Resources */ = {isa = PBXBuildFile; fileRef = A42372BAA5004AE2D130DDB9 /* vscode-extension */; };
 		58196C45A95107617A11A251 /* row08_upset.gif in Resources */ = {isa = PBXBuildFile; fileRef = D820094C6D3161FB739F8AA1 /* row08_upset.gif */; };
 		66AC3F8D76FD4C6A284CB463 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */; };
 		69EA1544436FDDD492C59D61 /* row03_thinking.gif in Resources */ = {isa = PBXBuildFile; fileRef = C8D162AD016C6CF991997B8C /* row03_thinking.gif */; };
@@ -77,6 +79,7 @@
 		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
 		9554D831D7E980888939AA6F /* DesktopAX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAX.swift; sourceTree = "<group>"; };
 		A10753CA32DC12C3E85FA958 /* PetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetStore.swift; sourceTree = "<group>"; };
+		A42372BAA5004AE2D130DDB9 /* vscode-extension */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "vscode-extension"; sourceTree = SOURCE_ROOT; };
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
 		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
 		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -84,6 +87,7 @@
 		C8D162AD016C6CF991997B8C /* row03_thinking.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row03_thinking.gif; sourceTree = "<group>"; };
 		CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWindowView.swift; sourceTree = "<group>"; };
 		D820094C6D3161FB739F8AA1 /* row08_upset.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row08_upset.gif; sourceTree = "<group>"; };
+		DB9ABDD24A19F1DA609E5FF0 /* VSCodeExtensionInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSCodeExtensionInstaller.swift; sourceTree = "<group>"; };
 		DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionDialogView.swift; sourceTree = "<group>"; };
 		E28ECD8768DD110746936318 /* DesignKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignKit.swift; sourceTree = "<group>"; };
 		E4216369DC1E8F62CCB895F6 /* VSCodeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VSCodeBridge.swift; sourceTree = "<group>"; };
@@ -124,6 +128,7 @@
 			isa = PBXGroup;
 			children = (
 				4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */,
+				DB9ABDD24A19F1DA609E5FF0 /* VSCodeExtensionInstaller.swift */,
 			);
 			path = Install;
 			sourceTree = "<group>";
@@ -179,6 +184,7 @@
 		81291BD9D5096951F5A3326D = {
 			isa = PBXGroup;
 			children = (
+				A42372BAA5004AE2D130DDB9 /* vscode-extension */,
 				59DD222D736A3B7BCA601D8F /* PetMacOS */,
 				D2ABD055CCD03283D0A941A9 /* Products */,
 			);
@@ -324,6 +330,7 @@
 				9B857F28F3C5061439C36737 /* row07_sleeping.gif in Resources */,
 				58196C45A95107617A11A251 /* row08_upset.gif in Resources */,
 				86ED6FA16EBF7BA43E8310B4 /* row09_celebrate.gif in Resources */,
+				4A5D122724475030A0BF1C2C /* vscode-extension in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -365,6 +372,7 @@
 				3DAAA6B3ADB73BD114AC22A9 /* UsageBadgeView.swift in Sources */,
 				C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */,
 				2E37036A80FC74F7A32E7B76 /* VSCodeBridge.swift in Sources */,
+				206F61CDC4E5EBCF94148893 /* VSCodeExtensionInstaller.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

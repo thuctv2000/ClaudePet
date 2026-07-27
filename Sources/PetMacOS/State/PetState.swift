@@ -199,6 +199,12 @@ final class PetState {
         appendLog("error \(message)")
     }
 
+    /// Records something that happened but isn't a fault (an install, a
+    /// migration). Same log, no "error" prefix to chase in a bug report.
+    func recordNote(_ message: String) {
+        appendLog(message)
+    }
+
     /// Set by the app delegate to wire the server as the resolver.
     @ObservationIgnored weak var resolver: AskResolver?
 
