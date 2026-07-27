@@ -245,7 +245,7 @@ enum DesktopAX {
     ///    so the matching window is used directly and nothing is clicked.
     static func send(
         _ text: String, toConversationTitled title: String, bundle: String = bundleID
-    ) -> Result<Void, SendError> {
+    ) -> Result<String, SendError> {
         guard isTrusted else { return .failure(.notTrusted) }
         guard let app = app(bundle) else { return .failure(.appNotRunning) }
 
@@ -328,14 +328,14 @@ enum DesktopAX {
         Thread.sleep(forTimeInterval: 0.4)
         if let send = newlyEnabledButton(in: scope, comparedTo: before) {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
-            return .success(())
+            return .success("send button")
         }
         // Named fallback, for a host that keeps its send button always enabled.
         var named: [AXUIElement] = []
         for window in scope { collectSendButtons(window, into: &named, depth: 0) }
         if let send = named.first {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
-            return .success(())
+            return .success("named send button")
         }
         // Nothing became pressable. In VS Code that is not a missing button —
         // it is the send control staying DISABLED with text visibly in the box,
@@ -365,54 +365,94 @@ enum DesktopAX {
         // forward for the moment it takes to type. The previously-active app is
         // put back straight after, so the interruption is a blink rather than a
         // change of context.
-        if let failure = typeWithRealKeys(text, into: prompt, app: app) {
-            return .failure(failure)
-        }
-        return .success(())
+        return typeWithRealKeys(text, into: prompt, app: app)
     }
 
 
     /// Types `text` into `prompt` with real key events and presses Return.
     /// Returns nil on success, or why it gave up without typing anything.
+    /// Returns which channel carried the text ("pid" or "hid"), or the error.
     private static func typeWithRealKeys(
         _ text: String, into prompt: AXUIElement, app: NSRunningApplication
-    ) -> SendError? {
+    ) -> Result<String, SendError> {
         let previouslyActive = NSWorkspace.shared.frontmostApplication
         app.activate(options: [])
-        // Waited on, not assumed. These events are posted to the HID tap, which
-        // means they land in whichever app is frontmost — so an activation that
-        // was refused or is merely slow would type the message into the user's
-        // editor instead. `activate` returning true only says the request was
-        // accepted, which is why the answer is read back from the workspace.
-        guard waitUntilFrontmost(app, upTo: 2.5) else { return .appNotFrontmost }
+        guard waitUntilFrontmost(app, upTo: 2.5) else { return .failure(.appNotFrontmost) }
         Thread.sleep(forTimeInterval: 0.3)
         // Put the caret in the message box rather than wherever the app last
         // had focus — activating a window does not choose a field.
         AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         Thread.sleep(forTimeInterval: 0.3)
 
-        let source = CGEventSource(stateID: .hidSystemState)
-        // Sent as unicode payloads rather than key codes: the message can hold
-        // any script (Vietnamese, emoji) and there is no layout that maps those
-        // to virtual keys. Chunked because a single event carries a limited
-        // string, and paced so a busy renderer does not drop characters.
-        for chunk in text.chunks(ofUTF16Length: 16) {
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
-            else { continue }
-            var utf16 = Array(chunk.utf16)
-            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
-            event.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.02)
+        let before = string(prompt, kAXValueAttribute as String) ?? ""
+        // Addressed to the target process first, and only broadcast to the HID
+        // tap if that produced nothing.
+        //
+        // An HID event goes to whatever holds keyboard focus, and "frontmost
+        // application" is not the same thing: the pet's own window is a
+        // `.nonactivatingPanel`, which keeps key status while another app is
+        // active. So when the user pressed Return in the reply box, the pet was
+        // still the keyboard's owner — and the message was typed back into the
+        // pet's own field, where the trailing Return submitted it again. That
+        // is the loop the user saw, and VS Code only ever got focus.
+        //
+        // A pid-addressed event cannot land in the wrong app by construction.
+        // Chromium does drop them while backgrounded, which is what made this
+        // look unusable before, but the app has just been brought forward.
+        if postKeys(text, to: app.processIdentifier, source: nil, submit: true),
+           delivered(prompt, before: before, text: text) {
+            previouslyActive?.activate(options: [])
+            return .success("pid")
         }
-        Thread.sleep(forTimeInterval: 0.35)
-        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true)?
-            .post(tap: .cghidEventTap)
-        CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)?
-            .post(tap: .cghidEventTap)
+        let source = CGEventSource(stateID: .hidSystemState)
+        _ = postKeys(text, to: nil, source: source, submit: true)
         Thread.sleep(forTimeInterval: 0.3)
 
         previouslyActive?.activate(options: [])
-        return nil
+        return .success("hid")
+    }
+
+    /// Types `text` and optionally Return, either into one process (`pid`) or
+    /// through the HID tap (`pid` nil).
+    ///
+    /// The characters travel as unicode payloads rather than key codes: a
+    /// message can hold any script (Vietnamese, emoji) and no keyboard layout
+    /// maps those to virtual keys. Chunked because one event carries a limited
+    /// string, and paced so a busy renderer does not drop characters.
+    @discardableResult
+    private static func postKeys(
+        _ text: String, to pid: pid_t?, source: CGEventSource?, submit: Bool
+    ) -> Bool {
+        func post(_ event: CGEvent) {
+            if let pid { event.postToPid(pid) } else { event.post(tap: .cghidEventTap) }
+        }
+        for chunk in text.chunks(ofUTF16Length: 16) {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            else { return false }
+            var utf16 = Array(chunk.utf16)
+            event.keyboardSetUnicodeString(stringLength: utf16.count, unicodeString: &utf16)
+            post(event)
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        Thread.sleep(forTimeInterval: 0.35)
+        guard submit else { return true }
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+        else { return false }
+        post(down)
+        post(up)
+        Thread.sleep(forTimeInterval: 0.4)
+        return true
+    }
+
+    /// Whether the message actually went in: the box either holds the text now,
+    /// or it was submitted and cleared. An unchanged empty box means the keys
+    /// went somewhere else entirely.
+    private static func delivered(
+        _ prompt: AXUIElement, before: String, text: String
+    ) -> Bool {
+        let now = string(prompt, kAXValueAttribute as String) ?? ""
+        return now.contains(text) || now != before
     }
 
     private static func waitUntilFrontmost(
@@ -466,7 +506,7 @@ enum DesktopAX {
     /// conversation instead of resuming.
     static func sendToVSCode(
         _ text: String, sessionId: String, workspace: String?
-    ) -> Result<Void, SendError> {
+    ) -> Result<String, SendError> {
         guard isTrusted else { return .failure(.notTrusted) }
         guard let app = app(vscodeBundleID) else { return .failure(.appNotRunning) }
 
@@ -505,14 +545,16 @@ enum DesktopAX {
         guard let prompt = focusedPrompt(in: ax, upTo: 6.0) else {
             return .failure(.promptNotFocused(focusDescription(ax)))
         }
-        if let failure = typeWithRealKeys(text, into: prompt, app: app) {
-            return .failure(failure)
+        let channel: String
+        switch typeWithRealKeys(text, into: prompt, app: app) {
+        case .success(let used): channel = used
+        case .failure(let error): return .failure(error)
         }
         // Submitting empties the box. Anything still in it means the Return
         // didn't take, and the user is looking at unsent text.
         let leftover = string(prompt, kAXValueAttribute as String) ?? ""
         guard !leftover.contains(text) else { return .failure(.notSubmitted) }
-        return .success(())
+        return .success(channel)
     }
 
     /// Brings the VS Code window holding `workspace` to the front, so the URI

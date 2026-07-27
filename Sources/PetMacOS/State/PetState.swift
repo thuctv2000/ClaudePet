@@ -1390,8 +1390,8 @@ final class PetState {
                 var notes: [String] = []
                 for host in hosts {
                     switch DesktopAX.send(text, toConversationTitled: title, bundle: host.bundle) {
-                    case .success:
-                        return ("delivered to \(title) via \(host.name)", true)
+                    case .success(let channel):
+                        return ("delivered to \(title) via \(host.name) (\(channel) keys)", true)
                     case .failure(let error):
                         notes.append("\(host.name): \(error)")
                     }
@@ -1431,9 +1431,10 @@ final class PetState {
             }.value
             guard let self else { return }
             switch result {
-            case .success:
+            case .success(let channel):
                 self.setReplyStatus(.sent, forSession: sessionId)
-                self.noteAttempt("delivered to \(label) via VS Code", for: sessionId)
+                self.noteAttempt("delivered to \(label) via VS Code (\(channel) keys)",
+                                 for: sessionId)
             case .failure(let error):
                 // Back in the queue: the next hook this session fires can
                 // still carry it.

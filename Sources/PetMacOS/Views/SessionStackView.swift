@@ -201,6 +201,11 @@ private struct SessionCardView: View {
 
     /// Text typed into this card's reply box.
     @State private var replyText = ""
+    /// Dropped the moment a message is sent. Delivery to an idle session types
+    /// with real key events, and the pet's own window is a `.nonactivatingPanel`
+    /// — it keeps keyboard focus while another app is frontmost, so a field
+    /// still holding focus is a field that can catch the pet's own keystrokes.
+    @FocusState private var replyFocused: Bool
 
     private static let maxListedTasks = 5
     private static let collapsedMessageLines = 2
@@ -443,6 +448,7 @@ private struct SessionCardView: View {
                     .textFieldStyle(.plain)
                     .font(.caption2)
                     .disabled(summary.isAwaitingApproval)
+                    .focused($replyFocused)
                     .onSubmit(send)
                 Button(action: send) {
                     Image(systemName: "paperplane.fill")
@@ -481,6 +487,7 @@ private struct SessionCardView: View {
 
     private func send() {
         guard canSend else { return }
+        replyFocused = false
         onSendReply(replyText.trimmingCharacters(in: .whitespacesAndNewlines))
         replyText = ""
     }
