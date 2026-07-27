@@ -463,15 +463,43 @@ enum DesktopAX {
 
         var prompts: [AXUIElement] = []
         for window in windows { collectPrompts(window, into: &prompts, depth: 0) }
-        guard prompts.contains(where: { string($0, kAXValueAttribute as String) == text }) else {
-            return .failure(.promptNotFocused("prompt did not receive the text"))
+        if prompts.contains(where: { string($0, kAXValueAttribute as String) == text }) {
+            guard let send = newlyEnabledButton(in: windows, comparedTo: before) else {
+                // Text is in the box and properly registered — the user can
+                // send it by hand — but the control to do it wasn't found.
+                return .failure(.notSubmitted)
+            }
+            AXUIElementPerformAction(send, kAXPressAction as CFString)
+            return .success(())
         }
-        guard let send = newlyEnabledButton(in: windows, comparedTo: before) else {
-            // Text is in the box and properly registered — the user can send it
-            // by hand — but the pet could not find the control to do it.
+
+        // The prompt was dropped, which happens for the case this feature is
+        // actually about. The extension applies a URI prompt only when it
+        // CREATES a panel; for a session already on screen it reveals the panel
+        // and discards the text outright:
+        //
+        //   if (panel) { panel.reveal();
+        //                if (prompt) showInformationMessage(
+        //                  "Session is already open. Your prompt was not applied…") }
+        //
+        // The reveal is still worth having — it brought the right session's
+        // panel to the front — so typing carries on from there. Real key events
+        // are used because an accessibility write is invisible to this editor
+        // (its send button stays disabled), and they only land while the app is
+        // active, which the reveal has just arranged.
+        guard let focusedRef = attribute(ax, kAXFocusedUIElementAttribute as String) else {
+            return .failure(.promptNotFocused("revealed but no focused element"))
+        }
+        let focused = unsafeBitCast(focusedRef, to: AXUIElement.self)
+        guard promptDescriptions.contains(string(focused, kAXDescriptionAttribute as String) ?? "")
+        else {
+            // Refuse rather than type into whatever else holds focus.
+            return .failure(.promptNotFocused(
+                "focus is on \(string(focused, kAXDescriptionAttribute as String) ?? "?")"))
+        }
+        guard typeWithRealKeys(text, into: focused, app: app) else {
             return .failure(.notSubmitted)
         }
-        AXUIElementPerformAction(send, kAXPressAction as CFString)
         return .success(())
     }
 
