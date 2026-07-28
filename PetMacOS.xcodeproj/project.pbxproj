@@ -13,6 +13,7 @@
 		1F5CB0110DB520925CBD6CAE /* row04_working_laptop.gif in Resources */ = {isa = PBXBuildFile; fileRef = 64D29260A65C99A06B79D9EF /* row04_working_laptop.gif */; };
 		202C8A943F4B6E3A8FD086BA /* DesignKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E28ECD8768DD110746936318 /* DesignKit.swift */; };
 		206F61CDC4E5EBCF94148893 /* VSCodeExtensionInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB9ABDD24A19F1DA609E5FF0 /* VSCodeExtensionInstaller.swift */; };
+		227472D1ED983675500FF695 /* OpenPetsCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50DC8B5090572CFAF7AC1CD1 /* OpenPetsCatalog.swift */; };
 		2372A6BD8883A2AB5273DC3D /* HookServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00DFE8DF50364DE0240C86F /* HookServer.swift */; };
 		23D9E75B487868EC1F211F24 /* QuestionDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6FD6735778E95F873D3BCF /* QuestionDetector.swift */; };
 		2C91FA4B3550C3F78A292FB3 /* HookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */; };
@@ -30,6 +31,7 @@
 		66AC3F8D76FD4C6A284CB463 /* MenuBarPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */; };
 		69EA1544436FDDD492C59D61 /* row03_thinking.gif in Resources */ = {isa = PBXBuildFile; fileRef = C8D162AD016C6CF991997B8C /* row03_thinking.gif */; };
 		7108E4C34372617FD341352C /* row05_waving.gif in Resources */ = {isa = PBXBuildFile; fileRef = 164AB034348168F4D3506854 /* row05_waving.gif */; };
+		7880116AAB5B7D984AE920E6 /* OpenPetsBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EB4421AB88317CC19698E2D /* OpenPetsBrowserView.swift */; };
 		86ED6FA16EBF7BA43E8310B4 /* row09_celebrate.gif in Resources */ = {isa = PBXBuildFile; fileRef = 1A1856172CA59DCF33645C4E /* row09_celebrate.gif */; };
 		878D45CB1BEE5C47BFF217E7 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78DE56CC509FC11874D00027 /* SettingsStore.swift */; };
 		8B07B8FC48E4B89B08D3BDAE /* SpriteLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */; };
@@ -47,6 +49,7 @@
 		C77FC93FE0087A4565BB5C31 /* UsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46998C00ABB596885D703B7 /* UsageMonitor.swift */; };
 		C9C51F3B394693EBA05A10F1 /* QuestionDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 121562265EDE7612187515DD /* QuestionDialogView.swift */; };
 		CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */; };
+		D50D3DF4C06165CAD5F6A463 /* OpenPetsInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8A1149D198FEB4DA0255063 /* OpenPetsInstaller.swift */; };
 		F01D77A11D6910FDC02C79F7 /* SessionFocusMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA1AFCB42DE9A0A34ACA3CB /* SessionFocusMonitor.swift */; };
 		F1B1646AF5E03013464B8F69 /* PetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10753CA32DC12C3E85FA958 /* PetStore.swift */; };
 		F1F552A6F12C9172CCC7A439 /* SettingsWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72959DA64EAE01980687BA1C /* SettingsWindowView.swift */; };
@@ -69,18 +72,21 @@
 		48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPopoverView.swift; sourceTree = "<group>"; };
 		4AC7C70FFBDE21B13A538FE6 /* HookInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HookInstaller.swift; sourceTree = "<group>"; };
 		4D1CD144D41D371A0252D3E8 /* row06_confused.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row06_confused.gif; sourceTree = "<group>"; };
+		50DC8B5090572CFAF7AC1CD1 /* OpenPetsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenPetsCatalog.swift; sourceTree = "<group>"; };
 		64D29260A65C99A06B79D9EF /* row04_working_laptop.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = row04_working_laptop.gif; sourceTree = "<group>"; };
 		72959DA64EAE01980687BA1C /* SettingsWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsWindowView.swift; sourceTree = "<group>"; };
 		78DE56CC509FC11874D00027 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		7A49E4A442ADFD5CD45C9582 /* PetState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetState.swift; sourceTree = "<group>"; };
 		7E05EFDC4F0AA4E05A0B2EAD /* UsageBadgeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageBadgeView.swift; sourceTree = "<group>"; };
 		858DA8F5C11CE0227206055E /* AnimatedSpriteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnimatedSpriteView.swift; sourceTree = "<group>"; };
+		8EB4421AB88317CC19698E2D /* OpenPetsBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenPetsBrowserView.swift; sourceTree = "<group>"; };
 		8F6FD6735778E95F873D3BCF /* QuestionDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuestionDetector.swift; sourceTree = "<group>"; };
 		93C60BE78DA76884545EF3CD /* PetMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetMacOSApp.swift; sourceTree = "<group>"; };
 		9554D831D7E980888939AA6F /* DesktopAX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAX.swift; sourceTree = "<group>"; };
 		A10753CA32DC12C3E85FA958 /* PetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetStore.swift; sourceTree = "<group>"; };
 		A42372BAA5004AE2D130DDB9 /* vscode-extension */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "vscode-extension"; sourceTree = SOURCE_ROOT; };
 		B12CA287C7CACA340ABD108C /* SpriteImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteImporter.swift; sourceTree = "<group>"; };
+		B8A1149D198FEB4DA0255063 /* OpenPetsInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenPetsInstaller.swift; sourceTree = "<group>"; };
 		BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteLibrary.swift; sourceTree = "<group>"; };
 		BD482F2A6FE5B98CD7B096DE /* PetMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PetMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C6295BC37E9B655A219CE95D /* PetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetView.swift; sourceTree = "<group>"; };
@@ -117,6 +123,8 @@
 		2AD5AD954394A47B008E8B62 /* Sprites */ = {
 			isa = PBXGroup;
 			children = (
+				50DC8B5090572CFAF7AC1CD1 /* OpenPetsCatalog.swift */,
+				B8A1149D198FEB4DA0255063 /* OpenPetsInstaller.swift */,
 				A10753CA32DC12C3E85FA958 /* PetStore.swift */,
 				B12CA287C7CACA340ABD108C /* SpriteImporter.swift */,
 				BB2C111BEDAB542565E5AD27 /* SpriteLibrary.swift */,
@@ -141,6 +149,7 @@
 				264913139BAFFC11AAC17636 /* MarkdownText.swift */,
 				48A22CBCDEC887562E988E63 /* MenuBarPopoverView.swift */,
 				CC212DAE89E96C0761547583 /* OnboardingWindowView.swift */,
+				8EB4421AB88317CC19698E2D /* OpenPetsBrowserView.swift */,
 				DF2FA9BE7EC8FCDFD1459B95 /* PermissionDialogView.swift */,
 				121562265EDE7612187515DD /* QuestionDialogView.swift */,
 				203F06FCF428FFDCF7BA43F5 /* SessionStackView.swift */,
@@ -352,6 +361,9 @@
 				2E14F863C978B9FF29B8D401 /* MarkdownText.swift in Sources */,
 				66AC3F8D76FD4C6A284CB463 /* MenuBarPopoverView.swift in Sources */,
 				CA90B52494CD89F734EDA0F1 /* OnboardingWindowView.swift in Sources */,
+				7880116AAB5B7D984AE920E6 /* OpenPetsBrowserView.swift in Sources */,
+				227472D1ED983675500FF695 /* OpenPetsCatalog.swift in Sources */,
+				D50D3DF4C06165CAD5F6A463 /* OpenPetsInstaller.swift in Sources */,
 				AE8CE0045BF32634ADC4B460 /* PermissionDialogView.swift in Sources */,
 				BC6ABBBDDF8016B801E40469 /* PetConfig.swift in Sources */,
 				995971EB706A8D046A29568C /* PetMacOSApp.swift in Sources */,
@@ -455,7 +467,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
@@ -476,7 +488,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.7.1;
+				MARKETING_VERSION = 1.8.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
