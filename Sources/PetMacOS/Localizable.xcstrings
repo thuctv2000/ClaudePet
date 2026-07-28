@@ -1019,6 +1019,22 @@
         }
       }
     },
+    "Copy log": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy log"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chép nhật ký"
+          }
+        }
+      }
+    },
     "Could not run pet-hook.sh: %@": {
       "localizations": {
         "en": {
@@ -1645,6 +1661,22 @@
         }
       }
     },
+    "Message delivery log": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message delivery log"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nhật ký gửi tin"
+          }
+        }
+      }
+    },
     "Message this conversation…": {
       "localizations": {
         "en": {
@@ -1803,6 +1835,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hiện chưa có gì đang chạy."
+          }
+        }
+      }
+    },
+    "Nothing sent from a card yet.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing sent from a card yet."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa gửi tin nào từ card."
           }
         }
       }
@@ -2457,6 +2505,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cài đặt…"
+          }
+        }
+      }
+    },
+    "Show events.log": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show events.log"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mở events.log"
           }
         }
       }

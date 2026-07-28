@@ -278,9 +278,63 @@ struct SettingsWindowView: View {
                 }
             }
 
+            replyLogSection
+
             uninstallSection
         }
         .formStyle(.grouped)
+    }
+
+    /// What happened to messages typed on a card: where each one went, or why
+    /// it went nowhere.
+    ///
+    /// The card itself only has room for three words, and they are the same
+    /// three whether a message reached the terminal, the Desktop app or a hook.
+    /// The moment delivery behaves differently on two machines that is the only
+    /// question worth answering, so the routes live here — with a Copy button,
+    /// because the machine that misbehaves is usually not the one being typed
+    /// on. Message text is never recorded, only its length.
+    private var replyLogSection: some View {
+        Section(tr("Message delivery log")) {
+            if state.replyLog.isEmpty {
+                Text(tr("Nothing sent from a card yet."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(state.replyLog.prefix(12)) { entry in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(entry.at, style: .time)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Text(entry.session)
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Text(entry.note)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+            HStack {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(state.replyLogText(), forType: .string)
+                } label: {
+                    Label(tr("Copy log"), systemImage: "doc.on.doc")
+                }
+                .disabled(state.replyLog.isEmpty)
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([PetState.logURL])
+                } label: {
+                    Label(tr("Show events.log"), systemImage: "folder")
+                }
+            }
+        }
     }
 
     private var appVersion: String {
