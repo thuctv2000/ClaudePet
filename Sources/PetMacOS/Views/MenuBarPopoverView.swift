@@ -305,11 +305,9 @@ private struct SessionRow: View {
                 .buttonStyle(.plain)
                 .help(tr("Dismiss this conversation"))
             } else {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(timeText(now: context.date))
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
+                elapsed
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 14)
@@ -380,16 +378,30 @@ private struct SessionRow: View {
         }
     }
 
-    private func timeText(now: Date) -> String {
-        guard isLive else {
-            return summary.lastEventAt.formatted(date: .omitted, time: .shortened)
+    /// How long this conversation has been at it, counting up live — or the
+    /// time of its last event once it stops.
+    ///
+    /// The live case is `Text(timerInterval:)`, **not** a `TimelineView` or a
+    /// `Timer`, because this row lives inside a `MenuBarExtra`: every tick that
+    /// changes SwiftUI state there re-evaluates the whole scene, the icon's
+    /// label included, and the status item visibly blinks once a second. Worse,
+    /// the panel's window is kept alive after it is dismissed, so the blinking
+    /// carried on forever once the panel had been opened a single time.
+    /// `Text(timerInterval:)` is drawn by the system: the digits advance with
+    /// no state change, so the icon is left alone (measured: label rebuilds
+    /// drop from 1/s forever to 0).
+    @ViewBuilder
+    private var elapsed: some View {
+        if isLive {
+            let start = summary.latestRunning?.startedAt
+                ?? summary.subagents.first?.startedAt
+                ?? summary.backgrounds.first?.startedAt
+                ?? summary.lastEventAt
+            Text(timerInterval: start...Date.distantFuture, countsDown: false, showsHours: false)
+                .monospacedDigit()
+        } else {
+            Text(summary.lastEventAt.formatted(date: .omitted, time: .shortened))
         }
-        let start = summary.latestRunning?.startedAt
-            ?? summary.subagents.first?.startedAt
-            ?? summary.backgrounds.first?.startedAt
-            ?? summary.lastEventAt
-        let seconds = max(0, Int(now.timeIntervalSince(start)))
-        return seconds < 60 ? "\(seconds)s" : "\(seconds / 60)m \(seconds % 60)s"
     }
 }
 

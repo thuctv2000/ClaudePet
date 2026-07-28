@@ -2,9 +2,11 @@
 # pet-hook.sh — bridges a Claude Code hook to the running Pet macOS app.
 #
 # Usage (from a Claude Code hook `command`):
-#   pet-hook.sh event       # fire-and-forget notification (Stop, PostToolUse, …)
+#   pet-hook.sh event       # fire-and-forget notification (PreToolUse, …)
 #   pet-hook.sh permission  # blocking approval (PermissionRequest)
 #   pet-hook.sh question    # blocking AskUserQuestion answer (PreToolUse)
+#   pet-hook.sh stop        # Stop: notify, then maybe hold for a typed reply
+#   pet-hook.sh deliver     # PostToolUse: notify + pick up a queued reply
 #
 # Reads the hook JSON from stdin and forwards it to the pet's loopback server,
 # whose port + token are published in ~/.petmacos/config.json on app launch.
@@ -24,6 +26,18 @@ TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG
 
 PAYLOAD=$(cat)
 
+# The session's controlling terminal, or "??" for a Desktop-app session. The
+# hook runs as a child of `claude`, so this IS that session's tty -- the only
+# exact handle the pet has for addressing a terminal session (a Desktop session
+# can only be matched by conversation name). Sent as a header so the payload
+# JSON is never rewritten in sh.
+TTY=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+case "$TTY" in
+    ''|'??') PET_TTY="" ;;
+    /dev/*)  PET_TTY="$TTY" ;;
+    *)       PET_TTY="/dev/$TTY" ;;
+esac
+
 if [ "$MODE" = "question" ]; then
     # AskUserQuestion: block for the user's answer regardless of permission mode
     # (a real question needs a human, even in auto modes). The server returns the
@@ -32,7 +46,27 @@ if [ "$MODE" = "question" ]; then
     # Claude Code falls back to asking in the terminal. curl -m below the 600s
     # hook timeout.
     RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \
-        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \
+        --data-binary "$PAYLOAD" 2>/dev/null)
+    [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
+    exit 0
+fi
+
+if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
+    # Reply delivery. Both routes answer with either an empty body or the
+    # complete hook JSON — hookSpecificOutput.additionalContext carrying what the
+    # user typed — which is printed verbatim. Claude Code re-invokes the model
+    # with that text instead of ending the turn, which is the entire transport:
+    # no tmux, no accessibility, no extra process. Building the JSON server-side
+    # keeps arbitrary user text (quotes, newlines, emoji) out of `sh`.
+    #
+    # `/stop` may hold while the user types, so it gets a longer budget than
+    # `/deliver`, which never waits. Both -m values sit under the hook timeouts
+    # in HookInstaller.plan(), so a wedged pet degrades to "turn ends normally"
+    # instead of stalling the session.
+    if [ "$MODE" = "stop" ]; then ROUTE=/stop; LIMIT=150; else ROUTE=/deliver; LIMIT=10; fi
+    RESPONSE=$(curl -s -m "$LIMIT" -X POST "http://127.0.0.1:$PORT$ROUTE" \
+        -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \
         --data-binary "$PAYLOAD" 2>/dev/null)
     [ -n "$RESPONSE" ] && printf '%s\n' "$RESPONSE"
     exit 0
@@ -57,7 +91,7 @@ if [ "$MODE" = "permission" ]; then
     # hook's 600s default, so a stuck pet degrades to the terminal prompt rather
     # than killing the hook.
     RESPONSE=$(curl -s -m 300 -X POST "http://127.0.0.1:$PORT/ask" \
-        -H "X-Pet-Token: $TOKEN" \
+        -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" \
         -H "Content-Type: application/json" \
         --data-binary "$PAYLOAD" 2>/dev/null)
 
@@ -79,7 +113,7 @@ fi
 
 # Fire-and-forget notification.
 curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \
-    -H "X-Pet-Token: $TOKEN" \
+    -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" \
     -H "Content-Type: application/json" \
     --data-binary "$PAYLOAD" >/dev/null 2>&1
 

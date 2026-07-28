@@ -32,7 +32,7 @@ CONFIGURATION="Release"
 BUILD_DIR="$ROOT_DIR/build/release"
 ARCHIVE_PATH="$BUILD_DIR/PetMacOS.xcarchive"
 EXPORT_APP_DIR="$BUILD_DIR/export"
-APP_NAME="PetMacOS.app"
+APP_NAME="ClaudePet.app"
 APP_PATH="$EXPORT_APP_DIR/$APP_NAME"
 DMG_STAGING_DIR="$BUILD_DIR/dmg-staging"
 
@@ -146,7 +146,12 @@ else
 fi
 
 log "Signing main app bundle: $APP_PATH"
+# --entitlements is NOT optional here: this re-sign replaces whatever xcodebuild
+# embedded, so leaving it out silently strips the apple-events entitlement and
+# the pet loses the ability to script Terminal.app — only in release builds,
+# which is the worst place to find out.
 codesign --force --options runtime --timestamp \
+  --entitlements "$ROOT_DIR/Support/PetMacOS.entitlements" \
   --sign "$DEVELOPER_ID" \
   "$APP_PATH"
 
@@ -158,7 +163,7 @@ APP_INFO_PLIST="$APP_PATH/Contents/Info.plist"
 VERSION="$(defaults read "$APP_INFO_PLIST" CFBundleShortVersionString 2>/dev/null || echo "0.0.0")"
 log "App version: $VERSION"
 
-DMG_NAME="PetMacOS-${VERSION}.dmg"
+DMG_NAME="ClaudePet-${VERSION}.dmg"
 DMG_PATH="$BUILD_DIR/$DMG_NAME"
 
 # ---------------------------------------------------------------------------
@@ -176,7 +181,7 @@ DMG_PATH="$BUILD_DIR/$DMG_NAME"
 # set it manually via Finder's View Options).
 # ---------------------------------------------------------------------------
 
-DMG_VOLNAME="PetMacOS"
+DMG_VOLNAME="ClaudePet"
 DMG_WINDOW_W=660
 DMG_WINDOW_H=420
 DMG_ICON_SIZE=128
@@ -226,7 +231,7 @@ build_dmg_plain() {
 apply_dmg_layout() {
   local staging_dir="$1"
   local output_path="$2"
-  local rw_dmg="$BUILD_DIR/PetMacOS-rw.dmg"
+  local rw_dmg="$BUILD_DIR/ClaudePet-rw.dmg"
 
   rm -f "$rw_dmg"
   hdiutil create \
@@ -332,7 +337,7 @@ if [[ "$DO_NOTARIZE" -eq 1 ]]; then
   # Notarize the .app itself first (zipped, since notarytool needs a
   # zip/dmg/pkg — not a raw .app bundle), staple the .app, then rebuild the
   # DMG with the stapled app, and finally notarize + staple the DMG too.
-  APP_ZIP_PATH="$BUILD_DIR/PetMacOS-app-for-notarization.zip"
+  APP_ZIP_PATH="$BUILD_DIR/ClaudePet-app-for-notarization.zip"
   log "Zipping app for notarization submission -> $APP_ZIP_PATH"
   ditto -c -k --keepParent "$APP_PATH" "$APP_ZIP_PATH"
   notarize_submit "$APP_ZIP_PATH"

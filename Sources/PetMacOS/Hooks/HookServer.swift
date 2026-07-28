@@ -23,6 +23,11 @@ final class HookServer: AskResolver, @unchecked Sendable {
     /// answer response can echo the questions back verbatim. Touched on `queue`.
     private var pendingQuestionPayloads: [String: Data] = [:]
 
+    /// Continuations for `Stop` hooks held open while the user types a reply.
+    /// The response body is the hook's own JSON (see `injectionBody`) or empty.
+    /// Only touched on `queue`.
+    private var pendingReplies: [String: CheckedContinuation<Data, Never>] = [:]
+
     /// How long to wait for the user before defaulting to deny.
     private let askTimeout: TimeInterval = 300
 
@@ -90,17 +95,33 @@ final class HookServer: AskResolver, @unchecked Sendable {
         case "/event":
             if let event = try? JSONDecoder().decode(HookEvent.self, from: request.body) {
                 let petState = self.petState
-                Task { @MainActor in petState.apply(event) }
+                let tty = request.headers["x-pet-tty"]
+                Task { @MainActor in
+                    petState.rememberTty(tty, for: event.sessionId)
+                    petState.apply(event)
+                }
             }
             respond(connection)
         case "/ask":
             handleAsk(request, on: connection)
         case "/question":
             handleQuestion(request, on: connection)
+        case "/stop":
+            handleStop(request, on: connection)
+        case "/deliver":
+            handleDeliver(request, on: connection)
         case "/debug/state":
             handleDebugState(on: connection)
         case "/debug/resolveAsk":
             handleDebugResolveAsk(request, on: connection)
+        case "/debug/sendReply":
+            handleDebugSendReply(request, on: connection)
+        case "/debug/markViewed":
+            handleDebugMarkViewed(request, on: connection)
+        case let path where path.hasPrefix("/debug/axdump"):
+            handleDebugAXDump(request, on: connection)
+        case "/debug/surface":
+            handleDebugSurface(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -173,6 +194,83 @@ final class HookServer: AskResolver, @unchecked Sendable {
         Task { @MainActor in petState.presentQuestion(id: id, event: event) }
     }
 
+    /// The `Stop` hook. Runs the normal Stop handling and then either answers
+    /// straight away (turn ends as usual) or holds the connection open while
+    /// the user types a reply on the pet — see `PetState.presentStop`.
+    ///
+    /// Holding a `Stop` is what makes replying possible at all, and it is also
+    /// the only way this feature can hurt: a held hook makes the session look
+    /// busy. So the hold is bounded here, the script's own `curl -m` is
+    /// bounded below the hook timeout, and every exit path returns an empty
+    /// body, which the script turns into a plain `exit 0`.
+    private func handleStop(_ request: HTTPRequest, on connection: NWConnection) {
+        let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
+        let id = UUID().uuidString
+
+        Task {
+            let body = await withCheckedContinuation { (continuation: CheckedContinuation<Data, Never>) in
+                self.queue.async { self.pendingReplies[id] = continuation }
+            }
+            self.respond(connection, body: body)
+        }
+
+        let petState = self.petState
+        Task { @MainActor in
+            // Read the (live-overridable) hold length before presenting, so a
+            // test can shorten it on a running app.
+            let hold = petState.replyHoldSeconds
+            petState.presentStop(id: id, event: event)
+            self.queue.asyncAfter(deadline: .now() + hold) { [weak self] in
+                guard let self,
+                      let continuation = self.pendingReplies.removeValue(forKey: id) else { return }
+                Task { @MainActor in petState.cancelStop(id: id) }
+                continuation.resume(returning: Data())
+            }
+        }
+    }
+
+    /// The `PostToolUse` hook: the pet's ordinary event feed *plus* the
+    /// delivery point for a message typed while Claude was mid-turn. Never
+    /// waits — an empty queue answers with an empty body immediately, so this
+    /// costs one loopback round-trip per tool call and nothing else.
+    private func handleDeliver(_ request: HTTPRequest, on connection: NWConnection) {
+        let event = (try? JSONDecoder().decode(HookEvent.self, from: request.body)) ?? HookEvent.empty
+        let petState = self.petState
+        let tty = request.headers["x-pet-tty"]
+        Task { @MainActor in
+            petState.rememberTty(tty, for: event.sessionId)
+            petState.apply(event)
+            let text = petState.takeQueuedReply(forSession: event.sessionId)
+            self.respond(connection, body: Self.injectionBody(text, event: "PostToolUse"))
+        }
+    }
+
+    /// The hook JSON that hands `text` to Claude and keeps the turn going, or
+    /// an empty body when there is nothing to say. Built with
+    /// `JSONSerialization` rather than string interpolation because the text
+    /// is whatever the user typed — quotes, newlines and emoji included.
+    ///
+    /// `additionalContext` rather than `decision: "block"`, which is the other
+    /// way to continue a turn. Both re-invoke the model with the text, but
+    /// Claude Code files a block under the same "something went wrong" bucket
+    /// as a crashed hook: in the shipped client a Stop `blockingError` is
+    /// pushed onto the array that raises the **"Stop hook error occurred ·
+    /// ctrl+o to see"** notification, and the transcript labels it `Stop hook
+    /// error:`. Measured side by side in a real TUI, the same message sent as
+    /// `additionalContext` continues the turn identically, raises no
+    /// notification, and reads as `Stop hook feedback:` — which is what a
+    /// message from the user should look like.
+    private static func injectionBody(_ text: String?, event: String) -> Data {
+        guard let text, !text.isEmpty else { return Data() }
+        let object: [String: Any] = [
+            "hookSpecificOutput": [
+                "hookEventName": event,
+                "additionalContext": PetState.replyReason(for: text),
+            ]
+        ]
+        return (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+    }
+
     /// Read-only introspection used by automated tests (no computer-use access
     /// to this accessory app's borderless panel is possible, so tests assert
     /// on exact state here instead of screenshots). Same token gate as every
@@ -201,12 +299,89 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
     }
 
+    /// Test-only route that types into a session card's reply box for real —
+    /// same entry point the TextField calls, so the queue/hold logic under it
+    /// is the shipping one (same rationale as `/debug/resolveAsk`: the pet's
+    /// borderless panel can't be driven by computer-use).
+    /// Body: `{"sessionId":"…","text":"…"}`.
+    private func handleDebugSendReply(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let sessionId = object?["sessionId"] as? String ?? ""
+        let text = object?["text"] as? String ?? ""
+        let petState = self.petState
+        Task { @MainActor in
+            petState.sendReply(text, forSession: sessionId)
+            self.respond(connection)
+        }
+    }
+
+    /// Test-only route that stands in for `SessionFocusMonitor` noticing the
+    /// user opened a conversation in the desktop app. The dismiss rule it
+    /// drives is the one that used to yank the reply box away, so it needs a
+    /// regression test and there is no other way to trigger it from outside.
+    /// Body: `{"sessionId":"…"}`.
+    private func handleDebugMarkViewed(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let sessionId = object?["sessionId"] as? String ?? ""
+        let petState = self.petState
+        Task { @MainActor in
+            petState.markConversationViewed(sessionId: sessionId, at: Date())
+            self.respond(connection)
+        }
+    }
+
+    /// Reconnaissance route for the idle-session work: returns Claude.app's
+    /// accessibility tree as plain text (and triggers the one-time system
+    /// permission prompt when the pet isn't trusted yet). Read-only — it never
+    /// clicks or types. Token-gated like everything else here.
+    private func handleDebugAXDump(_ request: HTTPRequest, on connection: NWConnection) {
+        // ?bundle=<id> so the same probe can look at VS Code (or any other
+        // Electron host) instead of only Claude.app.
+        let bundle = request.path.split(separator: "?").dropFirst().first
+            .flatMap { query -> String? in
+                query.split(separator: "&")
+                    .first { $0.hasPrefix("bundle=") }
+                    .map { String($0.dropFirst("bundle=".count)) }
+            } ?? DesktopAX.bundleID
+        Task { @MainActor in
+            if !DesktopAX.isTrusted { DesktopAX.requestTrust() }
+            let text = DesktopAX.dump(bundle: bundle)
+            self.respond(connection, body: Data(text.utf8), contentType: "text/plain")
+        }
+    }
+
+    /// Reports which surface a transcript says its session runs on. Body:
+    /// `{"transcriptPath":"…"}` → `{"surface":"cli","cwd":"…"}`.
+    ///
+    /// Exists so the routing decision can be tested against a real file
+    /// without a real session: the answer decides whether a reply is typed
+    /// into a terminal, into VS Code, or into the Desktop app, and the cost of
+    /// getting it wrong is a message delivered somewhere it was never meant
+    /// to go.
+    private func handleDebugSurface(_ request: HTTPRequest, on connection: NWConnection) {
+        let payload = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let origin = SessionOrigin.read(transcriptPath: payload?["transcriptPath"] as? String)
+        var answer: [String: Any] = ["surface": origin.surface.rawValue]
+        if let cwd = origin.cwd { answer["cwd"] = cwd }
+        if let title = origin.terminalTitle { answer["terminalTitle"] = title }
+        let body = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data()
+        respond(connection, body: body, contentType: "application/json")
+    }
+
     // MARK: - AskResolver
 
     func resolveAsk(id: String, decision: PetDecision) {
         queue.async { [weak self] in
             guard let self, let continuation = self.pending.removeValue(forKey: id) else { return }
             continuation.resume(returning: decision)
+        }
+    }
+
+    func resolveReply(id: String, text: String?) {
+        queue.async { [weak self] in
+            guard let self,
+                  let continuation = self.pendingReplies.removeValue(forKey: id) else { return }
+            continuation.resume(returning: Self.injectionBody(text, event: "Stop"))
         }
     }
 
@@ -244,9 +419,10 @@ final class HookServer: AskResolver, @unchecked Sendable {
         }
     }
 
-    private func respond(_ connection: NWConnection, status: String = "200 OK", body: Data = Data()) {
+    private func respond(_ connection: NWConnection, status: String = "200 OK",
+                         body: Data = Data(), contentType: String = "application/json") {
         var head = "HTTP/1.1 \(status)\r\n"
-        head += "Content-Type: application/json\r\n"
+        head += "Content-Type: \(contentType)\r\n"
         head += "Content-Length: \(body.count)\r\n"
         head += "Connection: close\r\n\r\n"
         var data = Data(head.utf8)

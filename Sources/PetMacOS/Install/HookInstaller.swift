@@ -38,9 +38,18 @@ enum HookInstaller {
             // approval hook, which is why it also carried the /event POST for
             // auto modes; that side of it lives on here.
             ("PreToolUse", "event", "*", nil),
-            ("PostToolUse", "event", "*", nil),
+            // PostToolUse carries the event feed AND collects a message typed
+            // while Claude was mid-turn: returning `additionalContext` here
+            // hands the text to Claude at the next tool boundary. The server
+            // never waits on this route, so the cost is one loopback hop.
+            ("PostToolUse", "deliver", "*", 60),
             ("Notification", "event", nil, nil),
-            ("Stop", "event", nil, nil),
+            // Stop does the same at the end of a turn, and additionally holds
+            // the hook open when the turn ended on a question — that hold is
+            // what lets the user answer from the pet and resume the same turn.
+            // The timeout is the outer bound of that hold (server default 120s,
+            // script's curl 150s); exceeding it just ends the turn normally.
+            ("Stop", "stop", nil, 180),
             // SubagentStart is new in Claude Code v2.1.177+ (carries agent_id/
             // agent_type for a subagent that's about to run) and lets PetState
             // retire the *right* SubagentStop card instead of oldest-first
@@ -236,11 +245,33 @@ enum HookInstaller {
     TOKEN=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p' "$CONFIG")
     [ -n "$PORT" ] || exit 0
     PAYLOAD=$(cat)
+    # The session's controlling terminal ("??" for a Desktop-app session). The
+    # hook is a child of `claude`, so this is that session's tty -- the exact
+    # handle used to address a terminal session. Header, so the JSON is never
+    # rewritten in sh.
+    TTY=$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')
+    case "$TTY" in
+        ''|'??') PET_TTY="" ;;
+        /dev/*)  PET_TTY="$TTY" ;;
+        *)       PET_TTY="/dev/$TTY" ;;
+    esac
+    if [ "$MODE" = "stop" ] || [ "$MODE" = "deliver" ]; then
+        # Reply delivery. The server answers with an empty body or the complete
+        # hook JSON (hookSpecificOutput.additionalContext), printed verbatim —
+        # Claude Code re-invokes the model with that text and the turn continues.
+        # Building it server-side keeps arbitrary typed text out of sh.
+        if [ "$MODE" = "stop" ]; then ROUTE=/stop; LIMIT=150; else ROUTE=/deliver; LIMIT=10; fi
+        RESPONSE=$(curl -s -m "$LIMIT" -X POST "http://127.0.0.1:$PORT$ROUTE" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
+            --data-binary "$PAYLOAD" 2>/dev/null)
+        [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
+        exit 0
+    fi
     if [ "$MODE" = "question" ]; then
         # AskUserQuestion: block for the user's answer regardless of permission
         # mode. Server returns the full hookSpecificOutput JSON; print verbatim.
         RESPONSE=$(curl -s -m 570 -X POST "http://127.0.0.1:$PORT/question" \\
-            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
         [ -n "$RESPONSE" ] && printf '%s\\n' "$RESPONSE"
         exit 0
@@ -253,7 +284,7 @@ enum HookInstaller {
         TOOL=$(printf '%s' "$PAYLOAD" | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
         [ "$TOOL" = "AskUserQuestion" ] && exit 0
         RESPONSE=$(curl -s -m 300 -X POST "http://127.0.0.1:$PORT/ask" \\
-            -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+            -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
             --data-binary "$PAYLOAD" 2>/dev/null)
         case "$RESPONSE" in
             *'"decision":"deny"'*)
@@ -265,7 +296,7 @@ enum HookInstaller {
         exit 0
     fi
     curl -s -m 3 -X POST "http://127.0.0.1:$PORT/event" \\
-        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \\
+        -H "X-Pet-Token: $TOKEN" -H "X-Pet-Tty: $PET_TTY" -H "Content-Type: application/json" \\
         --data-binary "$PAYLOAD" >/dev/null 2>&1
     exit 0
     """

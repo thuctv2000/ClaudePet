@@ -22,6 +22,8 @@ struct SessionStackView: View {
     let summaries: [PetState.SessionSummary]
     let settings: SettingsStore
     let onDismissCard: (String) -> Void
+    /// (sessionId, text) — send a typed message into that conversation.
+    let onSendReply: (String, String) -> Void
 
     /// Session ids whose task-count line is expanded into the task list.
     @State private var expandedTasks: Set<String> = []
@@ -89,7 +91,8 @@ struct SessionStackView: View {
                                 isMessageExpanded: expandedMessages.contains(summary.id),
                                 onToggleExpand: { toggle(summary.id, in: &expandedTasks) },
                                 onToggleMessage: { toggle(summary.id, in: &expandedMessages) },
-                                onDismissCard: onDismissCard
+                                onDismissCard: onDismissCard,
+                                onSendReply: { text in onSendReply(summary.id, text) }
                             )
                             .id(summary.id)
                             .contentShape(Rectangle())
@@ -193,6 +196,16 @@ private struct SessionCardView: View {
     let onToggleExpand: () -> Void
     let onToggleMessage: () -> Void
     let onDismissCard: (String) -> Void
+    /// Send the typed message into this conversation.
+    let onSendReply: (String) -> Void
+
+    /// Text typed into this card's reply box.
+    @State private var replyText = ""
+    /// Dropped the moment a message is sent. Delivery to an idle session types
+    /// with real key events, and the pet's own window is a `.nonactivatingPanel`
+    /// — it keeps keyboard focus while another app is frontmost, so a field
+    /// still holding focus is a field that can catch the pet's own keystrokes.
+    @FocusState private var replyFocused: Bool
 
     private static let maxListedTasks = 5
     private static let collapsedMessageLines = 2
@@ -213,6 +226,8 @@ private struct SessionCardView: View {
             taskCountLine
             if isExpanded { taskList }
             messageLine
+            replyStatusLine
+            replyBox
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -240,12 +255,26 @@ private struct SessionCardView: View {
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if let project = summary.project {
-                    Text(project)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                // Project and host on one line: two conversations in the same
+                // folder are told apart by where they run, and where they run
+                // is also what decides how a reply gets to them.
+                HStack(spacing: 4) {
+                    if let project = summary.project {
+                        Text(project)
+                            .lineLimit(1)
+                    }
+                    if let label = summary.surface.label, let symbol = summary.surface.symbol {
+                        if summary.project != nil {
+                            Text("·")
+                        }
+                        Image(systemName: symbol)
+                            .font(.system(size: 8))
+                        Text(label)
+                            .lineLimit(1)
+                    }
                 }
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.tertiary)
             }
             Button {
                 onDismissCard(summary.id)
@@ -370,6 +399,111 @@ private struct SessionCardView: View {
             .font(.caption2)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Reply box
+
+    /// What happened to the last message sent from this card. Auto-clears in
+    /// `PetState` after ~20s.
+    private func icon(for status: PetState.ReplyStatus) -> String {
+        switch status {
+        case .sent: return "checkmark.circle.fill"
+        case .queued: return "clock.fill"
+        case .stuck: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func label(for status: PetState.ReplyStatus) -> String {
+        switch status {
+        case .sent: return tr("Sent to Claude")
+        case .queued: return tr("Queued — goes out at Claude's next step")
+        case .stuck: return tr("Can't reach this session while it's idle — type in its own window")
+        }
+    }
+
+    private func colour(for status: PetState.ReplyStatus) -> Color {
+        switch status {
+        case .sent: return .green
+        case .queued: return .orange
+        case .stuck: return .red
+        }
+    }
+
+    @ViewBuilder
+    private var replyStatusLine: some View {
+        if let status = summary.replyStatus {
+            // Three outcomes, three lines. "Queued" used to cover the stuck
+            // case too, which read as "arriving shortly" for a message that
+            // would never arrive — the single most misleading thing the card
+            // did.
+            HStack(alignment: .top, spacing: 4) {
+                Image(systemName: icon(for: status))
+                Text(label(for: status))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(colour(for: status))
+            .lineLimit(2)
+        }
+    }
+
+    /// One-line message field, shown for every live conversation — delivery
+    /// rides the installed hooks, so there is no transport to detect and
+    /// nothing for the user to set up.
+    ///
+    /// Disabled while this session has its own permission/question dialog
+    /// waiting: that prompt is what actually blocks Claude, and a message typed
+    /// now could not be delivered until it is answered.
+    @ViewBuilder
+    private var replyBox: some View {
+        if summary.canReply {
+            HStack(spacing: 6) {
+                TextField(replyPlaceholder, text: $replyText)
+                    .textFieldStyle(.plain)
+                    .font(.caption2)
+                    .disabled(summary.isAwaitingApproval)
+                    .focused($replyFocused)
+                    .onSubmit(send)
+                Button(action: send) {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(canSend ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSend)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(0.5))
+            )
+            // While the Stop hook is held the conversation is genuinely paused
+            // on this box, so it gets a ring to say the typing goes somewhere.
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.orange.opacity(summary.isHoldingReply ? 0.8 : 0), lineWidth: 1)
+            )
+            .padding(.top, 2)
+        }
+    }
+
+    private var replyPlaceholder: String {
+        if summary.isAwaitingApproval { return tr("Answer the permission prompt first…") }
+        if summary.isHoldingReply { return tr("Claude is waiting — reply now…") }
+        return tr("Message this conversation…")
+    }
+
+    private var canSend: Bool {
+        !summary.isAwaitingApproval
+            && !replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func send() {
+        guard canSend else { return }
+        replyFocused = false
+        onSendReply(replyText.trimmingCharacters(in: .whitespacesAndNewlines))
+        replyText = ""
     }
 
     // MARK: Task count + expandable list

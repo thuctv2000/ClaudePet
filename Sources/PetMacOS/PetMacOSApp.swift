@@ -78,6 +78,13 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
         SpriteLibrary.ensureScaffold()
         sprites.reload()
         petState.recoverInFlightSubagents()
+        // Off the main thread: it walks a few directories and copies two small
+        // files, and nothing on screen waits for the result.
+        let state = petState
+        DispatchQueue.global(qos: .utility).async {
+            let summary = VSCodeExtensionInstaller.installIfNeeded()
+            Task { @MainActor in state.recordNote(summary) }
+        }
         showPet()
         // Decide (and persist) the onboarding flag *before* starting the hook
         // server: its onReady callback rewrites config.json with a fresh

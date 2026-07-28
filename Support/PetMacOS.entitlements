@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sending a typed reply into a Claude Code session running in Terminal.app
+	     or iTerm2 goes through AppleScript: those apps expose each tab's tty,
+	     which is the only exact way to address the right session (the Desktop
+	     app can only be matched by conversation name). Under hardened runtime
+	     an app cannot send Apple events without this entitlement. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

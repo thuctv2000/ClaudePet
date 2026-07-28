@@ -155,7 +155,8 @@ struct PetView: View {
         SessionStackView(
             summaries: summaries,
             settings: settings,
-            onDismissCard: { key in state.dismissSession(key: key) }
+            onDismissCard: { key in state.dismissSession(key: key) },
+            onSendReply: { sessionId, text in state.sendReply(text, forSession: sessionId) }
         )
     }
 

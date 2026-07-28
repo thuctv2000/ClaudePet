@@ -10,6 +10,10 @@ protocol AskResolver: AnyObject, Sendable {
     /// text; `nil` means the user skipped, so the server returns an empty body
     /// and Claude Code asks in the terminal instead.
     func resolveQuestion(id: String, answers: [String: PetAnswer]?)
+    /// Releases a held `Stop` hook. `text` non-nil makes the hook answer
+    /// `{"decision":"block","reason":…}` so the user's message reaches Claude
+    /// and the turn continues; `nil` lets the turn end normally.
+    func resolveReply(id: String, text: String?)
 }
 
 /// A pending permission request awaiting the user's Allow/Deny on the pet.
@@ -195,6 +199,12 @@ final class PetState {
         appendLog("error \(message)")
     }
 
+    /// Records something that happened but isn't a fault (an install, a
+    /// migration). Same log, no "error" prefix to chase in a bug report.
+    func recordNote(_ message: String) {
+        appendLog(message)
+    }
+
     /// Set by the app delegate to wire the server as the resolver.
     @ObservationIgnored weak var resolver: AskResolver?
 
@@ -260,8 +270,28 @@ final class PetState {
         var name: String?
         var tag: String?
         var project: String?
+        /// Controlling terminal of the session ("/dev/ttys003"), or nil for a
+        /// Desktop-app session. Reported by the hook, which inherits it from
+        /// `claude` — an exact handle, unlike the Desktop app's title match.
+        var tty: String?
+        /// Transcript path, kept because the folder it sits in identifies the
+        /// session's project directory, which is how a missing `tty` is
+        /// recovered later (see `TerminalBridge.discoverTty`).
+        var transcriptPath: String?
+        /// Cached answer for the card label; see `surface(forKey:)`.
+        var surface: SessionSurface?
     }
     private var sessionMeta: [String: SessionMeta] = [:]
+
+    /// Records which terminal a session runs in (nil / empty for the Desktop
+    /// app). Refreshed on every event: resuming a session in another window
+    /// gives it a new tty, and a stale one would address the wrong tab.
+    func rememberTty(_ tty: String?, for sessionId: String?) {
+        guard let sid = sessionId else { return }
+        var meta = sessionMeta[sid] ?? SessionMeta()
+        meta.tty = (tty?.isEmpty == false) ? tty : nil
+        sessionMeta[sid] = meta
+    }
 
     /// Captures/refreshes the display metadata for the event's session. The
     /// name is re-resolved on every event (cheap: `SessionNameResolver`
@@ -274,6 +304,9 @@ final class PetState {
             meta.name = name
         }
         if meta.tag == nil { meta.tag = event.sessionTag }
+        if let transcript = event.transcriptPath, !transcript.isEmpty {
+            meta.transcriptPath = transcript
+        }
         // A session's project never changes, but the reported `cwd` does: the
         // Bash tool keeps a persistent shell, so once a command `cd`s
         // somewhere every following tool event reports *that* folder -- the
@@ -287,6 +320,16 @@ final class PetState {
             case false: break   // a wandered shell -- never name the session after it
             case nil: if meta.project == nil || !event.isToolEvent { meta.project = project }
             }
+        }
+        // Resolved here, on an event, and never while a view is drawing: the
+        // answer costs a 512KB read of the transcript tail, and the card asks
+        // for it on every single redraw. Re-read only until it answers — a
+        // session whose transcript has no `entrypoint` yet (no user prompt
+        // recorded) retries on the next event, which is exactly when the file
+        // has grown.
+        if meta.surface == nil, let transcript = meta.transcriptPath {
+            let resolved = SessionOrigin.read(transcriptPath: transcript).surface
+            if resolved != .unknown { meta.surface = resolved }
         }
         sessionMeta[sid] = meta
     }
@@ -329,6 +372,13 @@ final class PetState {
         /// The project (cwd folder name) this conversation runs in, shown as
         /// a small caption under the name; nil when never seen on an event.
         let project: String?
+        /// Which program is hosting this conversation, from the transcript's
+        /// own `entrypoint`. Shown next to the project because several
+        /// conversations in the same folder look identical otherwise — and
+        /// because it explains the pet's behaviour: a reply reaches each
+        /// surface a different way, and only some of them can be reached
+        /// while the conversation sits idle.
+        let surface: SessionSurface
         /// This session's own mood (drives the card's status icon).
         let mood: Mood
         /// Ordering key: the session's own last hook event (or, for a
@@ -342,6 +392,38 @@ final class PetState {
         let subagents: [TaskItem]
         /// This session's still-running background Bash tasks (oldest first).
         let backgrounds: [TaskItem]
+        /// This session has a blocking `/ask` or `/question` of its own waiting
+        /// on the pet. The reply box is disabled meanwhile: the permission
+        /// dialog is the thing that needs answering, and a message typed now
+        /// could only be delivered after it.
+        let isAwaitingApproval: Bool
+        /// The session's `Stop` hook is being held open right now (Claude ended
+        /// its turn on a question). Anything typed goes straight to Claude and
+        /// the turn resumes — so the box says so.
+        let isHoldingReply: Bool
+        /// Outcome of the most recent message sent from this card, if any.
+        let replyStatus: ReplyStatus?
+        /// A card offers a reply box for any conversation that is still alive.
+        /// Unlike the tmux prototype there is no transport to detect: delivery
+        /// rides the hooks that are already installed, so every live session
+        /// can be written to.
+        var canReply: Bool { !id.isEmpty && mood != .sleep }
+    }
+
+    /// What happened to a message sent from a session card.
+    enum ReplyStatus: Equatable {
+        /// Handed to Claude Code (a held `Stop` was released, or a queued
+        /// message was picked up at a tool boundary).
+        case sent
+        /// Parked in the queue — Claude is mid-turn, so it goes out at the
+        /// next `PostToolUse` or when the turn ends.
+        case queued
+        /// The session is idle and no surface would take the message: it is
+        /// still queued, but nothing will deliver it until that session runs
+        /// again. Saying "queued" here would be a lie — it is the difference
+        /// between "arriving shortly" and "never", and the card used to show
+        /// the same word for both.
+        case stuck
     }
 
     /// One card per conversation, ordered so the session with the NEWEST
@@ -388,12 +470,17 @@ final class PetState {
                 id: key == Self.noSessionKey ? "" : key,
                 name: displayName(forKey: key),
                 project: sessionMeta[key]?.project,
+                surface: surface(forKey: key),
                 mood: mood,
                 lastEventAt: lastEventAt,
                 latestRunning: running.first,       // runningTasks is newest-first
                 latestCompleted: completed.first,   // completedNotices is newest-first
                 subagents: subs,
-                backgrounds: bgs
+                backgrounds: bgs,
+                isAwaitingApproval: askQueue.contains { $0.sessionId == key }
+                    || pendingQuestion?.sessionId == key,
+                isHoldingReply: heldStops[key] != nil,
+                replyStatus: replyStatuses[key]
             ))
         }
         return result.sorted { $0.lastEventAt > $1.lastEventAt }
@@ -985,6 +1072,19 @@ final class PetState {
     /// desktop app batch-bumping `lastFocusedAt` on its own restart, and means
     /// the user genuinely looked at the conversation after it finished.
     private func viewedDismissEligible(sessionId: String, focusDate: Date) -> Bool {
+        // This rule predates the reply box, and the two collided: the card is
+        // no longer only a notice, it is the ONLY place to type an answer. So
+        // retiring it because the user is looking at the conversation would
+        // take away the reply box at exactly the moment it is needed — and if
+        // a Stop hook is being held, it strands that hook until its timeout
+        // while nothing on screen says anything is waiting.
+        //
+        // "Done" therefore has to mean nobody is waiting on anybody, not
+        // merely that no task is running.
+        guard heldStops[sessionId] == nil else { return false }
+        guard replyQueue[sessionId] == nil else { return false }
+        guard sessions[sessionId]?.mood != .asking else { return false }
+
         func mine(_ items: [TaskItem]) -> [TaskItem] {
             items.filter { ($0.sessionId ?? Self.noSessionKey) == sessionId }
         }
@@ -992,6 +1092,9 @@ final class PetState {
               mine(backgroundTasks).isEmpty else { return false }
         let completed = mine(completedNotices)
         guard !completed.isEmpty else { return false }
+        // A question card is Claude waiting for a human; looking at the
+        // conversation is not the same as answering it.
+        guard !completed.contains(where: { $0.kind == .question }) else { return false }
         let lastEventAt = sessions[sessionId]?.lastEventAt
             ?? completed.map(\.startedAt).max() ?? .distantPast
         return focusDate > lastEventAt
@@ -1029,9 +1132,12 @@ final class PetState {
     /// Enables click passthrough while notices, subagent/background cards or
     /// an ask are on screen (their manual ✕ must be clickable).
     private func updatePassthrough() {
+        // `runningTasks` joins the list because every live session card now
+        // carries a reply box, and a card built from a running task alone
+        // would otherwise render a TextField the mouse falls straight through.
         onMousePassthroughNeeded?(
             !completedNotices.isEmpty || !subagentTasks.isEmpty
-                || !backgroundTasks.isEmpty || pendingAsk != nil)
+                || !backgroundTasks.isEmpty || !runningTasks.isEmpty || pendingAsk != nil)
     }
 
     /// Shows a short-lived app notice (connection, sprites) as a session card.
@@ -1040,6 +1146,500 @@ final class PetState {
     func notify(_ title: String, mood: Mood = .idle) {
         setMood(mood, for: nil)
         pushRunning(TaskItem(title: title, kind: .session))
+    }
+
+    // MARK: - Reply (delivered through the hooks, no extra transport)
+
+    /// Claude Code has no API for "push text into a running session", but two
+    /// hooks already carry text *to the model*: returning
+    /// `hookSpecificOutput.additionalContext` from `Stop` re-invokes the model
+    /// with that text instead of ending the turn, and the same shape on
+    /// `PostToolUse` reaches it at the next tool boundary. That is the whole
+    /// transport — which is why replying works identically in the terminal, the
+    /// Desktop app and VS Code: they all read the same
+    /// `~/.claude/settings.json`. See `HookServer.injectionBody` for why this
+    /// and not `decision: "block"`.
+    ///
+    /// Two delivery moments, so a message is never stranded:
+    ///  - **held `Stop`** — when a turn ends on a question (`QuestionDetector`),
+    ///    the hook is kept open for `replyHoldSeconds` instead of returning
+    ///    immediately. Typing then resumes that same turn.
+    ///  - **queue** — anything typed at another moment waits here and goes out
+    ///    at the next `PostToolUse`/`Stop` of that session.
+    ///
+    /// The one rule that must never be broken: **only ever block when there is
+    /// a real message**. `stop_hook_active` looks like loop protection but is
+    /// only advisory — Claude Code honours a second and third block just fine —
+    /// so an unconditional block here would spin the session forever.
+    ///
+    /// sessionId -> the request id of that session's `Stop` hook being held.
+    private var heldStops: [String: String] = [:]
+    /// sessionId -> messages typed while nothing was held, oldest first.
+    private var replyQueue: [String: [String]] = [:]
+    /// sessionId -> outcome of its most recent message (shown on the card).
+    private var replyStatuses: [String: ReplyStatus] = [:]
+    /// Per-session auto-clear timers for `replyStatuses`.
+    private var replyStatusClearTasks: [String: Task<Void, Never>] = [:]
+    /// How long a status line stays on the card.
+    private static let replyStatusTTL: TimeInterval = 20
+
+    /// Prefix that tells Claude where the text came from. Without it the
+    /// message arrives as bare "Stop hook feedback", which reads like a policy
+    /// hook talking rather than the person at the keyboard.
+    nonisolated private static let replyPreamble =
+        "Message from the user, sent from the ClaudePet desktop app:"
+
+    /// Wraps a typed message in the preamble. `nonisolated` so the hook server
+    /// can build the response body on its own queue.
+    nonisolated static func replyReason(for text: String) -> String {
+        "\(replyPreamble)\n\n\(text)"
+    }
+
+    /// A `Stop` hook arrived. Registers the hold *before* `apply` so the
+    /// settle below can never run first, then lets the normal Stop handling
+    /// (cards, mood, `QuestionDetector`) proceed — `settleStop` decides from
+    /// inside it whether the hold is kept.
+    func presentStop(id: String, event: HookEvent) {
+        // Two cases that must resolve immediately, or the hook hangs until the
+        // server's timeout: an event `apply` drops on the floor (the pet's own
+        // token-refresh runs), and anything that isn't actually a Stop.
+        let isRealStop = (event.hookEventName ?? "") == "Stop"
+            && event.projectName != UsageMonitor.refreshMarkerDirName
+        guard let sid = event.sessionId, isRealStop else {
+            apply(event)
+            resolver?.resolveReply(id: id, text: nil)
+            return
+        }
+        // One hold per session; a new Stop supersedes a stale one.
+        if let previous = heldStops.removeValue(forKey: sid) {
+            resolver?.resolveReply(id: previous, text: nil)
+        }
+        heldStops[sid] = id
+        apply(event)
+    }
+
+    /// Called from `pushStopNotice` once the turn's reply text is known.
+    /// Keeps the hold open only when Claude ended on a question — every other
+    /// turn releases at once so the session isn't left looking busy.
+    private func settleStop(sessionId: String?, isQuestion: Bool) {
+        guard let sid = sessionId, let id = heldStops[sid] else { return }
+        if let queued = dequeueReply(forSession: sid) {
+            heldStops.removeValue(forKey: sid)
+            resolver?.resolveReply(id: id, text: queued)
+            setReplyStatus(.sent, forSession: sid)
+            return
+        }
+        guard isQuestion else {
+            heldStops.removeValue(forKey: sid)
+            resolver?.resolveReply(id: id, text: nil)
+            return
+        }
+        // Question: hold, and let the card show a live reply box.
+    }
+
+    /// The server's hold timed out (or the connection died): forget the hold
+    /// so a later message queues instead of resolving a dead request.
+    func cancelStop(id: String) {
+        guard let sid = heldStops.first(where: { $0.value == id })?.key else { return }
+        heldStops.removeValue(forKey: sid)
+    }
+
+    /// Sends a message typed on a session card. Goes out immediately when that
+    /// session's `Stop` is being held, otherwise waits in the queue for the
+    /// next hook of that session.
+    func sendReply(_ text: String, forSession sessionId: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !sessionId.isEmpty else { return }
+        if let id = heldStops.removeValue(forKey: sessionId) {
+            resolver?.resolveReply(id: id, text: trimmed)
+            setReplyStatus(.sent, forSession: sessionId)
+            appendLog("reply session=\(Self.shortId(sessionId))"
+                + " typed, went straight into a held hook (\(trimmed.count) chars)")
+        } else {
+            appendLog("reply session=\(Self.shortId(sessionId))"
+                + " typed, queued (\(trimmed.count) chars,"
+                + " mood \(sessions[sessionId]?.mood ?? .idle))")
+            replyQueue[sessionId, default: []].append(trimmed)
+            setReplyStatus(.queued, forSession: sessionId)
+            scheduleIdleDelivery(forSession: sessionId)
+        }
+    }
+
+    /// Gives the hook path first refusal on a queued message, then delivers it
+    /// by hand if nothing came to collect it.
+    ///
+    /// The hook path is the better one wherever it is available — no window is
+    /// touched and no focus is stolen — but it only exists while a session is
+    /// still running. A session that has finished its turn fires nothing at all
+    /// until the user types, so its messages would sit in the queue forever.
+    ///
+    /// Deciding between the two by mood was wrong, and this is the bug it
+    /// caused: mood is a snapshot of the **last event seen**, so a session that
+    /// has been sitting idle for an hour still reads `working` from the turn
+    /// before, and its message was queued and never delivered. Mood is only a
+    /// hint about how long to wait now — a session that looks busy is given
+    /// longer for a hook to turn up, and either way the message goes out.
+    private func scheduleIdleDelivery(forSession sessionId: String, attempt: Int = 1) {
+        let mood = sessions[sessionId]?.mood ?? .idle
+        let grace: Double = attempt > 1 ? 6 : ((mood == .working || mood == .thinking) ? 12 : 1.5)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(grace * 1_000_000_000))
+            guard let self else { return }
+            // Anything a hook already collected is gone from the queue, so
+            // there is nothing here to deliver twice. The same check is what
+            // makes the retry below safe: a delivery in flight has taken its
+            // message out of the queue, so this finds nothing and stands down.
+            guard self.replyQueue[sessionId]?.isEmpty == false else { return }
+            guard self.heldStops[sessionId] == nil else { return }
+            self.deliverToIdleSession(sessionId)
+            // One retry. Driving another app's window is timing-dependent — the
+            // panel may still be building, or the user may have clicked
+            // somewhere mid-flight — and for an idle session a single failure
+            // is permanent: no hook will ever come to carry the message
+            // instead.
+            if attempt < 2 {
+                self.scheduleIdleDelivery(forSession: sessionId, attempt: attempt + 1)
+            }
+        }
+    }
+
+    /// Last-resort delivery for an idle conversation: type it into the Claude
+    /// Desktop app. Only ever *drains* the queue when the write is confirmed,
+    /// so a failure leaves the message waiting for the next hook instead of
+    /// silently losing it.
+    /// Routes an idle session's message to whichever surface actually hosts
+    /// it, as recorded in its own transcript (`SessionOrigin`).
+    ///
+    /// This used to be a guess — try the terminal if a tty is known, otherwise
+    /// offer the message to every window-driving host in turn — and the guess
+    /// was not survivable. Offering a session id to VS Code that its extension
+    /// cannot place makes it open a **new conversation** and put the reply
+    /// there, so a terminal session that the pet failed to reach by tty could
+    /// end up starting a stray VS Code session. Each surface is now asked only
+    /// about sessions it actually owns.
+    private func deliverToIdleSession(_ sessionId: String) {
+        let origin = SessionOrigin.read(transcriptPath: sessionMeta[sessionId]?.transcriptPath)
+        switch origin.surface {
+        case .cli:
+            guard let tty = resolvedTty(forSession: sessionId) else {
+                noteAttempt("terminal session, but no scriptable terminal owns it", for: sessionId)
+                setReplyStatus(.stuck, forSession: sessionId)
+                return
+            }
+            deliverViaTerminal(forSession: sessionId, tty: tty, thenTryHosts: false)
+        case .vscode:
+            deliverViaVSCode(forSession: sessionId, workspace: origin.cwd)
+        case .desktop:
+            deliverViaDesktop(forSession: sessionId)
+        case .unknown:
+            // No transcript, or one too old to carry an entrypoint. The two
+            // surfaces that refuse harmlessly when a session isn't theirs.
+            if let tty = resolvedTty(forSession: sessionId) {
+                deliverViaTerminal(forSession: sessionId, tty: tty, thenTryHosts: true)
+            } else {
+                deliverViaDesktop(forSession: sessionId)
+            }
+        }
+    }
+
+    /// The session's tty: what the hook reported, or — when it never did —
+    /// worked out from the running `claude` processes. The second path matters
+    /// precisely here: an idle session emits no events, so a pet restart (or a
+    /// session that last spoke to an older hook script) leaves the reported
+    /// value nil for exactly the sessions this feature exists to reach.
+    private func resolvedTty(forSession sessionId: String) -> String? {
+        if let known = sessionMeta[sessionId]?.tty { return known }
+        guard let transcript = sessionMeta[sessionId]?.transcriptPath else { return nil }
+        let folder = URL(fileURLWithPath: transcript).deletingLastPathComponent().lastPathComponent
+        guard let found = TerminalBridge.discoverTty(projectFolder: folder) else { return nil }
+        sessionMeta[sessionId]?.tty = found
+        return found
+    }
+
+    private func deliverViaTerminal(
+        forSession sessionId: String, tty: String, thenTryHosts: Bool
+    ) {
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
+            return
+        }
+        noteAttempt("trying terminal \(tty)", for: sessionId)
+        Task { [weak self] in
+            let result = await Task.detached { TerminalBridge.send(text, toTty: tty) }.value
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.noteAttempt("delivered to terminal \(tty)", for: sessionId)
+            case .failure(let error):
+                self.requeueReply(text, forSession: sessionId)
+                self.noteAttempt("terminal \(tty) failed: \(error)", for: sessionId)
+                // A tty the pet cannot script (VS Code's integrated terminal,
+                // Ghostty, kitty…) has no idle route at all. Only a session of
+                // unknown origin is worth offering to the hosts after this; a
+                // transcript that says `cli` has already ruled them out.
+                if thenTryHosts {
+                    self.deliverViaDesktop(forSession: sessionId)
+                } else {
+                    // A tty that no scriptable terminal owns is usually VS
+                    // Code's integrated one — the tty is real, the terminal
+                    // just isn't AppleScript-able.
+                    self.deliverViaVSCodeTerminal(forSession: sessionId, tty: tty)
+                }
+            }
+        }
+    }
+
+    /// Host apps whose prompt the pet can drive, tried in order. Each one is
+    /// asked whether it owns a conversation by this name; the first that says
+    /// yes takes the message, and a host that doesn't recognise it fails with
+    /// `conversationNotFound` and costs nothing.
+    private static let promptHosts: [(name: String, bundle: String)] = [
+        ("Claude Desktop", DesktopAX.bundleID),
+    ]
+
+    private func deliverViaDesktop(forSession sessionId: String) {
+        guard DesktopAX.isTrusted else {
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            return
+        }
+        guard let title = sessionMeta[sessionId]?.name else {
+            noteAttempt("skipped: no resolved conversation name for this session",
+                        for: sessionId)
+            return
+        }
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
+            return
+        }
+        noteAttempt("trying: \(title)", for: sessionId)
+        let hosts = Self.promptHosts
+        Task { [weak self] in
+            let outcome = await Task.detached { () -> (String, Bool) in
+                var notes: [String] = []
+                for host in hosts {
+                    switch DesktopAX.send(text, toConversationTitled: title, bundle: host.bundle) {
+                    case .success(let channel):
+                        return ("delivered to \(title) via \(host.name) (\(channel))", true)
+                    case .failure(let error):
+                        notes.append("\(host.name): \(error)")
+                    }
+                }
+                return ("no host took \(title) — " + notes.joined(separator: "; "), false)
+            }.value
+            guard let self else { return }
+            if outcome.1 {
+                self.setReplyStatus(.sent, forSession: sessionId)
+            } else {
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+            }
+            // On failure the message goes back in the queue on purpose: the
+            // next hook still gets to deliver it.
+            self.noteAttempt(outcome.0, for: sessionId)
+        }
+    }
+
+    /// Delivery into a VS Code extension session. Addressed by **session id**,
+    /// the only exact identifier any of these surfaces accepts — the others
+    /// have to match a conversation title and refuse when it is ambiguous.
+    private func deliverViaVSCode(forSession sessionId: String, workspace: String?) {
+        guard DesktopAX.isTrusted else {
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            return
+        }
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
+            return
+        }
+        let label = sessionMeta[sessionId]?.name ?? String(sessionId.prefix(8))
+        noteAttempt("trying VS Code: \(label)", for: sessionId)
+        Task { [weak self] in
+            let result = await Task.detached {
+                DesktopAX.sendToVSCode(text, sessionId: sessionId, workspace: workspace,
+                                       conversation: label)
+            }.value
+            guard let self else { return }
+            switch result {
+            case .success(let channel):
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.noteAttempt("delivered to \(label) via VS Code (\(channel))",
+                                 for: sessionId)
+            case .failure(let error):
+                // Back in the queue: the next hook this session fires can
+                // still carry it.
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+                self.noteAttempt("VS Code \(label) failed: \(error)", for: sessionId)
+            }
+        }
+    }
+
+    /// Types into a session running in VS Code's integrated terminal.
+    ///
+    /// Alone among the surfaces this one cannot be read back — the terminal is
+    /// not in the accessibility tree — so `DesktopAX` can only report that the
+    /// keys were sent. The confirmation comes from the session instead: a
+    /// message that landed makes Claude Code fire `UserPromptSubmit` within a
+    /// second or two, and that event arrives through the hook already
+    /// installed. No event means the keys went nowhere useful.
+    private func deliverViaVSCodeTerminal(forSession sessionId: String, tty: String) {
+        // The bridge extension first: it hands the text to VS Code's own
+        // `Terminal.sendText`, which writes into the pty without touching a
+        // window — no activation, no focus, and it works while the window is
+        // minimised. Everything below it is UI automation and behaves like it.
+        if let text = replyQueue[sessionId]?.first {
+            switch VSCodeBridge.send(text, toTty: tty) {
+            case .success(let name):
+                _ = dequeueReply(forSession: sessionId)
+                setReplyStatus(.sent, forSession: sessionId)
+                noteAttempt("delivered to \(name) via the VS Code bridge extension",
+                            for: sessionId)
+                return
+            case .failure(let error):
+                noteAttempt("bridge extension: \(error)", for: sessionId)
+            }
+        }
+        guard DesktopAX.isTrusted else {
+            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            return
+        }
+        // Found by the title CLAUDE CODE gave the session, not by the pet's own
+        // name for it — the two are different strings and only the first is on
+        // screen.
+        let origin = SessionOrigin.read(transcriptPath: sessionMeta[sessionId]?.transcriptPath)
+        guard let name = origin.terminalTitle else {
+            noteAttempt("skipped: transcript has no ai-title to find the terminal by",
+                        for: sessionId)
+            setReplyStatus(.stuck, forSession: sessionId)
+            return
+        }
+        guard let text = dequeueReply(forSession: sessionId) else {
+            noteAttempt("skipped: nothing queued", for: sessionId)
+            return
+        }
+        noteAttempt("trying VS Code terminal: \(name)", for: sessionId)
+        Task { [weak self] in
+            guard let self else { return }
+            let before = self.sessions[sessionId]?.lastEventAt
+            let result = await Task.detached {
+                DesktopAX.sendToVSCodeTerminal(text, sessionName: name)
+            }.value
+            if case .failure(let error) = result {
+                self.noteAttempt("VS Code terminal \(name) failed: \(error)", for: sessionId)
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+                return
+            }
+            try? await Task.sleep(for: .seconds(6))
+            if let after = self.sessions[sessionId]?.lastEventAt, after != before {
+                self.setReplyStatus(.sent, forSession: sessionId)
+                self.noteAttempt("delivered to \(name) via VS Code terminal"
+                                 + " (confirmed by the session's own hook)", for: sessionId)
+            } else {
+                self.noteAttempt("VS Code terminal \(name): keys sent, no hook followed",
+                                 for: sessionId)
+                self.requeueReply(text, forSession: sessionId)
+                self.setReplyStatus(.stuck, forSession: sessionId)
+            }
+        }
+    }
+
+    /// What happened on the most recent delivery attempt, surfaced in
+    /// `/debug/state`. Every abort path above writes here — silent skips made
+    /// the first round of testing unreadable.
+    private(set) var lastDesktopAttempt: String?
+
+    /// The same note, but kept per session.
+    ///
+    /// One shared field was not enough to debug with: several sessions can be
+    /// queued at once, so the note explaining why a message did not go out gets
+    /// overwritten by the next session's attempt before anyone reads it. That
+    /// happened on the first real failure report and left nothing to go on.
+    private(set) var replyAttempts: [String: String] = [:]
+
+    private func noteAttempt(_ note: String, for sessionId: String) {
+        lastDesktopAttempt = note
+        replyAttempts[sessionId] = note
+        // Also to events.log, because the map above only keeps the LATEST note
+        // per session and has no clock. A failure followed by a success reads
+        // exactly like a session that never failed — which is precisely the
+        // question "it works sometimes" needs answered. The log has timestamps
+        // and keeps the whole run.
+        appendLog("reply session=\(Self.shortId(sessionId)) \(note)")
+    }
+
+    private static func shortId(_ sessionId: String) -> String {
+        String(sessionId.prefix(8))
+    }
+
+    /// Where a conversation lives, for the card label. A plain lookup: the
+    /// answer is worked out when the event arrives (`rememberSessionMeta`),
+    /// never here — this is called from inside a view body, where reading a
+    /// file would cost a 512KB parse per redraw and writing the result back
+    /// would mutate observed state mid-draw.
+    ///
+    /// Delivery deliberately does NOT use this cache: a session that gets
+    /// resumed somewhere else changes surface, and routing a message by a
+    /// stale answer is how a reply ends up in the wrong window.
+    private func surface(forKey key: String) -> SessionSurface {
+        sessionMeta[key]?.surface ?? .unknown
+    }
+
+    /// Pops the next queued message for a session (used by the `PostToolUse`
+    /// route). Returns nil — never blocks — when the queue is empty.
+    func takeQueuedReply(forSession sessionId: String?) -> String? {
+        guard let sid = sessionId, let text = dequeueReply(forSession: sid) else { return nil }
+        setReplyStatus(.sent, forSession: sid)
+        appendLog("reply session=\(Self.shortId(sid)) collected by a hook (\(text.count) chars)")
+        return text
+    }
+
+    /// Puts a message back at the head of the queue after a failed delivery.
+    ///
+    /// Delivery takes the message OUT of the queue before it starts, because
+    /// typing it into a window takes seconds and a hook arriving in the middle
+    /// would otherwise collect the same message and send it twice. Whatever
+    /// fails then has to hand it back.
+    private func requeueReply(_ text: String, forSession sessionId: String) {
+        replyQueue[sessionId, default: []].insert(text, at: 0)
+    }
+
+    private func dequeueReply(forSession sessionId: String) -> String? {
+        guard var pending = replyQueue[sessionId], !pending.isEmpty else { return nil }
+        let next = pending.removeFirst()
+        if pending.isEmpty { replyQueue.removeValue(forKey: sessionId) }
+        else { replyQueue[sessionId] = pending }
+        return next
+    }
+
+    /// How long a `Stop` may be held waiting for the user. Same live-override
+    /// mechanism as the decay timings so tests can shorten it on a running app.
+    var replyHoldSeconds: TimeInterval {
+        Self.configOverride(key: "replyHoldSeconds") ?? 120
+    }
+
+    private func setReplyStatus(_ status: ReplyStatus, forSession sessionId: String) {
+        replyStatuses[sessionId] = status
+        replyStatusClearTasks[sessionId]?.cancel()
+        replyStatusClearTasks[sessionId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.replyStatusTTL))
+            guard !Task.isCancelled else { return }
+            self?.clearReplyState(forSession: sessionId, keepQueue: true)
+        }
+    }
+
+    /// Drops a session's reply state. `keepQueue` distinguishes the status
+    /// line expiring (queue must survive — the message hasn't been delivered
+    /// yet) from the session ending (everything goes).
+    private func clearReplyState(forSession sessionId: String, keepQueue: Bool) {
+        replyStatuses.removeValue(forKey: sessionId)
+        replyStatusClearTasks.removeValue(forKey: sessionId)?.cancel()
+        guard !keepQueue else { return }
+        replyQueue.removeValue(forKey: sessionId)
+        if let id = heldStops.removeValue(forKey: sessionId) {
+            resolver?.resolveReply(id: id, text: nil)
+        }
     }
 
     // MARK: - Hook events
@@ -1245,6 +1845,10 @@ final class PetState {
             if let sid { sessions.removeValue(forKey: sid) } else { sessions.removeValue(forKey: Self.noSessionKey) }
             recomputeAggregateMood()
             clearRunning(sessionId: sid)
+            // Nothing can deliver a queued message to a conversation that has
+            // ended, and a still-held Stop must be released or its hook sits
+            // there until the server's timeout.
+            if let sid { clearReplyState(forSession: sid, keepQueue: false) }
             pruneMetaIfUnused(sessionId: sid)
         default:
             if let message = event.message {
@@ -1278,6 +1882,9 @@ final class PetState {
 
         func push(_ text: String?, context: String?) {
             let isQuestion = QuestionDetector.looksLikeQuestion(text ?? "")
+            // Runs on both paths below and exactly once per Stop, which is what
+            // lets it own the held hook's fate — see `settleStop`.
+            settleStop(sessionId: sid, isQuestion: isQuestion)
             if isQuestion {
                 // No "happy" burst and no decay back to idle: the pet stays in
                 // `.asking` until the user actually answers (the next
@@ -1534,6 +2141,26 @@ final class PetState {
         /// The display name each session card shows, aligned with
         /// `sessionOrder` (resolved conversation name, else "#tag" fallback).
         let sessionNames: [String]
+        /// Session ids whose `Stop` hook the pet is holding open right now,
+        /// waiting for the user to type an answer.
+        let heldStopSessions: [String]
+        /// Session ids with at least one message still waiting to be delivered
+        /// at the next hook boundary.
+        let queuedReplySessions: [String]
+        /// Each card's reply status ("sent"/"queued"), aligned with
+        /// `sessionOrder`; nil where the card shows none.
+        let sessionReplyStatuses: [String?]
+        /// Whether the pet holds Accessibility rights — the Desktop fallback
+        /// needs them.
+        let desktopTrusted: Bool
+        /// Outcome of the most recent Desktop delivery attempt, if any. Every
+        /// abort path writes here; silent skips made the first round of
+        /// testing unreadable.
+        let lastDesktopAttempt: String?
+        /// Per-session delivery notes, `"<sessionId>: <note>"` sorted by id.
+        let replyAttempts: [String]
+        /// Which surface each card reports, aligned with `sessionOrder`.
+        let sessionSurfaces: [String]
     }
 
     /// Read-only state snapshot for `GET /debug/state`, used by automated
@@ -1565,7 +2192,15 @@ final class PetState {
             pendingAskSessionId: pendingAsk?.sessionId,
             sessions: sessionSnapshots,
             sessionOrder: summaries.map(\.id),
-            sessionNames: summaries.map(\.name)
+            sessionNames: summaries.map(\.name),
+            heldStopSessions: heldStops.keys.sorted(),
+            queuedReplySessions: replyQueue.keys.sorted(),
+            sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } },
+            desktopTrusted: DesktopAX.isTrusted,
+            lastDesktopAttempt: lastDesktopAttempt,
+            replyAttempts: replyAttempts.sorted { $0.key < $1.key }
+                .map { "\($0.key): \($0.value)" },
+            sessionSurfaces: summaries.map { $0.surface.rawValue }
         )
     }
 

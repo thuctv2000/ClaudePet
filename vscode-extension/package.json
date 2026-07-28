@@ -1,0 +1,13 @@
+{
+  "name": "claudepet-bridge",
+  "displayName": "ClaudePet Bridge",
+  "description": "Lets the ClaudePet app deliver a reply into a Claude Code session running in this window's integrated terminal.",
+  "version": "1.0.0",
+  "publisher": "claudepet",
+  "license": "MIT",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {}
+}
