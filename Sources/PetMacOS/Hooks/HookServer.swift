@@ -122,8 +122,6 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugAXDump(request, on: connection)
         case "/debug/surface":
             handleDebugSurface(request, on: connection)
-        case "/debug/focusTerminal":
-            handleDebugFocusTerminal(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -368,26 +366,6 @@ final class HookServer: AskResolver, @unchecked Sendable {
         if let title = origin.terminalTitle { answer["terminalTitle"] = title }
         let body = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data()
         respond(connection, body: body, contentType: "application/json")
-    }
-
-    /// Presses the button that focuses a VS Code terminal and reports what
-    /// holds keyboard focus afterwards. Body: `{"name":"<terminal title>"}`.
-    ///
-    /// Exists because "the keys went nowhere" has two very different causes —
-    /// focus never moved, or focus moved and the keys were dropped — and
-    /// guessing between them is how the integrated terminal got written off.
-    private func handleDebugFocusTerminal(_ request: HTTPRequest, on connection: NWConnection) {
-        let payload = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
-        let name = (payload?["name"] as? String) ?? ""
-        let activate = (payload?["activate"] as? Bool) ?? false
-        let typeOnly = payload?["typeOnly"] as? String
-        let shortcut = payload?["shortcut"] as? String
-        Task { @MainActor in
-            let report = shortcut.map { DesktopAX.probeShortcutFocus($0) }
-                ?? typeOnly.map { DesktopAX.typeIntoVSCodeUnfocused($0) }
-                ?? DesktopAX.probeTerminalFocus(named: name, activate: activate)
-            self.respond(connection, body: Data(report.utf8), contentType: "text/plain")
-        }
     }
 
     // MARK: - AskResolver
