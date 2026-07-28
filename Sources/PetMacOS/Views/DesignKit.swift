@@ -50,48 +50,23 @@ enum PetTheme {
     }
 }
 
-/// A small status dot; `pulsing` gently breathes for live (in-progress) states.
+/// A small status dot. Deliberately static.
+///
+/// It used to breathe (a `repeatForever` ring) for live states, and that is
+/// what made the menu bar panel flash: every label in the panel dropped out and
+/// came back, over and over, for as long as one conversation was live.
+/// Measured — 10 khung liên tiếp của panel: với vòng pulse, 36–86% pixel đổi
+/// giữa các khung; bỏ nó ra, 0 pixel đổi. A `repeatForever` animation inside a
+/// `MenuBarExtra` window is not worth it: the live cue is already carried by
+/// the mood colour, the line saying what is running, and the counting timer.
 struct StatusDot: View {
     let color: Color
     var size: CGFloat = 8
-    var pulsing = false
-
-    @State private var on = false
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: size, height: size)
-            .overlay {
-                // The ring exists only while the state is live, so a finished
-                // session leaves a plain dot instead of a halo frozen mid-flight.
-                if pulsing {
-                    Circle()
-                        .stroke(color.opacity(0.45), lineWidth: 3)
-                        .scaleEffect(on ? 1.9 : 1.0)
-                        .opacity(on ? 0 : 0.9)
-                }
-            }
-            .onAppear { setPulse(pulsing) }
-            .onChange(of: pulsing) { _, new in setPulse(new) }
-    }
-
-    /// Starting the animation in `onAppear` alone isn't enough: rows are reused
-    /// across mood changes (`ForEach` keys them by session id) and the menu bar
-    /// panel is built once and merely hidden, so `onAppear` fires long before
-    /// `pulsing` flips either way. And `repeatForever` never stops on its own —
-    /// setting `on` back with animations disabled is what actually cancels it;
-    /// otherwise the dot keeps pulsing forever, even with the panel closed.
-    private func setPulse(_ active: Bool) {
-        if active {
-            withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) {
-                on = true
-            }
-        } else {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) { on = false }
-        }
     }
 }
 

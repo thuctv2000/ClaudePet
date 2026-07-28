@@ -2153,6 +2153,10 @@ final class PetState {
         /// Whether the pet holds Accessibility rights — the Desktop fallback
         /// needs them.
         let desktopTrusted: Bool
+        /// How many times the menu bar icon has been rebuilt since launch.
+        /// A rate, not a value: divide two readings to see whether the status
+        /// item is being redrawn when nothing about it changed.
+        let menuBarRedraws: Int
         /// Outcome of the most recent Desktop delivery attempt, if any. Every
         /// abort path writes here; silent skips made the first round of
         /// testing unreadable.
@@ -2197,6 +2201,7 @@ final class PetState {
             queuedReplySessions: replyQueue.keys.sorted(),
             sessionReplyStatuses: summaries.map { $0.replyStatus.map { String(describing: $0) } },
             desktopTrusted: DesktopAX.isTrusted,
+            menuBarRedraws: MenuBarIcon.redraws,
             lastDesktopAttempt: lastDesktopAttempt,
             replyAttempts: replyAttempts.sorted { $0.key < $1.key }
                 .map { "\($0.key): \($0.value)" },

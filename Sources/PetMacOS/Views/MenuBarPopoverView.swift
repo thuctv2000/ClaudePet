@@ -97,7 +97,7 @@ struct MenuBarPopoverView: View {
     /// The one thing that must never be buried: Claude is blocked on the user.
     private var pendingAskBanner: some View {
         HStack(spacing: 9) {
-            StatusDot(color: .orange, size: 8, pulsing: true)
+            StatusDot(color: .orange, size: 8)
             Text(state.pendingAskCount == 1
                  ? tr("A permission request is waiting on the pet")
                  : String(format: tr("%d permission requests are waiting on the pet"), state.pendingAskCount))
@@ -265,7 +265,7 @@ private struct SessionRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            StatusDot(color: PetTheme.color(for: summary.mood), pulsing: isLive)
+            StatusDot(color: PetTheme.color(for: summary.mood))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(summary.name)
@@ -316,8 +316,8 @@ private struct SessionRow: View {
         .onHover { hovering = $0 }
     }
 
-    /// Live means work is genuinely in flight — those rows get a pulsing dot
-    /// and a counting timer instead of a wall-clock stamp.
+    /// Live means work is genuinely in flight — those rows count up instead of
+    /// showing a wall-clock stamp.
     private var isLive: Bool {
         switch summary.mood {
         case .working, .thinking, .asking: return true
@@ -416,7 +416,13 @@ enum MenuBarIcon {
     private static var cacheKey: String = ""
     private static var cached: NSImage?
 
+    /// How many times the status item has been rebuilt. Exposed in
+    /// `/debug/state` — the only way to tell "the icon is flashing" from
+    /// "the icon is fine and something else is moving".
+    static private(set) var redraws = 0
+
     static func image(count: Int, waiting: Bool) -> NSImage {
+        redraws += 1
         let key = "\(count)-\(waiting)"
         if key == cacheKey, let cached { return cached }
 
