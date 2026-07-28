@@ -15,6 +15,8 @@ struct SettingsWindowView: View {
     var usage: UsageMonitor
 
     @State private var importMessage: String?
+    /// Whether the OpenPets gallery sheet is up (see `OpenPetsBrowserView`).
+    @State private var openPetsShown = false
     /// Name typed into the "add a new pet" field.
     @State private var newPetName = ""
     /// Pet currently being renamed (drives the rename alert) + its draft name.
@@ -349,6 +351,9 @@ struct SettingsWindowView: View {
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $openPetsShown) {
+            OpenPetsBrowserView(delegate: delegate) { openPetsShown = false }
+        }
         // Dropping a GIF/images anywhere on the tab creates a pet from them —
         // the fastest possible path from "found a cute GIF" to a living pet.
         .dropDestination(for: URL.self) { urls, _ in
@@ -479,6 +484,7 @@ struct SettingsWindowView: View {
             TextField(tr("Pet name"), text: $newPetName)
             HStack {
                 Button(tr("Choose image or GIF…")) { addPet() }
+                Button(tr("Browse OpenPets…")) { openPetsShown = true }
                 if let message = importMessage {
                     Text(message)
                         .font(.caption)
@@ -489,6 +495,7 @@ struct SettingsWindowView: View {
             Text(tr("Add a new pet"))
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
+                Text(tr("Or take a ready-made pet: \"Browse OpenPets\" lists the free pets openpets.dev drew themselves, one click to install."))
                 Text(tr("One image or GIF is enough — the pet comes alive right away. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods below whenever you like."))
                 Text(tr("Tip: you can also drop a GIF or images anywhere on this tab."))
             }

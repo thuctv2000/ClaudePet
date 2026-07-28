@@ -122,6 +122,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugAXDump(request, on: connection)
         case "/debug/surface":
             handleDebugSurface(request, on: connection)
+        case "/debug/openpets":
+            handleDebugOpenPets(request, on: connection)
         default:
             respond(connection, status: "404 Not Found")
         }
@@ -365,6 +367,39 @@ final class HookServer: AskResolver, @unchecked Sendable {
         if let cwd = origin.cwd { answer["cwd"] = cwd }
         if let title = origin.terminalTitle { answer["terminalTitle"] = title }
         let body = (try? JSONSerialization.data(withJSONObject: answer)) ?? Data()
+        respond(connection, body: body, contentType: "application/json")
+    }
+
+    /// Lists the OpenPets originals, or installs one by id
+    /// (`{"install":"fox"}`). The install path is the same one the Settings
+    /// browser uses, so a check here checks what users actually get.
+    private func handleDebugOpenPets(_ request: HTTPRequest, on connection: NWConnection) {
+        let payload = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        Task {
+            var answer: [String: Any] = [:]
+            do {
+                let originals = try await OpenPetsCatalog.fetchOriginals()
+                answer["count"] = originals.count
+                answer["ids"] = originals.map(\.id)
+                if let wanted = payload?["install"] as? String {
+                    guard let entry = originals.first(where: { $0.id == wanted }) else {
+                        answer["error"] = "no original pet named \(wanted)"
+                        self.respondJSON(answer, on: connection)
+                        return
+                    }
+                    let id = try await OpenPetsInstaller.install(entry)
+                    answer["installed"] = id
+                    answer["directory"] = await PetStore.directory(for: id).path
+                }
+            } catch {
+                answer["error"] = error.localizedDescription
+            }
+            self.respondJSON(answer, on: connection)
+        }
+    }
+
+    private func respondJSON(_ object: [String: Any], on connection: NWConnection) {
+        let body = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
         respond(connection, body: body, contentType: "application/json")
     }
 

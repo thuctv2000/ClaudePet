@@ -28,7 +28,7 @@ final class PetStore {
     private(set) var activeID: String? = UserDefaults.standard.string(forKey: PetStore.activeKey)
 
     private static let activeKey = "pet.active"
-    static let petsRoot = PetConfig.directory.appendingPathComponent("pets", isDirectory: true)
+    nonisolated static let petsRoot = PetConfig.directory.appendingPathComponent("pets", isDirectory: true)
 
     /// Fixed folder id of the bundled default pet, so it can be recognised
     /// (and protected from deletion) across launches — unlike user pets, which
@@ -63,7 +63,7 @@ final class PetStore {
         return dir
     }
 
-    static func directory(for id: String) -> URL {
+    nonisolated static func directory(for id: String) -> URL {
         petsRoot.appendingPathComponent(id, isDirectory: true)
     }
 
