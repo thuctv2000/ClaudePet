@@ -30,7 +30,7 @@ final class SpriteLibrary {
 
     /// Every state the app knows how to play. `click` is the tap reaction;
     /// `happy` is the one-shot played on a clean `Stop` (see `PetState.happyID`).
-    static let states = ["idle", "click", "thinking", "working", "talking", "asking", "sleep", "error", "happy"]
+    nonisolated static let states = ["idle", "click", "thinking", "working", "talking", "asking", "sleep", "error", "happy"]
 
     /// Sensible default fps / looping per state (overridable via clip.json).
     private static func defaults(for state: String) -> (fps: Double, loops: Bool) {

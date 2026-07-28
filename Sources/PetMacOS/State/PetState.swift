@@ -1253,12 +1253,11 @@ final class PetState {
         if let id = heldStops.removeValue(forKey: sessionId) {
             resolver?.resolveReply(id: id, text: trimmed)
             setReplyStatus(.sent, forSession: sessionId)
-            appendLog("reply session=\(Self.shortId(sessionId))"
-                + " typed, went straight into a held hook (\(trimmed.count) chars)")
+            logReply("typed, went straight into a held hook (\(trimmed.count) chars)",
+                     for: sessionId)
         } else {
-            appendLog("reply session=\(Self.shortId(sessionId))"
-                + " typed, queued (\(trimmed.count) chars,"
-                + " mood \(sessions[sessionId]?.mood ?? .idle))")
+            logReply("typed, queued (\(trimmed.count) chars,"
+                     + " mood \(sessions[sessionId]?.mood ?? .idle))", for: sessionId)
             replyQueue[sessionId, default: []].append(trimmed)
             setReplyStatus(.queued, forSession: sessionId)
             scheduleIdleDelivery(forSession: sessionId)
@@ -1558,15 +1557,60 @@ final class PetState {
     /// happened on the first real failure report and left nothing to go on.
     private(set) var replyAttempts: [String: String] = [:]
 
+    /// One line of the user-facing send log.
+    struct ReplyLogEntry: Identifiable, Equatable {
+        let id = UUID()
+        let at: Date
+        /// The conversation's card name, so the log reads like the UI rather
+        /// than like a session id.
+        let session: String
+        let note: String
+    }
+
+    /// The last `replyLogLimit` things that happened to messages typed on a
+    /// card, newest first.
+    ///
+    /// `events.log` has had all of this since the feature existed, but only on
+    /// disk: the card shows three words ("Sent"/"Queued"/"Can't reach") and
+    /// nothing about **where** a message went or **why** it didn't. That is
+    /// exactly what is needed when delivery works on one machine and not on
+    /// another — so the same lines are kept in memory and shown in Settings,
+    /// with a button that copies them for pasting into a bug report.
+    ///
+    /// Message *text* is deliberately never stored — only its length. The log
+    /// is for routing, and a window listing everything the user has ever typed
+    /// into their agent is not something to leave lying around.
+    private(set) var replyLog: [ReplyLogEntry] = []
+    private static let replyLogLimit = 80
+
+    /// Writes one line to both logs: `events.log` (timestamped, permanent) and
+    /// the in-memory ring the Settings window shows.
+    private func logReply(_ note: String, for sessionId: String) {
+        appendLog("reply session=\(Self.shortId(sessionId)) \(note)")
+        replyLog.insert(ReplyLogEntry(at: Date(),
+                                      session: displayName(forKey: sessionId),
+                                      note: note), at: 0)
+        if replyLog.count > Self.replyLogLimit { replyLog.removeLast() }
+    }
+
+    /// The whole log as text, for the "Copy" button.
+    func replyLogText() -> String {
+        let stamp = DateFormatter()
+        stamp.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return replyLog.reversed()
+            .map { "\(stamp.string(from: $0.at))  [\($0.session)] \($0.note)" }
+            .joined(separator: "\n")
+    }
+
     private func noteAttempt(_ note: String, for sessionId: String) {
         lastDesktopAttempt = note
         replyAttempts[sessionId] = note
-        // Also to events.log, because the map above only keeps the LATEST note
+        // Also to the logs, because the map above only keeps the LATEST note
         // per session and has no clock. A failure followed by a success reads
         // exactly like a session that never failed — which is precisely the
         // question "it works sometimes" needs answered. The log has timestamps
         // and keeps the whole run.
-        appendLog("reply session=\(Self.shortId(sessionId)) \(note)")
+        logReply(note, for: sessionId)
     }
 
     private static func shortId(_ sessionId: String) -> String {
@@ -1591,7 +1635,7 @@ final class PetState {
     func takeQueuedReply(forSession sessionId: String?) -> String? {
         guard let sid = sessionId, let text = dequeueReply(forSession: sid) else { return nil }
         setReplyStatus(.sent, forSession: sid)
-        appendLog("reply session=\(Self.shortId(sid)) collected by a hook (\(text.count) chars)")
+        logReply("collected by a hook (\(text.count) chars)", for: sid)
         return text
     }
 
@@ -1664,7 +1708,8 @@ final class PetState {
             + (queuedAhead > 0 ? " queuedAhead=\(queuedAhead)" : ""))
     }
 
-    private static let logURL = FileManager.default.homeDirectoryForCurrentUser
+    /// The log file, also reachable from Settings ("Show events.log").
+    static let logURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".petmacos/events.log")
     /// Hard ceiling; on breach the oldest half is dropped (see `appendLog`) so
     /// recent history survives instead of the whole file being wiped.
