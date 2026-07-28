@@ -1,83 +1,97 @@
-# ClaudePet — Desktop Pet cho Claude Code trên macOS
+# ClaudePet — a desktop pet for Claude Code on macOS
 
-Một chú pet trong suốt sống trên màn hình, luôn nổi trên các cửa sổ và đi theo bạn qua mọi Space/full-screen. Pet là "màn hình phụ" cho [Claude Code](https://claude.com/claude-code): hiển thị Claude đang nghĩ/làm/hỏi gì, và cho phép **duyệt quyền ngay trên pet** khi bạn đang xem video hay ở tab khác.
+A transparent pet that lives on your screen, stays above other windows, and follows you across Spaces and full-screen apps. It is a second screen for [Claude Code](https://claude.com/claude-code): it shows what Claude is thinking, running or asking — and lets you **approve permissions and reply to Claude right from the pet**, without switching back to the terminal.
 
-## Cài đặt (khuyên dùng)
+## Install
 
-1. Tải **PetMacOS-x.y.z.dmg** từ [Releases](https://github.com/thuctv2000/ClaudePet/releases)
-2. Mở DMG, kéo **PetMacOS** vào **Applications** (theo mũi tên)
-3. Mở app — wizard hướng dẫn tự hiện, bấm **"Kết nối Claude Code"**
-4. Mở Claude Code chạy thử một lệnh để thấy pet phản ứng 🐾
+1. Download **ClaudePet-x.y.z.dmg** from [Releases](https://github.com/thuctv2000/ClaudePet/releases)
+2. Open the DMG and drag **ClaudePet** into **Applications**
+3. Open the app — a short guide appears; press **Connect Claude Code**
+4. Run something in Claude Code and watch the pet react 🐾
 
-App đã ký Developer ID và được Apple notarize — mở được ngay, không bị Gatekeeper chặn. Yêu cầu **macOS 14+**. Máy chưa cài Claude Code? Wizard sẽ chỉ chỗ cài rồi cho kiểm tra lại.
+Signed with a Developer ID and notarized by Apple, so it opens without Gatekeeper warnings. Requires **macOS 14+**. No Claude Code yet? The guide points you at it and lets you re-check.
 
-## Tính năng
+Updates install themselves — the app checks for new releases and updates in place.
 
-- **Biểu cảm theo trạng thái Claude Code**: thinking, working, talking, asking (xin quyền), sleeping
-- **Task cards**: hoạt động đang chạy, subagent, background task, kết quả hoàn thành
-- **Duyệt quyền trên pet**: hook `PreToolUse` chờ bạn bấm Cho phép/Từ chối rồi mới trả quyết định cho Claude Code — terminal không cần bật lên. Hết thời gian chờ (mặc định 300s) hoặc app không chạy thì tool bị **từ chối an toàn**, Claude Code không treo
-- **Badge mức sử dụng** Claude (cửa sổ 5 giờ / 1 tuần)
-- **Sprite tùy chỉnh**: thay chó vẽ sẵn bằng nhân vật của bạn (xem bên dưới)
-- **Tab Chẩn đoán** trong Settings: trạng thái hook/server, kiểm tra kết nối, copy log, cài lại hook
+## Features
 
-## Cách hoạt động
+- **Moods that follow Claude Code** — thinking, working, talking, asking, sleeping, error, and a small celebration when a job finishes.
+- **A card per conversation** — run several Claude Code sessions at once and each gets its own card with its real name, its project, what it is running right now, its subagents and background tasks, and a counting timer. Cards show where the conversation lives: Terminal, Claude, or VS Code.
+- **Approve permissions on the pet** — when Claude Code would ask, the pet asks instead. Press Allow or Deny and the terminal moves on. If the pet is closed or you ignore it, Claude Code asks in the terminal as usual — nothing gets stuck.
+- **Reply from the pet** — type into a card and the message reaches that conversation, even one that has already gone idle (see below).
+- **"Claude is waiting for you" cards** — when a turn ends in a question rather than a result, the card says so instead of claiming the job is done.
+- **Menu bar panel** — click the paw for connection status, every live conversation, your 5-hour and weekly Claude usage, and the Show pet / Click-through switches. The icon shows a count while work is running and turns orange the moment something is blocked on you.
+- **Click-through** — the pet only catches the mouse on its own pixels; clicks anywhere else go to the app behind it.
 
-Khi chạy, app mở một HTTP server chỉ trên `127.0.0.1` (port do OS cấp mỗi lần chạy) và ghi port + token vào `~/.petmacos/config.json`. Nút "Kết nối Claude Code" sẽ:
+## Replying from the pet
 
-- Ghi `~/.petmacos/pet-hook.sh` (đã `chmod +x`)
-- Chèn cấu hình hooks vào `~/.claude/settings.json` (giữ nguyên các cài đặt khác)
+Type a message on a card and press send. If the conversation is mid-turn, the message rides the hooks and arrives at Claude's next step. If it has already gone idle, ClaudePet delivers it to wherever that session actually lives:
 
-Từ đó mỗi phiên Claude Code mới sẽ gọi `pet-hook.sh` gửi sự kiện tới pet. **"Ngắt kết nối Claude Code"** trong menu bar gỡ sạch các hook đã chèn.
+| Where Claude Code runs | How the message gets there |
+|---|---|
+| Terminal.app, iTerm2 | straight into the right tab, no window comes forward |
+| VS Code integrated terminal | through a bridge extension ClaudePet installs into VS Code, Cursor and Windsurf — works even when the window is hidden |
+| VS Code panel | delivered without raising the window when it is only covered |
+| Claude app | typed into the conversation; a minimised window is opened, used, and put back |
 
-Tùy chọn trong menu bar / Settings:
+**Settings → About → Message delivery log** shows which route carried each message, or why it did not go out, with a Copy button for bug reports. Message text is never recorded, only its length.
 
-- **Chỉ hỏi tool ghi/chạy** — chỉ xin quyền với `Bash/Write/Edit/…`, tool đọc chỉ báo
-- **Tạm dừng duyệt quyền** — tự cho phép để đỡ phiền
-- **Hide pet / Click-through** — ẩn pet hoặc cho chuột xuyên qua
+Replying into the Claude app or the VS Code panel needs macOS Accessibility permission; terminal sessions never do. **Settings → Permissions** shows the current status and grants it in one click.
 
-## Sprite tùy chỉnh (anime)
+## Pets
 
-Mỗi **state** là một chuỗi frame PNG trong suốt, app phát như flipbook. Ảnh nằm **ngoài** app tại `~/.petmacos/sprites/` nên đổi frame không cần build lại.
+- **Pet library** — keep as many pets as you like, each with a name and avatar, and switch from the pet's own right-click menu. A Dino ships with the app.
+- **Browse OpenPets** — Settings → Pet → *Browse OpenPets…* installs animated pets from [openpets.dev](https://openpets.dev) with one click. Only pets drawn by OpenPets themselves are listed, and artwork is downloaded when you pick a pet rather than bundled into the app.
+- **Bring your own** — drop a GIF or a few images onto the Pet tab. A GIF animates as-is, several images become the frames, and a single image gets a gentle idle bob. Fill in the other moods whenever you like.
 
-1. Menu bar → **"Mở thư mục sprites"** (app tạo sẵn thư mục + `README.txt`)
-2. Thả frame vào từng state, đặt tên theo thứ tự: `idle/idle_000.png`, `idle_001.png`, …
-   - States: `idle`, `click` (chạy 1 lần), `thinking`, `working`, `talking`, `asking`, `sleep`
-3. Tùy chọn `clip.json` mỗi thư mục: `{"fps": 12, "loop": true}`
-4. Menu bar → **"Tải lại sprites"**
+Each mood is a folder of PNG frames under `~/.petmacos/pets/<pet>/<mood>/`, played like a flipbook, with an optional `clip.json` (`{"fps": 12, "loop": true}`) per folder. Moods: `idle`, `click`, `thinking`, `working`, `talking`, `asking`, `sleep`, `error`, `happy`. A mood with no frames falls back to `idle`.
 
-State chưa có ảnh sẽ dùng frame `idle`; chưa có ảnh nào thì dùng chó vẽ sẵn.
+> Character art you don't own is fine for personal use — think twice before publishing a pet made from it.
 
-> Lưu ý: art nhân vật có bản quyền (vd Genshin) chỉ nên dùng cá nhân; cân nhắc khi phát hành công khai.
+## How it works
 
-## Khi có trục trặc
+The app runs an HTTP server bound to `127.0.0.1` only (the OS picks the port each launch) and writes the port and a token to `~/.petmacos/config.json`. **Connect Claude Code**:
 
-Mở **Settings → tab Chẩn đoán**: xem hook đã cài chưa, server nghe cổng nào, event cuối lúc nào; bấm **Kiểm tra kết nối** (bắn event test qua đúng đường hook thật), **Copy log** để gửi kèm khi báo lỗi, hoặc **Cài lại hook**. Log chi tiết ở `~/.petmacos/events.log`.
+- writes `~/.petmacos/pet-hook.sh`
+- adds its hook entries to `~/.claude/settings.json`, leaving your other settings untouched (a backup is written first)
 
-## Dành cho developer
+From then on every Claude Code session calls `pet-hook.sh`, which posts events to the pet. **Disconnect Claude Code** removes exactly those entries again, and **Settings → About → Clean uninstall** removes them and optionally your pet data.
+
+The pet holds no permission policy of its own. It shows a dialog exactly when Claude Code would have asked you — to be asked more or less often, change the permission mode inside Claude Code and the pet follows.
+
+## When something is wrong
+
+**Settings → General** shows whether the hooks are installed, which port the server is on, and offers Connect / Check again / the guide. **Settings → About → Message delivery log** covers messages sent from a card. The full log is at `~/.petmacos/events.log`.
+
+## Development
 
 ```sh
-# Chạy nhanh
+# Run
 swift run
 
-# Hoặc mở bằng Xcode (repo dùng XcodeGen)
+# Or open in Xcode (the repo uses XcodeGen)
 xcodegen generate
 open PetMacOS.xcodeproj   # scheme PetMacOS, ⌘R
 ```
 
-App là menu-bar app (LSUIElement) — tìm icon bàn chân trên menu bar, không có icon Dock.
+It is a menu-bar app (`LSUIElement`) — look for the paw in the menu bar, there is no Dock icon.
 
 ```sh
-# Test e2e (cần app đang chạy)
+# End-to-end tests (need the app running)
 tests/e2e_pet_state.sh
 
-# Build bản phân phối: ký Developer ID + DMG (+ notarize với --notarize)
+# Distribution build: Developer ID signing + DMG (+ notarization with --notarize)
 scripts/build-release.sh --notarize
 ```
 
-Build từ source **không cần** Apple Developer account (Xcode ký ad-hoc chạy local). Muốn tự phát hành bản fork thì cần account của bạn, override identity qua biến môi trường:
+Building from source needs no Apple Developer account (Xcode signs locally). To publish your own fork, override the signing identity:
 
 ```sh
 PET_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 PET_TEAM_ID=TEAMID PET_NOTARY_PROFILE=YourProfile \
 scripts/build-release.sh --notarize
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
