@@ -8,6 +8,15 @@
         <link>https://github.com/thuctv2000/ClaudePet</link>
         <description>PetMacOS updates</description>
         <item>
+            <title>1.7.0</title>
+            <pubDate>Tue, 28 Jul 2026 09:22:20 +0700</pubDate>
+            <link>https://github.com/thuctv2000/ClaudePet</link>
+            <sparkle:version>1.7.0</sparkle:version>
+            <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.7.0/ClaudePet-1.7.0.dmg" length="6869367" type="application/octet-stream" sparkle:edSignature="iJJ76pmzqoQ77aZ2uVB5wLkpA5q4W5llLhIMht/5s0EQ22CgtPu+SzJgQY2GQ7OF2Uo03mOMoiK4zlRhthfMDQ=="/>
+        </item>
+        <item>
             <title>1.6.0</title>
             <pubDate>Sat, 25 Jul 2026 23:51:54 +0700</pubDate>
             <link>https://github.com/thuctv2000/ClaudePet</link>
@@ -24,15 +33,6 @@
             <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.5.2/PetMacOS-1.5.2.dmg" length="6466882" type="application/octet-stream" sparkle:edSignature="TOKPgtOA6wE+imrlZsANYY+d1iZF7h2ZZnPDSUwE77CA4wgERwENy3L+PRo55Lhzqwbs8pN9pDktS54wROtuCw=="/>
-        </item>
-        <item>
-            <title>1.5.1</title>
-            <pubDate>Wed, 22 Jul 2026 00:54:32 +0700</pubDate>
-            <link>https://github.com/thuctv2000/ClaudePet</link>
-            <sparkle:version>1.5.1</sparkle:version>
-            <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.5.1/PetMacOS-1.5.1.dmg" length="6463526" type="application/octet-stream" sparkle:edSignature="OfB0KejuOottuZN8qEOY+bGDx/lh2m9eV9Eh66PaMlvCVGH8Rpkkgs8Vv5xoV1tv//ieSMm1L1fXnzg6KBInCA=="/>
         </item>
     </channel>
 </rss>
