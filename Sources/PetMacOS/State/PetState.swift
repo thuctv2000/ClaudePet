@@ -1,3 +1,4 @@
+import AppKit
 import Dispatch
 import Foundation
 import Observation
@@ -424,6 +425,11 @@ final class PetState {
         /// between "arriving shortly" and "never", and the card used to show
         /// the same word for both.
         case stuck
+        /// The route that would carry this message drives another app's window,
+        /// and macOS has not granted the pet Accessibility. Its own status
+        /// because the fix is one click and belongs on the card: "queued" and
+        /// even "stuck" send the user looking for a bug in the wrong place.
+        case needsAccess
     }
 
     /// One card per conversation, ordered so the session with the NEWEST
@@ -1399,7 +1405,7 @@ final class PetState {
 
     private func deliverViaDesktop(forSession sessionId: String) {
         guard DesktopAX.isTrusted else {
-            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            reportMissingAccessibility(for: sessionId)
             return
         }
         guard let title = sessionMeta[sessionId]?.name else {
@@ -1442,9 +1448,39 @@ final class PetState {
     /// Delivery into a VS Code extension session. Addressed by **session id**,
     /// the only exact identifier any of these surfaces accepts — the others
     /// have to match a conversation title and refuse when it is ambiguous.
+    /// Hands the message to the bundled VS Code extension, which calls VS Code's
+    /// own `Terminal.sendText` and writes straight into the pty. Returns whether
+    /// it landed.
+    ///
+    /// Every other idle route drives a window and therefore needs Accessibility;
+    /// this one is a loopback HTTP call and needs **nothing**. So it is tried
+    /// before any trust check — a machine that never granted Accessibility can
+    /// still reach every session running in VS Code's terminal, which is where
+    /// the pet's own author runs Claude Code.
+    private func tryVSCodeBridge(forSession sessionId: String, tty: String) -> Bool {
+        guard let text = replyQueue[sessionId]?.first else { return false }
+        switch VSCodeBridge.send(text, toTty: tty) {
+        case .success(let name):
+            _ = dequeueReply(forSession: sessionId)
+            setReplyStatus(.sent, forSession: sessionId)
+            noteAttempt("delivered to \(name) via the VS Code bridge extension",
+                        for: sessionId)
+            return true
+        case .failure(let error):
+            noteAttempt("bridge extension: \(error)", for: sessionId)
+            return false
+        }
+    }
+
     private func deliverViaVSCode(forSession sessionId: String, workspace: String?) {
+        // A `claude-vscode` session may be running in the integrated terminal
+        // rather than the extension panel, and the two are told apart only by
+        // trying. The bridge goes first because it costs one loopback request
+        // and, unlike everything below, works with no permissions at all.
+        if let tty = resolvedTty(forSession: sessionId),
+           tryVSCodeBridge(forSession: sessionId, tty: tty) { return }
         guard DesktopAX.isTrusted else {
-            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            reportMissingAccessibility(for: sessionId)
             return
         }
         guard let text = dequeueReply(forSession: sessionId) else {
@@ -1483,24 +1519,9 @@ final class PetState {
     /// second or two, and that event arrives through the hook already
     /// installed. No event means the keys went nowhere useful.
     private func deliverViaVSCodeTerminal(forSession sessionId: String, tty: String) {
-        // The bridge extension first: it hands the text to VS Code's own
-        // `Terminal.sendText`, which writes into the pty without touching a
-        // window — no activation, no focus, and it works while the window is
-        // minimised. Everything below it is UI automation and behaves like it.
-        if let text = replyQueue[sessionId]?.first {
-            switch VSCodeBridge.send(text, toTty: tty) {
-            case .success(let name):
-                _ = dequeueReply(forSession: sessionId)
-                setReplyStatus(.sent, forSession: sessionId)
-                noteAttempt("delivered to \(name) via the VS Code bridge extension",
-                            for: sessionId)
-                return
-            case .failure(let error):
-                noteAttempt("bridge extension: \(error)", for: sessionId)
-            }
-        }
+        if tryVSCodeBridge(forSession: sessionId, tty: tty) { return }
         guard DesktopAX.isTrusted else {
-            noteAttempt("skipped: Accessibility not granted", for: sessionId)
+            reportMissingAccessibility(for: sessionId)
             return
         }
         // Found by the title CLAUDE CODE gave the session, not by the pet's own
@@ -1600,6 +1621,37 @@ final class PetState {
         return replyLog.reversed()
             .map { "\(stamp.string(from: $0.at))  [\($0.session)] \($0.note)" }
             .joined(separator: "\n")
+    }
+
+    /// Whether the pet has already shown macOS's Accessibility prompt this run.
+    /// Asking once per message would be a permission-dialog machine gun.
+    private var didAskForAccessibility = false
+
+    /// The chosen route drives another app's window and the pet is not trusted.
+    ///
+    /// Silence here was the bug: the message stayed on the card as "Queued",
+    /// which reads as "arriving shortly" when in fact nothing would ever carry
+    /// it, and macOS never asks for a permission an app does not request. Now
+    /// the card says what is missing and the system prompt comes up once —
+    /// right after the user pressed send, which is the only moment the request
+    /// makes sense to them.
+    private func reportMissingAccessibility(for sessionId: String) {
+        noteAttempt("skipped: Accessibility not granted"
+                    + (didAskForAccessibility ? "" : " — asking for it now"),
+                    for: sessionId)
+        setReplyStatus(.needsAccess, forSession: sessionId)
+        guard !didAskForAccessibility else { return }
+        didAskForAccessibility = true
+        DesktopAX.requestTrust()
+    }
+
+    /// Opens System Settings at the Accessibility list (the card's status line
+    /// is a button once the permission is what's missing).
+    static func openAccessibilitySettings() {
+        DesktopAX.requestTrust()
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func noteAttempt(_ note: String, for sessionId: String) {

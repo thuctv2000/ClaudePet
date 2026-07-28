@@ -723,9 +723,49 @@ struct SettingsWindowView: View {
                     title: tr("Nothing ever gets stuck"),
                     body: tr("If the pet is off or busy, Claude Code asks in the terminal as usual — nothing gets stuck.")
                 )
+                accessibilityRow
             }
             .padding(20)
         }
+    }
+
+    /// macOS Accessibility: needed only to *reply* into an idle conversation
+    /// that lives in the Desktop app or the VS Code panel, and nothing else.
+    ///
+    /// It sits here with a live status and a button because the failure it
+    /// causes is invisible from the outside — a message just never arrives —
+    /// and macOS never offers the permission to an app that has not asked.
+    private var accessibilityRow: some View {
+        let granted = DesktopAX.isTrusted
+        return HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill((granted ? Color.green : Color.orange).opacity(0.14))
+                    .frame(width: 34, height: 34)
+                Image(systemName: granted ? "lock.open.fill" : "lock.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(granted ? .green : .orange)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(granted
+                     ? tr("Accessibility granted")
+                     : tr("Accessibility not granted"))
+                    .font(.system(size: 13, weight: .semibold))
+                Text(tr("Only used to type a reply into a conversation that has gone idle in the Claude app or the VS Code panel. Sessions in a terminal — including VS Code's own — are delivered without it."))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !granted {
+                    Button(tr("Grant access…")) { PetState.openAccessibilitySettings() }
+                        .controlSize(.small)
+                        .padding(.top, 2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .petCard()
     }
 
     private func infoRow(icon: String, tint: Color, title: String, body: String) -> some View {

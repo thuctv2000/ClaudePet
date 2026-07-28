@@ -410,6 +410,7 @@ private struct SessionCardView: View {
         case .sent: return "checkmark.circle.fill"
         case .queued: return "clock.fill"
         case .stuck: return "exclamationmark.triangle.fill"
+        case .needsAccess: return "lock.fill"
         }
     }
 
@@ -418,6 +419,7 @@ private struct SessionCardView: View {
         case .sent: return tr("Sent to Claude")
         case .queued: return tr("Queued — goes out at Claude's next step")
         case .stuck: return tr("Can't reach this session while it's idle — type in its own window")
+        case .needsAccess: return tr("Needs Accessibility permission — tap to open System Settings")
         }
     }
 
@@ -426,6 +428,7 @@ private struct SessionCardView: View {
         case .sent: return .green
         case .queued: return .orange
         case .stuck: return .red
+        case .needsAccess: return .orange
         }
     }
 
@@ -444,6 +447,12 @@ private struct SessionCardView: View {
             .font(.system(size: 9, weight: .medium))
             .foregroundStyle(colour(for: status))
             .lineLimit(2)
+            // The permission case is the one the user can fix from here, so the
+            // line doubles as the button that takes them to the switch.
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if status == .needsAccess { PetState.openAccessibilitySettings() }
+            }
         }
     }
 

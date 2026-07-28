@@ -145,6 +145,38 @@
         }
       }
     },
+    "Accessibility granted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility granted"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã cấp quyền Accessibility"
+          }
+        }
+      }
+    },
+    "Accessibility not granted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accessibility not granted"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa cấp quyền Accessibility"
+          }
+        }
+      }
+    },
     "Add a new pet": {
       "localizations": {
         "vi": {
@@ -1433,6 +1465,22 @@
         }
       }
     },
+    "Grant access…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grant access…"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấp quyền…"
+          }
+        }
+      }
+    },
     "Hide pet": {
       "localizations": {
         "en": {
@@ -1713,6 +1761,22 @@
         }
       }
     },
+    "Needs Accessibility permission — tap to open System Settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs Accessibility permission — tap to open System Settings"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thiếu quyền Accessibility — bấm để mở System Settings"
+          }
+        }
+      }
+    },
     "New pet": {
       "localizations": {
         "vi": {
@@ -1871,6 +1935,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chỉ các entry của pet bị gỡ khỏi ~/.claude/settings.json (đã lưu bản backup trước) — phần còn lại của cài đặt Claude Code giữ nguyên. Data bị xoá được đưa vào Thùng rác. Sau đó app tự hiện trong Finder để bạn kéo vào Thùng rác."
+          }
+        }
+      }
+    },
+    "Only used to type a reply into a conversation that has gone idle in the Claude app or the VS Code panel. Sessions in a terminal — including VS Code's own — are delivered without it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only used to type a reply into a conversation that has gone idle in the Claude app or the VS Code panel. Sessions in a terminal — including VS Code's own — are delivered without it."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chỉ dùng để gõ tin trả lời vào hội thoại đã idle trong app Claude hoặc panel VS Code. Phiên chạy trong terminal — kể cả terminal của VS Code — không cần quyền này."
           }
         }
       }
