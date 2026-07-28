@@ -321,6 +321,16 @@ final class PetState {
             case nil: if meta.project == nil || !event.isToolEvent { meta.project = project }
             }
         }
+        // Resolved here, on an event, and never while a view is drawing: the
+        // answer costs a 512KB read of the transcript tail, and the card asks
+        // for it on every single redraw. Re-read only until it answers — a
+        // session whose transcript has no `entrypoint` yet (no user prompt
+        // recorded) retries on the next event, which is exactly when the file
+        // has grown.
+        if meta.surface == nil, let transcript = meta.transcriptPath {
+            let resolved = SessionOrigin.read(transcriptPath: transcript).surface
+            if resolved != .unknown { meta.surface = resolved }
+        }
         sessionMeta[sid] = meta
     }
 
@@ -1563,20 +1573,17 @@ final class PetState {
         String(sessionId.prefix(8))
     }
 
-    /// Where a conversation lives, resolved once and remembered.
+    /// Where a conversation lives, for the card label. A plain lookup: the
+    /// answer is worked out when the event arrives (`rememberSessionMeta`),
+    /// never here — this is called from inside a view body, where reading a
+    /// file would cost a 512KB parse per redraw and writing the result back
+    /// would mutate observed state mid-draw.
     ///
-    /// Reading it means parsing the tail of the transcript, which is fine once
-    /// per session but not on every redraw — and the cards redraw constantly.
     /// Delivery deliberately does NOT use this cache: a session that gets
     /// resumed somewhere else changes surface, and routing a message by a
     /// stale answer is how a reply ends up in the wrong window.
     private func surface(forKey key: String) -> SessionSurface {
-        if let known = sessionMeta[key]?.surface { return known }
-        guard let transcript = sessionMeta[key]?.transcriptPath else { return .unknown }
-        let resolved = SessionOrigin.read(transcriptPath: transcript).surface
-        guard resolved != .unknown else { return .unknown }   // retry once it has content
-        sessionMeta[key]?.surface = resolved
-        return resolved
+        sessionMeta[key]?.surface ?? .unknown
     }
 
     /// Pops the next queued message for a session (used by the `PostToolUse`
