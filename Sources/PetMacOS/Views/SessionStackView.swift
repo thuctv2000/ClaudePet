@@ -24,6 +24,10 @@ struct SessionStackView: View {
     let onDismissCard: (String) -> Void
     /// (sessionId, text) — send a typed message into that conversation.
     let onSendReply: (String, String) -> Void
+    /// Throw away what is still queued for a session (the waiting chip's ✕).
+    let onCancelQueue: (String) -> Void
+    /// Take the user to the Accessibility switch and retry afterwards.
+    let onGrantAccess: () -> Void
 
     /// Session ids whose task-count line is expanded into the task list.
     @State private var expandedTasks: Set<String> = []
@@ -92,7 +96,9 @@ struct SessionStackView: View {
                                 onToggleExpand: { toggle(summary.id, in: &expandedTasks) },
                                 onToggleMessage: { toggle(summary.id, in: &expandedMessages) },
                                 onDismissCard: onDismissCard,
-                                onSendReply: { text in onSendReply(summary.id, text) }
+                                onSendReply: { text in onSendReply(summary.id, text) },
+                                onCancelQueue: { onCancelQueue(summary.id) },
+                                onGrantAccess: onGrantAccess
                             )
                             .id(summary.id)
                             .contentShape(Rectangle())
@@ -198,6 +204,8 @@ private struct SessionCardView: View {
     let onDismissCard: (String) -> Void
     /// Send the typed message into this conversation.
     let onSendReply: (String) -> Void
+    let onCancelQueue: () -> Void
+    let onGrantAccess: () -> Void
 
     /// Text typed into this card's reply box.
     @State private var replyText = ""
@@ -432,8 +440,37 @@ private struct SessionCardView: View {
         }
     }
 
+    /// Messages typed here that have not gone anywhere yet, with a way to take
+    /// them back.
+    ///
+    /// The status line below fades after 20 seconds; the queue does not. Before
+    /// this chip a message that failed to land left an empty card, so the only
+    /// way to react was to type it again — and then Claude got it twice, oldest
+    /// first, because the first copy was still queued.
+    @ViewBuilder
+    private var queuedRepliesChip: some View {
+        if summary.queuedReplies > 0 {
+            HStack(spacing: 4) {
+                Image(systemName: "tray.full.fill")
+                Text(summary.queuedReplies == 1
+                     ? tr("1 message waiting to be delivered")
+                     : String(format: tr("%d messages waiting to be delivered"),
+                              summary.queuedReplies))
+                Spacer(minLength: 4)
+                Button(action: onCancelQueue) {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .help(tr("Discard them"))
+            }
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(.orange)
+        }
+    }
+
     @ViewBuilder
     private var replyStatusLine: some View {
+        queuedRepliesChip
         if let status = summary.replyStatus {
             // Three outcomes, three lines. "Queued" used to cover the stuck
             // case too, which read as "arriving shortly" for a message that
@@ -451,7 +488,7 @@ private struct SessionCardView: View {
             // line doubles as the button that takes them to the switch.
             .contentShape(Rectangle())
             .onTapGesture {
-                if status == .needsAccess { PetState.openAccessibilitySettings() }
+                if status == .needsAccess { onGrantAccess() }
             }
         }
     }

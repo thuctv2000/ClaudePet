@@ -295,6 +295,18 @@ private struct SessionRow: View {
                         .truncationMode(.tail)
                 }
             }
+            // Visible here as well as on the card: with "Show pet" off the
+            // cards are the one place this state used to live, and a message
+            // can be waiting precisely because nothing is on screen.
+            if summary.queuedReplies > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "tray.full.fill")
+                    Text("\(summary.queuedReplies)")
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+                .help(tr("Waiting to be delivered"))
+            }
             Spacer(minLength: 8)
             if hovering {
                 Button(action: onDismiss) {

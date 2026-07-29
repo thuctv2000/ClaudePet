@@ -122,6 +122,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugAXDump(request, on: connection)
         case "/debug/surface":
             handleDebugSurface(request, on: connection)
+        case "/debug/hitmap":
+            handleDebugHitmap(request, on: connection)
         case "/debug/openpets":
             handleDebugOpenPets(request, on: connection)
         default:
@@ -401,6 +403,22 @@ final class HookServer: AskResolver, @unchecked Sendable {
     private func respondJSON(_ object: [String: Any], on connection: NWConnection) {
         let body = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
         respond(connection, body: body, contentType: "application/json")
+    }
+
+    /// Dumps the pet window's hit-test snapshot to a PNG and reports the alpha
+    /// under the cursor. Body: `{"path":"/tmp/hitmap.png"}`.
+    ///
+    /// "The card is hard to click" has two possible causes — the window is
+    /// passing the click through, or the click lands on a control that ignores
+    /// it — and only the picture the alpha test is reading can tell them apart.
+    private func handleDebugHitmap(_ request: HTTPRequest, on connection: NWConnection) {
+        let payload = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let path = (payload?["path"] as? String) ?? "/tmp/pet-hitmap.png"
+        let petState = self.petState
+        Task { @MainActor in
+            let report = petState.onDebugHitmap?(path) ?? "no pet window"
+            self.respond(connection, body: Data(report.utf8), contentType: "text/plain")
+        }
     }
 
     // MARK: - AskResolver
