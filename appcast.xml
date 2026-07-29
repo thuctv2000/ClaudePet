@@ -8,6 +8,15 @@
         <link>https://github.com/thuctv2000/ClaudePet</link>
         <description>PetMacOS updates</description>
         <item>
+            <title>1.8.2</title>
+            <pubDate>Wed, 29 Jul 2026 14:31:59 +0700</pubDate>
+            <link>https://github.com/thuctv2000/ClaudePet</link>
+            <sparkle:version>1.8.2</sparkle:version>
+            <sparkle:shortVersionString>1.8.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.8.2/ClaudePet-1.8.2.dmg" length="7066044" type="application/octet-stream" sparkle:edSignature="+8AjayRiAivVYtk/XcanOg2IWLSJx0ZTFXzF837JysZ8SCZRnnsC4N+6JmOkFLgaKsEPIjEvwbLWSI8bSj7sAg=="/>
+        </item>
+        <item>
             <title>1.8.1</title>
             <pubDate>Tue, 28 Jul 2026 11:54:59 +0700</pubDate>
             <link>https://github.com/thuctv2000/ClaudePet</link>
@@ -24,15 +33,6 @@
             <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.8.0/ClaudePet-1.8.0.dmg" length="7016285" type="application/octet-stream" sparkle:edSignature="Cvu0o5NzKfJAmrlUNcOxgywBM9lryWQ/RzvySgnDcRJOZL9xOAUzEmoWDfR+tJ1g21xuMqD4RqzeI9zFXzAeCQ=="/>
-        </item>
-        <item>
-            <title>1.7.1</title>
-            <pubDate>Tue, 28 Jul 2026 10:05:05 +0700</pubDate>
-            <link>https://github.com/thuctv2000/ClaudePet</link>
-            <sparkle:version>1.7.1</sparkle:version>
-            <sparkle:shortVersionString>1.7.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/thuctv2000/ClaudePet/releases/download/v1.7.1/ClaudePet-1.7.1.dmg" length="6865517" type="application/octet-stream" sparkle:edSignature="WfzMs4UixX+dsLRLyZIawSBHprr557a0Q42A9AcWrQteENHoH8+ZUs1mWnCok99AhMkQ1VJf4+BRCM4p4W9OBg=="/>
         </item>
     </channel>
 </rss>
