@@ -15,6 +15,11 @@ struct PetView: View {
     /// view's global space (top-left origin) so PetPanel knows which part of the
     /// window should catch clicks — everything else passes through. See PetPanel.
     var onContentFrameChange: (CGRect) -> Void = { _ in }
+    /// Called on every step of a drag on the pet's body, and once when it ends.
+    /// The window follows the pointer itself (see `PetPanel.dragTick`) — the
+    /// pet is the handle now that the window background no longer drags.
+    var onDragTick: () -> Void = {}
+    var onDragEnd: () -> Void = {}
 
     @State private var isHappy = false
     @State private var reacting = false   // playing the one-shot click clip
@@ -182,6 +187,14 @@ struct PetView: View {
         .frame(width: side, height: side)
         .contentShape(Rectangle())
         .onTapGesture { celebrate() }
+        // The pet is the drag handle. Cards keep every pixel for their own
+        // controls, so a click that lands a millimetre off a button no longer
+        // takes the whole window for a walk.
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { _ in onDragTick() }
+                .onEnded { _ in onDragEnd() }
+        )
     }
 
     /// Name of the clip to play right now: click reaction wins, then the

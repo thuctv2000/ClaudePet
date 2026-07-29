@@ -209,6 +209,10 @@ final class PetState {
     /// Set by the app delegate to wire the server as the resolver.
     @ObservationIgnored weak var resolver: AskResolver?
 
+    /// Debug only: renders what the pet window's hit test actually sees to a
+    /// PNG and reports the alpha under the cursor. Set by the app delegate.
+    @ObservationIgnored var onDebugHitmap: ((String) -> String)?
+
     /// Called with `true` when a dialog needs mouse clicks *and* key focus (the
     /// permission dialog), `false` when it is dismissed.
     @ObservationIgnored var onInteractiveNeeded: ((Bool) -> Void)?

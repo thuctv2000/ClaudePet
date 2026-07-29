@@ -208,6 +208,10 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 panel.reevaluateSoon()
             }
         }
+        petState.onDebugHitmap = { [weak self] path in
+            guard let panel = self?.panel else { return "no pet window" }
+            return panel.dumpHitmap(to: path)
+        }
         petState.onMousePassthroughNeeded = { [weak self] _ in
             // A notice / card carries its own hittable ✕, so cursor tracking
             // already makes it clickable. Just recompute in case it appeared
@@ -409,7 +413,7 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 height: contentSize.height
             )
             let newPanel = PetPanel(contentRect: frame)
-            newPanel.contentView = NSHostingView(
+            newPanel.contentView = FirstMouseHostingView(
                 rootView: PetView(
                     state: petState, sprites: sprites, settings: settings, usage: usage,
                     petStore: petStore,
@@ -422,7 +426,9 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                     onHidePet: { [weak self] in self?.setPetVisible(false) },
                     onContentFrameChange: { [weak self] rect in
                         self?.panel?.setContentFrame(rect)
-                    }
+                    },
+                    onDragTick: { [weak self] in self?.panel?.dragTick() },
+                    onDragEnd: { [weak self] in self?.panel?.endDrag() }
                 ))
             panel = newPanel
         }
@@ -501,6 +507,22 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// Hosting view that acts on the very first click.
+///
+/// AppKit swallows the click that brings a window forward — `acceptsFirstMouse`
+/// is false by default — so the pet's cards needed one click to wake the panel
+/// and a second to actually press anything. On a floating companion window that
+/// reads as "the card is dead": you click a ✕, nothing happens, you click again.
+/// The pet has no reason to hoard that first click.
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    @MainActor required init(rootView: Content) { super.init(rootView: rootView) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
 /// The floating pet window. It's a fixed 320x500 panel, but most of that is
 /// empty space above the pet. To avoid acting as a big invisible click-blocker
 /// over the desktop, it tracks the cursor and only accepts mouse events while
@@ -536,7 +558,11 @@ final class PetPanel: NSPanel {
         hasShadow = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        isMovableByWindowBackground = true
+        // Dragging is wired to the pet sprite itself (PetView), not to any
+        // background: with this on, a click that slipped by a millimetre on a
+        // card dragged the whole window instead of pressing what was under the
+        // cursor — and during that drag the card stopped responding at all.
+        isMovableByWindowBackground = false
         hidesOnDeactivate = false
         // Only grab key focus when a control (dialog button / text field) needs
         // it, so idle clicks and drags don't steal focus from other apps.
@@ -546,7 +572,10 @@ final class PetPanel: NSPanel {
         installCursorTracking()
     }
 
-    deinit { monitors.forEach(NSEvent.removeMonitor) }
+    deinit {
+        monitors.forEach(NSEvent.removeMonitor)
+        cursorTimer?.invalidate()
+    }
 
     // MARK: - Cursor tracking
 
@@ -555,7 +584,30 @@ final class PetPanel: NSPanel {
     /// events through to other apps). Together they cover the hand-off in both
     /// directions as the cursor enters and leaves the pet. `mouseMoved` doesn't
     /// need Accessibility permission (only keyboard taps do).
+    /// Ticks the cursor check even when no `mouseMoved` arrives.
+    ///
+    /// The monitors alone lose the race that matters: move onto a card and
+    /// click in one motion and the click can arrive before the last move has
+    /// been delivered, so the window is still passing events through and the
+    /// click lands on whatever is behind. That is the "have to click twice"
+    /// everyone hits. macOS also coalesces moves and drops them entirely during
+    /// other apps' drag loops. 30Hz against a cached bitmap costs nothing and
+    /// closes the hole to a frame.
+    // Same reason as `monitors`: deinit is nonisolated and has to tear it down.
+    nonisolated(unsafe) private var cursorTimer: Timer?
+
+    private func startCursorPolling() {
+        guard cursorTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trackCursor() }
+        }
+        // .common so it keeps running while a menu or a drag loop is up.
+        RunLoop.main.add(timer, forMode: .common)
+        cursorTimer = timer
+    }
+
     private func installCursorTracking() {
+        startCursorPolling()
         let local = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
             self?.trackCursor()
             return event
@@ -571,7 +623,8 @@ final class PetPanel: NSPanel {
     /// a still cursor becomes live without waiting for a mouse move.
     func setContentFrame(_ rect: CGRect) {
         contentFrame = rect
-        contentBitmap = nil   // structure changed — force a fresh snapshot
+        contentBitmap = nil        // structure changed — force a fresh snapshot
+        lastEvaluatedPoint = nil   // ...and a fresh verdict, even if the cursor sits still
         trackCursor()
     }
 
@@ -580,10 +633,37 @@ final class PetPanel: NSPanel {
     /// a stationary cursor.
     func reevaluateCursor() { trackCursor() }
 
+    /// Where the last verdict was taken, and how many times in a row the answer
+    /// has come back "not on content" since. See `trackCursor`.
+    private var lastEvaluatedPoint: NSPoint?
+    private var consecutiveMisses = 0
+    /// A single empty snapshot must not be enough to switch the window off.
+    private static let missesBeforeReleasing = 3
+
     private func trackCursor() {
         // Never flip mid-drag: it would abort a drag of the pet halfway.
         guard NSEvent.pressedMouseButtons == 0 else { return }
-        let over = pointIsOverContent(NSEvent.mouseLocation)
+        let point = NSEvent.mouseLocation
+        // Standing still on something clickable: leave it alone. Re-testing the
+        // very same pixel can only change the answer if the *snapshot* changed,
+        // and that is exactly the failure this guards against — a refresh that
+        // renders empty turns the window off under a motionless pointer, and
+        // the next click sails through to whatever is behind. Measured: the
+        // same point on the same card alternated between "solid" and
+        // "transparent" as snapshots were retaken.
+        if let last = lastEvaluatedPoint, last == point, cursorOverContent { return }
+        lastEvaluatedPoint = point
+
+        let over = pointIsOverContent(point)
+        if over {
+            consecutiveMisses = 0
+        } else if cursorOverContent {
+            // Let go only after several agreeing readings, so one bad snapshot
+            // costs nothing.
+            consecutiveMisses += 1
+            guard consecutiveMisses >= Self.missesBeforeReleasing else { return }
+            consecutiveMisses = 0
+        }
         guard over != cursorOverContent else { return }
         cursorOverContent = over
         refreshIgnoreState()
@@ -601,9 +681,36 @@ final class PetPanel: NSPanel {
         guard let content = contentView, isVisible, !contentFrame.isEmpty else { return false }
         let windowPoint = convertPoint(fromScreen: screenPoint)   // bottom-left origin
         let flipped = CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y)
-        guard contentFrame.contains(flipped) else { return false }
-        return contentAlpha(atTopLeft: flipped, in: content) > 0.02
+        guard contentFrame.insetBy(dx: -Self.approachMargin, dy: -Self.approachMargin)
+            .contains(flipped) else { return false }
+        if contentAlpha(atTopLeft: flipped, in: content) > 0.02 { return true }
+        // Nothing solid *under* the cursor — but if solid content is within a
+        // few points, take the window live anyway.
+        //
+        // Why: macOS decides which window a click belongs to at the last mouse
+        // *move*, not at the click. Turning the window on at the instant the
+        // cursor lands on a card is therefore too late — the click that follows
+        // still goes to the app behind, and only the second one lands. That is
+        // the "the card is hard to press" everyone hits, and it is a race no
+        // amount of polling wins. Switching on a few points early means the
+        // change happens while the pointer is still moving, so the server sees
+        // a move afterwards and routes the click here. The cost is a thin halo
+        // around the pet that swallows clicks; the alternative is buttons that
+        // work every other time.
+        for radius in Self.approachRings {
+            for angle in stride(from: 0.0, to: 2 * .pi, by: .pi / 4) {
+                let probe = CGPoint(x: flipped.x + cos(angle) * radius,
+                                    y: flipped.y + sin(angle) * radius)
+                guard contentFrame.contains(probe) else { continue }
+                if contentAlpha(atTopLeft: probe, in: content) > 0.02 { return true }
+            }
+        }
+        return false
     }
+
+    /// How far outside the drawn content the window still takes clicks.
+    private static let approachMargin: CGFloat = 18
+    private static let approachRings: [CGFloat] = [9, 18]
 
     /// Alpha of the content view's rendered pixel at a top-left-origin point.
     /// Uses a short-lived cached snapshot so mouse-move sampling stays cheap; the
@@ -613,7 +720,17 @@ final class PetPanel: NSPanel {
         if contentBitmap == nil || Date().timeIntervalSince(bitmapAt) > 0.4 {
             let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds)
             if let rep { content.cacheDisplay(in: content.bounds, to: rep) }
-            contentBitmap = rep
+            // Keep the previous snapshot when the new one came back blank.
+            //
+            // `cacheDisplay` on a hosting view sometimes captures nothing —
+            // caught in the act: the same pixel of the same card read "solid",
+            // then "transparent", then "solid" again as snapshots were retaken,
+            // with the pointer never moving. Every blank read switched the
+            // window off, and the click that followed went to the app behind.
+            // That is the pet "going dead" for no reason anyone could see.
+            if contentBitmap == nil || rep.map(Self.hasDrawnPixels) == true {
+                contentBitmap = rep
+            }
             bitmapAt = Date()
         }
         guard let rep = contentBitmap else { return 1 }   // can't snapshot → treat as solid
@@ -625,9 +742,50 @@ final class PetPanel: NSPanel {
         return rep.colorAt(x: px, y: py)?.alphaComponent ?? 0
     }
 
+    /// Whether a snapshot has anything drawn in it at all — a coarse grid is
+    /// enough to tell "rendered" from "came back empty".
+    private static func hasDrawnPixels(_ rep: NSBitmapImageRep) -> Bool {
+        let stepX = max(1, rep.pixelsWide / 40)
+        let stepY = max(1, rep.pixelsHigh / 60)
+        for y in stride(from: 0, to: rep.pixelsHigh, by: stepY) {
+            for x in stride(from: 0, to: rep.pixelsWide, by: stepX) {
+                if (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.02 { return true }
+            }
+        }
+        return false
+    }
+
     private func refreshIgnoreState() {
+        let wasIgnoring = ignoresMouseEvents
         if clickThrough { ignoresMouseEvents = true }
         else { ignoresMouseEvents = !cursorOverContent }
+        // Turning the window back on is not enough on its own. The window
+        // server decides which window a click belongs to at the last mouse
+        // *move*, not at the click — so with the pointer already standing on a
+        // card, flipping the flag changes nothing for the click that follows:
+        // it still goes to the app behind, and only the *second* click lands.
+        // That is the "have to click twice / the card feels dead" everyone
+        // runs into. Warping the cursor to where it already is costs nothing
+        // visually and makes the server redo that decision now.
+        if wasIgnoring, !ignoresMouseEvents { renotifyCursorPosition() }
+    }
+
+    /// Re-asserts the pointer position so the window server re-runs its
+    /// hit test. No permission needed (unlike posting synthetic events) and no
+    /// visible movement — the cursor is warped to the pixel it is already on.
+    private func renotifyCursorPosition() {
+        let point = NSEvent.mouseLocation
+        // CGWarp works in display space: origin top-left of the primary screen,
+        // y growing downwards.
+        guard let primary = NSScreen.screens.first else { return }
+        let here = CGPoint(x: point.x, y: primary.frame.maxY - point.y)
+        // One pixel out and straight back. Warping to the pixel the cursor is
+        // already on produces no movement, and no movement means the server has
+        // no reason to redo anything — the flag change is only noticed on the
+        // next real move, which is exactly the click that gets lost. A pixel is
+        // invisible and lands the cursor back where the user put it.
+        CGWarpMouseCursorPosition(CGPoint(x: here.x + 1, y: here.y))
+        CGWarpMouseCursorPosition(here)
     }
 
     /// Re-checks the cursor a couple of times over the next moment. Used when a
@@ -645,8 +803,73 @@ final class PetPanel: NSPanel {
         }
     }
 
+    /// Moves the window by however far the pointer has travelled since the last
+    /// tick. Measured against the screen rather than the gesture's translation:
+    /// the window moves out from under the cursor as it is dragged, so a
+    /// translation reported in window space cancels itself out and the pet
+    /// stops following after the first step.
+    private var dragAnchor: NSPoint?
+
+    func dragTick() {
+        let now = NSEvent.mouseLocation
+        defer { dragAnchor = now }
+        guard let anchor = dragAnchor else { return }
+        setFrameOrigin(NSPoint(x: frame.origin.x + (now.x - anchor.x),
+                               y: frame.origin.y + (now.y - anchor.y)))
+    }
+
+    func endDrag() { dragAnchor = nil }
+
+    /// Writes the snapshot the alpha test samples to `path`, and reports what
+    /// the test currently believes about the cursor.
+    func dumpHitmap(to path: String) -> String {
+        guard let content = contentView else { return "no content view" }
+        contentBitmap = nil
+        let point = NSEvent.mouseLocation
+        let over = pointIsOverContent(point)
+        let windowPointEarly = convertPoint(fromScreen: point)
+        let flippedEarly = CGPoint(x: windowPointEarly.x,
+                                   y: content.bounds.height - windowPointEarly.y)
+        guard let rep = contentBitmap, let png = rep.representation(using: .png, properties: [:]) else {
+            return """
+            no snapshot — over=\(over)
+            contentFrame=\(contentFrame) contentBounds=\(content.bounds)
+            cursor(screen)=\(point) cursor(flipped)=\(flippedEarly)
+            insideContentFrame=\(contentFrame.contains(flippedEarly))
+            windowFrame=\(frame) isVisible=\(isVisible)
+            """
+        }
+        try? png.write(to: URL(fileURLWithPath: path))
+        let windowPoint = convertPoint(fromScreen: point)
+        let flipped = CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y)
+        let alpha = contentAlpha(atTopLeft: flipped, in: content)
+        return """
+        wrote \(rep.pixelsWide)x\(rep.pixelsHigh) to \(path)
+        contentFrame=\(contentFrame)
+        cursor(screen)=\(point) cursor(flipped)=\(flipped)
+        insideContentFrame=\(contentFrame.contains(flipped)) alpha=\(alpha) over=\(over)
+        ignoresMouseEvents=\(ignoresMouseEvents) clickThrough=\(clickThrough)
+        windowFrame=\(frame) contentBounds=\(content.bounds)
+        """
+    }
+
     // Must be able to become key, otherwise SwiftUI buttons / text fields in the
     // permission dialog don't receive clicks.
     override var canBecomeKey: Bool { true }
+
+    /// Takes key status the moment the user clicks the pet's own content.
+    ///
+    /// `becomesKeyOnlyIfNeeded` keeps the panel out of the way — clicking it
+    /// normally does not steal focus from the app you are working in — but it
+    /// also means the first click on a reply box only *keys the window*, and
+    /// the caret needs a second click. Somebody clicking a card has already
+    /// decided to interact with it, so hand key status over on that first
+    /// click and let the same click do its job.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, cursorOverContent, !clickThrough, !isKeyWindow {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
     override var canBecomeMain: Bool { false }
 }
