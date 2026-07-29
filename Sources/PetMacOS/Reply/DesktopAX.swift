@@ -578,8 +578,8 @@ enum DesktopAX {
 
         // Revealing a panel is quick; building one for a session being resumed
         // is not, and the webview only focuses its box once that is done.
-        var target = focusedPrompt(in: ax, upTo: 6.0,
-                                   workspace: workspace, conversation: conversation)
+        var target = focusedPrompt(in: ax, upTo: 6.0, workspace: workspace,
+                                   conversation: conversation)
         if target == nil {
             // Focus unreadable even with VS Code in front — Electron does that.
             // If the window in front holds exactly one message box there is
@@ -587,7 +587,9 @@ enum DesktopAX {
             // rather than refusing a delivery with the panel sitting open on
             // screen (measured on a machine with three panels: every attempt
             // ended in promptNotFocused("nothing focused")).
-            let candidates = prompts(in: ax, workspace: workspace, conversation: conversation)
+            let candidates = prompts(in: ax, workspace: workspace, conversation: conversation,
+                                     tabHints: [activeTabName(in: ax, forWorkspace: workspace)]
+                                         .compactMap { $0 })
             if candidates.count == 1, clickIntoPrompt(candidates[0], pid: app.processIdentifier) {
                 target = candidates[0]
             }
@@ -623,15 +625,20 @@ enum DesktopAX {
         _ text: String, url: URL?, ax: AXUIElement, pid: pid_t,
         workspace: String?, conversation: String?
     ) -> Result<String, SendError> {
+        var tabHints: [String] = []
         if let url {
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = false
             NSWorkspace.shared.open(url, configuration: configuration)
             Thread.sleep(forTimeInterval: 1.2)
+            if let revealed = activeTabName(in: ax, forWorkspace: workspace) {
+                tabHints.append(revealed)
+            }
         }
 
         _ = allPrompts(in: ax)   // wakes the Electron tree; the scoped read below needs it built
-        let candidates = prompts(in: ax, workspace: workspace, conversation: conversation)
+        let candidates = prompts(in: ax, workspace: workspace, conversation: conversation,
+                                 tabHints: tabHints)
         guard candidates.count == 1 else {
             return .failure(.promptNotFocused(
                 "\(candidates.count) message boxes for this session, quiet"))
@@ -1015,15 +1022,28 @@ enum DesktopAX {
     /// a background tab — and are dropped: typing into one puts the message in
     /// a conversation the user cannot see.
     private static func prompts(
-        in ax: AXUIElement, workspace: String?, conversation: String?
+        in ax: AXUIElement, workspace: String?, conversation: String?,
+        tabHints: [String] = []
     ) -> [AXUIElement] {
-        labelledPrompts(in: ax, workspace: workspace, conversation: conversation).map(\.prompt)
+        labelledPrompts(in: ax, workspace: workspace, conversation: conversation,
+                        tabHints: tabHints).map(\.prompt)
     }
 
     /// As `prompts`, keeping each box's panel label so a caller that has more
     /// than one candidate can tell whether it knows which is which.
+    ///
+    /// `tabHints` are tab names to narrow by, best first, and they are what
+    /// settles two panels split side by side in one window — nothing else can:
+    /// both are laid out, both are live, and an unnamed pair carries the same
+    /// label. The caller passes the tab that is active right after it opened
+    /// this session's `?session=` URI, which is a consequence of the pet's own
+    /// reveal rather than of where the user left the cursor — that is the
+    /// distinction that matters. Requiring the tab to have *changed* was tried
+    /// and is wrong: a session whose panel is already the active one never
+    /// changes anything, and its replies were refused.
     private static func labelledPrompts(
-        in ax: AXUIElement, workspace: String?, conversation: String?
+        in ax: AXUIElement, workspace: String?, conversation: String?,
+        tabHints: [String] = []
     ) -> [(label: String?, prompt: AXUIElement)] {
         let scope: [AXUIElement]
         if let workspace, let window = window(in: ax, forWorkspace: workspace) {
@@ -1037,11 +1057,31 @@ enum DesktopAX {
         var found: [(label: String?, prompt: AXUIElement)] = []
         for window in scope { collectPanelPrompts(window, label: nil, into: &found, depth: 0) }
         found = found.filter { rect(of: $0.prompt) != nil }
-        if found.count > 1, let conversation, !conversation.isEmpty {
+        guard found.count > 1 else { return found }
+        if let conversation, !conversation.isEmpty {
             let named = found.filter { $0.label == conversation }
             if !named.isEmpty { return named }
         }
+        for hint in tabHints where !hint.isEmpty {
+            let onTop = found.filter { $0.label == hint }
+            if !onTop.isEmpty { return onTop }
+        }
         return found
+    }
+
+    /// The tab the window is showing, read off its title (`<tab> — <folder>`).
+    ///
+    /// Only meaningful compared against itself: the caller reads it before and
+    /// after opening the `?session=` URI, and a change names the panel the
+    /// extension just revealed. Read once it would be no better than "whatever
+    /// was in front", which is the guess this file exists to stop making.
+    private static func activeTabName(in ax: AXUIElement, forWorkspace workspace: String?) -> String? {
+        guard let workspace, let window = window(in: ax, forWorkspace: workspace),
+              let title = string(window, kAXTitleAttribute as String) else { return nil }
+        for separator in [" — ", " - "] where title.contains(separator) {
+            return String(title.components(separatedBy: separator).first ?? "")
+        }
+        return nil
     }
 
     /// Message boxes, each paired with the label of the panel containing it.
@@ -1119,6 +1159,7 @@ enum DesktopAX {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             Thread.sleep(forTimeInterval: 0.4)
+            let hints = [activeTabName(in: ax, forWorkspace: workspace)].compactMap { $0 }
             // The tree is built on every pass, not once the deadline has
             // expired. Revealing a panel that is ALREADY the active tab changes
             // no session, and the webview only focuses its box when the session
@@ -1126,18 +1167,18 @@ enum DesktopAX {
             // window just to find the same single box is dead time.
             _ = allPrompts(in: ax)   // build the tree, then narrow to this session's window
             let candidates = labelledPrompts(
-                in: ax, workspace: workspace, conversation: conversation)
+                in: ax, workspace: workspace, conversation: conversation, tabHints: hints)
             // Focus only settles it when the box it points at is one this
             // session could own AND there is no doubt about which one that is:
-            // either it is the only candidate, or its panel carries this
-            // conversation's name. Two unnamed panels split side by side in one
-            // window are indistinguishable, and "the one the user left the
-            // cursor in" is a guess — the same guess that used to drop replies
-            // into whichever conversation was being typed in.
-            if let reference = attribute(ax, kAXFocusedUIElementAttribute as String),
-               let hit = candidates.first(where: { CFEqual(reference, $0.prompt) }),
-               candidates.count == 1 || hit.label == conversation {
-                return hit.prompt
+            // it is the only candidate left after the narrowing above. Two
+            // unnamed panels split side by side in one window are otherwise
+            // indistinguishable, and "the one the user left the cursor in" is a
+            // guess — the same guess that used to drop replies into whichever
+            // conversation was being typed in.
+            if candidates.count == 1,
+               let reference = attribute(ax, kAXFocusedUIElementAttribute as String),
+               CFEqual(reference, candidates[0].prompt) {
+                return candidates[0].prompt
             }
             if candidates.count == 1 { return candidates[0].prompt }
         } while Date() < deadline
