@@ -529,7 +529,7 @@ enum DesktopAX {
         // Noted and undone whatever route the message ends up taking: the loud
         // path activates the app, which un-minimises the window as a side
         // effect, so without this one reply left it open for good.
-        let restored = unminimiseIfNeeded(ax)
+        let restored = unminimiseIfNeeded(ax, workspace: workspace)
         defer {
             previouslyActive?.activate(options: [])
             reminimise(restored, app: app)
@@ -651,11 +651,18 @@ enum DesktopAX {
         // Earlier tests passed because a loud delivery had just left focus
         // sitting in the message box — the tested state was one the pet had
         // arranged for itself, not the state a user is ever in.
+        //
+        // And the box's own `AXFocused` is NOT enough to go on: a box in a
+        // background window answers true to it while the keyboard still belongs
+        // to whatever the user is typing in. That gap is what put the pet's
+        // message into the panel the user had open instead of the one being
+        // replied to — the check afterwards caught it, but only after the text
+        // was already sitting in someone else's box. So the app is asked who
+        // holds focus, and the answer has to BE this box.
         AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         Thread.sleep(forTimeInterval: 0.4)
-        let focused = (attribute(prompt, kAXFocusedAttribute as String) as? NSNumber)?
-            .boolValue ?? false
-        guard focused else { return .failure(.boxWouldNotFocus) }
+        guard let held = attribute(ax, kAXFocusedUIElementAttribute as String),
+              CFEqual(held, prompt) else { return .failure(.boxWouldNotFocus) }
 
         // Scoped to the box's own window. Buttons are identified by label and
         // frame, and a second VS Code window busy with its own work (a Gradle
@@ -675,13 +682,14 @@ enum DesktopAX {
         // the text as input rather than merely painting it (an accessibility
         // write leaves the button dead). Pressing it needs no focus at all.
         //
-        // This is Claude Desktop's route. The VS Code panel publishes no send
-        // button at all — its whole subtree offers two "Copy code to clipboard"
-        // buttons and nothing else — so there it always falls through to the
-        // Return below, and a Return posted to the process only submits once
-        // the app has been activated. A VS Code panel therefore reaches the
-        // user the loud way; the quiet attempt is still worth making, because
-        // it is what finds and verifies the right box.
+        // It carries the VS Code panel too, and carries it far more reliably
+        // than the Return below: a Return posted to the process only submits
+        // once the app has been activated, while pressing the button works with
+        // the window in the background and even minimized (both measured).
+        // Nothing shows in the panel's tree until the box has content — an
+        // empty panel offers two "Copy code to clipboard" buttons and nothing
+        // else — which is exactly why the button is looked for by what CHANGED
+        // rather than by name.
         if let send = newlyEnabledButton(in: windows, comparedTo: before) {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
             if emptied(prompt, of: text, within: 1.5) { return .success("quiet, send button") }
@@ -803,8 +811,19 @@ enum DesktopAX {
     /// working in keeps the front and the keyboard.
     ///
     /// Returns the window that was restored, for `reminimise` to put back.
-    private static func unminimiseIfNeeded(_ ax: AXUIElement) -> AXUIElement? {
-        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+    ///
+    /// `workspace` keeps this to the session's own window. Without it the first
+    /// minimized window in the list was restored — so replying to a session in
+    /// one project could pop open an unrelated project the user had put away.
+    private static func unminimiseIfNeeded(
+        _ ax: AXUIElement, workspace: String? = nil
+    ) -> AXUIElement? {
+        let windows: [AXUIElement]
+        if let workspace, let window = window(in: ax, forWorkspace: workspace) {
+            windows = [window]
+        } else {
+            windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        }
         guard let minimized = windows.first(where: { window in
             (attribute(window, kAXMinimizedAttribute as String) as? NSNumber)?.boolValue ?? false
         }) else { return nil }
@@ -998,6 +1017,14 @@ enum DesktopAX {
     private static func prompts(
         in ax: AXUIElement, workspace: String?, conversation: String?
     ) -> [AXUIElement] {
+        labelledPrompts(in: ax, workspace: workspace, conversation: conversation).map(\.prompt)
+    }
+
+    /// As `prompts`, keeping each box's panel label so a caller that has more
+    /// than one candidate can tell whether it knows which is which.
+    private static func labelledPrompts(
+        in ax: AXUIElement, workspace: String?, conversation: String?
+    ) -> [(label: String?, prompt: AXUIElement)] {
         let scope: [AXUIElement]
         if let workspace, let window = window(in: ax, forWorkspace: workspace) {
             scope = [window]
@@ -1012,9 +1039,9 @@ enum DesktopAX {
         found = found.filter { rect(of: $0.prompt) != nil }
         if found.count > 1, let conversation, !conversation.isEmpty {
             let named = found.filter { $0.label == conversation }
-            if !named.isEmpty { return named.map(\.prompt) }
+            if !named.isEmpty { return named }
         }
-        return found.map(\.prompt)
+        return found
     }
 
     /// Message boxes, each paired with the label of the panel containing it.
@@ -1079,6 +1106,12 @@ enum DesktopAX {
     /// The rule used to count boxes across the whole app, which quietly broke
     /// every delivery on a machine that keeps a second Claude panel open
     /// somewhere.
+    ///
+    /// A focused box is only accepted when it is one of this session's own
+    /// candidates. "Something with the right description has focus" was the
+    /// rule, and it sent the reply into whichever Claude panel the user
+    /// happened to be typing in — the pet's own reveal is what should decide
+    /// the target, never where the user's cursor already was.
     private static func focusedPrompt(
         in ax: AXUIElement, upTo seconds: TimeInterval,
         workspace: String?, conversation: String?
@@ -1086,21 +1119,27 @@ enum DesktopAX {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             Thread.sleep(forTimeInterval: 0.4)
-            if let reference = attribute(ax, kAXFocusedUIElementAttribute as String) {
-                let focused = unsafeBitCast(reference, to: AXUIElement.self)
-                if let description = string(focused, kAXDescriptionAttribute as String),
-                   promptDescriptions.contains(description) {
-                    return focused
-                }
-            }
-            // Tried on every pass, not once the deadline has expired. Revealing
-            // a panel that is ALREADY the active tab changes no session, and the
-            // webview only focuses its box when the session changes — so in that
-            // case focus never moves and waiting the full window just to find
-            // the same single box is dead time.
+            // The tree is built on every pass, not once the deadline has
+            // expired. Revealing a panel that is ALREADY the active tab changes
+            // no session, and the webview only focuses its box when the session
+            // changes — so in that case focus never moves and waiting the full
+            // window just to find the same single box is dead time.
             _ = allPrompts(in: ax)   // build the tree, then narrow to this session's window
-            let candidates = prompts(in: ax, workspace: workspace, conversation: conversation)
-            if candidates.count == 1 { return candidates[0] }
+            let candidates = labelledPrompts(
+                in: ax, workspace: workspace, conversation: conversation)
+            // Focus only settles it when the box it points at is one this
+            // session could own AND there is no doubt about which one that is:
+            // either it is the only candidate, or its panel carries this
+            // conversation's name. Two unnamed panels split side by side in one
+            // window are indistinguishable, and "the one the user left the
+            // cursor in" is a guess — the same guess that used to drop replies
+            // into whichever conversation was being typed in.
+            if let reference = attribute(ax, kAXFocusedUIElementAttribute as String),
+               let hit = candidates.first(where: { CFEqual(reference, $0.prompt) }),
+               candidates.count == 1 || hit.label == conversation {
+                return hit.prompt
+            }
+            if candidates.count == 1 { return candidates[0].prompt }
         } while Date() < deadline
         return nil
     }
