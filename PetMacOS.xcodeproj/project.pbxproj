@@ -467,7 +467,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.2;
+				MARKETING_VERSION = 1.8.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
@@ -488,7 +488,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.8.2;
+				MARKETING_VERSION = 1.8.3;
 				PRODUCT_BUNDLE_IDENTIFIER = com.desktoppet.PetMacOS;
 				PRODUCT_NAME = ClaudePet;
 				SDKROOT = macosx;
