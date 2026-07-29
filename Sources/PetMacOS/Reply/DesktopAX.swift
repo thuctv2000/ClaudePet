@@ -577,7 +577,20 @@ enum DesktopAX {
 
         // Revealing a panel is quick; building one for a session being resumed
         // is not, and the webview only focuses its box once that is done.
-        guard let prompt = focusedPrompt(in: ax, upTo: 6.0) else {
+        var target = focusedPrompt(in: ax, upTo: 6.0)
+        if target == nil {
+            // Focus unreadable even with VS Code in front — Electron does that.
+            // If the window in front holds exactly one message box there is
+            // nothing to guess about, so click into it the way a person would
+            // rather than refusing a delivery with the panel sitting open on
+            // screen (measured on a machine with three panels: every attempt
+            // ended in promptNotFocused("nothing focused")).
+            let candidates = promptsInFrontWindow(of: ax)
+            if candidates.count == 1, clickIntoPrompt(candidates[0], pid: app.processIdentifier) {
+                target = candidates[0]
+            }
+        }
+        guard let prompt = target else {
             return .failure(.promptNotFocused(focusDescription(ax)))
         }
         let channel: String
@@ -613,9 +626,11 @@ enum DesktopAX {
             Thread.sleep(forTimeInterval: 1.2)
         }
 
-        let prompts = allPrompts(in: ax)
+        _ = allPrompts(in: ax)   // wakes the Electron tree; the scoped read below needs it built
+        let prompts = promptsInFrontWindow(of: ax)
         guard prompts.count == 1 else {
-            return .failure(.promptNotFocused("\(prompts.count) message boxes, quiet"))
+            return .failure(.promptNotFocused(
+                "\(prompts.count) message boxes in the front window, quiet"))
         }
         let prompt = prompts[0]
 
@@ -897,6 +912,62 @@ enum DesktopAX {
         }
     }
 
+    /// Screen rect of an accessibility element, or nil when it has none.
+    private static func rect(of element: AXUIElement) -> CGRect? {
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        guard let rawPoint = attribute(element, kAXPositionAttribute as String),
+              let rawSize = attribute(element, kAXSizeAttribute as String) else { return nil }
+        AXValueGetValue(unsafeBitCast(rawPoint, to: AXValue.self), .cgPoint, &point)
+        AXValueGetValue(unsafeBitCast(rawSize, to: AXValue.self), .cgSize, &size)
+        guard size.width > 1, size.height > 1 else { return nil }
+        return CGRect(origin: point, size: size)
+    }
+
+    /// Message boxes that are actually on screen in the window the user is in.
+    ///
+    /// Asking the whole app for "exactly one box" is a rule that breaks the
+    /// moment a second Claude panel exists anywhere — measured on a machine
+    /// with three: every delivery fell through to the loud path, and when even
+    /// that could not read focus the message was refused outright, with VS Code
+    /// sitting right there in front of the user.
+    ///
+    /// The main window is the right scope: the panel for this session has just
+    /// been revealed (URI) and raised, so it is in *that* window, while panels
+    /// in other windows are exactly the ones that must not be typed into. Boxes
+    /// with no rect are panels that are open but not currently laid out — a
+    /// background tab — and are dropped for the same reason.
+    private static func promptsInFrontWindow(of ax: AXUIElement) -> [AXUIElement] {
+        let scope: [AXUIElement]
+        if let raw = attribute(ax, kAXMainWindowAttribute as String)
+            ?? attribute(ax, kAXFocusedWindowAttribute as String) {
+            scope = [unsafeBitCast(raw, to: AXUIElement.self)]
+        } else {
+            scope = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        }
+        var found: [AXUIElement] = []
+        for window in scope { collectPrompts(window, into: &found, depth: 0) }
+        return found.filter { rect(of: $0) != nil }
+    }
+
+    /// Clicks into a message box, for when it will not take focus by being
+    /// asked.
+    ///
+    /// `AXFocusedUIElement` comes back nil often enough in Electron that
+    /// refusing on it alone throws away deliveries that would have worked — a
+    /// click is what a person would do, and the webview always answers it.
+    private static func clickIntoPrompt(_ prompt: AXUIElement, pid: pid_t) -> Bool {
+        guard let box = rect(of: prompt) else { return false }
+        let centre = CGPoint(x: box.midX, y: box.midY)
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type,
+                    mouseCursorPosition: centre, mouseButton: .left)?.postToPid(pid)
+            usleep(40_000)
+        }
+        Thread.sleep(forTimeInterval: 0.4)
+        return (attribute(prompt, kAXFocusedAttribute as String) as? NSNumber)?.boolValue ?? false
+    }
+
     /// The message box that is ready to receive typing.
     ///
     /// Focus is asked first because it is the app itself saying which session's
@@ -904,11 +975,15 @@ enum DesktopAX {
     /// out of a source file or an unrelated conversation.
     ///
     /// When focus cannot be read at all, the tree is walked instead — but only
-    /// one answer is accepted: exactly one message box in the whole app. The
-    /// URI has already revealed the right session's panel, so a single box is
-    /// unambiguous, while two mean two Claude panels are open and there is no
-    /// way to tell them apart from out here. Guessing between them is the one
-    /// mistake worth failing to avoid.
+    /// one answer is accepted: exactly one message box **in the window in
+    /// front**. The URI has already revealed this session's panel there, so a
+    /// single box is unambiguous; panels in other windows are precisely the
+    /// ones that must not be typed into. Guessing between two boxes in the same
+    /// window is the one mistake worth failing to avoid.
+    ///
+    /// The rule used to count boxes across the whole app, which quietly broke
+    /// every delivery on a machine that keeps a second Claude panel open
+    /// somewhere.
     private static func focusedPrompt(
         in ax: AXUIElement, upTo seconds: TimeInterval
     ) -> AXUIElement? {
@@ -927,7 +1002,8 @@ enum DesktopAX {
             // webview only focuses its box when the session changes — so in that
             // case focus never moves and waiting the full window just to find
             // the same single box is dead time.
-            let prompts = allPrompts(in: ax)
+            _ = allPrompts(in: ax)   // build the tree, then narrow to the window in front
+            let prompts = promptsInFrontWindow(of: ax)
             if prompts.count == 1 { return prompts[0] }
         } while Date() < deadline
         return nil
@@ -964,7 +1040,9 @@ enum DesktopAX {
         let boxes = allPrompts(in: ax).count
         let frontmost = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         guard let reference = attribute(ax, kAXFocusedUIElementAttribute as String) else {
-            return "nothing focused, \(boxes) message box(es), front app \(frontmost)"
+            return "nothing focused, \(boxes) message box(es) in the app,"
+                + " \(promptsInFrontWindow(of: ax).count) in the window in front,"
+                + " front app \(frontmost)"
         }
         let focused = unsafeBitCast(reference, to: AXUIElement.self)
         let role = string(focused, kAXRoleAttribute as String) ?? "?"
