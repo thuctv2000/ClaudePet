@@ -156,7 +156,9 @@ struct PetView: View {
             summaries: summaries,
             settings: settings,
             onDismissCard: { key in state.dismissSession(key: key) },
-            onSendReply: { sessionId, text in state.sendReply(text, forSession: sessionId) }
+            onSendReply: { sessionId, text in state.sendReply(text, forSession: sessionId) },
+            onCancelQueue: { sessionId in state.cancelQueuedReplies(forSession: sessionId) },
+            onGrantAccess: { state.grantAccessibilityThenRetry() }
         )
     }
 

@@ -404,11 +404,23 @@ final class PetState {
         let isHoldingReply: Bool
         /// Outcome of the most recent message sent from this card, if any.
         let replyStatus: ReplyStatus?
+        /// How many messages are still waiting to be delivered to this session.
+        ///
+        /// The status line above is transient by design (it clears after 20s),
+        /// which left the card showing *nothing* for a message that had not
+        /// gone anywhere. A count is state, not an event, so it stays until the
+        /// queue actually drains.
+        let queuedReplies: Int
         /// A card offers a reply box for any conversation that is still alive.
         /// Unlike the tmux prototype there is no transport to detect: delivery
         /// rides the hooks that are already installed, so every live session
         /// can be written to.
-        var canReply: Bool { !id.isEmpty && mood != .sleep }
+        ///
+        /// A *sleeping* session takes messages too: quiet for a while is the
+        /// exact case idle delivery was built for, and hiding the box there
+        /// meant the conversations most in need of it were the ones you could
+        /// not type into.
+        var canReply: Bool { !id.isEmpty }
     }
 
     /// What happened to a message sent from a session card.
@@ -486,7 +498,8 @@ final class PetState {
                 isAwaitingApproval: askQueue.contains { $0.sessionId == key }
                     || pendingQuestion?.sessionId == key,
                 isHoldingReply: heldStops[key] != nil,
-                replyStatus: replyStatuses[key]
+                replyStatus: replyStatuses[key],
+                queuedReplies: replyQueue[key]?.count ?? 0
             ))
         }
         return result.sorted { $0.lastEventAt > $1.lastEventAt }
@@ -1048,6 +1061,10 @@ final class PetState {
     func dismissSession(key: String) {
         let sessionKey = key.isEmpty ? Self.noSessionKey : key
         dismissedSessions[sessionKey] = Date()
+        // Closing the card takes its undelivered messages with it. Leaving them
+        // queued meant a message could still arrive minutes later from a card
+        // the user had already swept away, with nothing on screen to explain it.
+        cancelQueuedReplies(forSession: sessionKey)
         func matches(_ item: TaskItem) -> Bool {
             (item.sessionId ?? Self.noSessionKey) == sessionKey
         }
@@ -1364,6 +1381,7 @@ final class PetState {
     private func deliverViaTerminal(
         forSession sessionId: String, tty: String, thenTryHosts: Bool
     ) {
+        let cancelToken = replyCancelToken[sessionId, default: 0]
         guard let text = dequeueReply(forSession: sessionId) else {
             noteAttempt("skipped: nothing queued", for: sessionId)
             return
@@ -1377,7 +1395,7 @@ final class PetState {
                 self.setReplyStatus(.sent, forSession: sessionId)
                 self.noteAttempt("delivered to terminal \(tty)", for: sessionId)
             case .failure(let error):
-                self.requeueReply(text, forSession: sessionId)
+                self.requeueReply(text, forSession: sessionId, unlessCancelledSince: cancelToken)
                 self.noteAttempt("terminal \(tty) failed: \(error)", for: sessionId)
                 // A tty the pet cannot script (VS Code's integrated terminal,
                 // Ghostty, kitty…) has no idle route at all. Only a session of
@@ -1413,6 +1431,7 @@ final class PetState {
                         for: sessionId)
             return
         }
+        let cancelToken = replyCancelToken[sessionId, default: 0]
         guard let text = dequeueReply(forSession: sessionId) else {
             noteAttempt("skipped: nothing queued", for: sessionId)
             return
@@ -1436,7 +1455,7 @@ final class PetState {
             if outcome.1 {
                 self.setReplyStatus(.sent, forSession: sessionId)
             } else {
-                self.requeueReply(text, forSession: sessionId)
+                self.requeueReply(text, forSession: sessionId, unlessCancelledSince: cancelToken)
                 self.setReplyStatus(.stuck, forSession: sessionId)
             }
             // On failure the message goes back in the queue on purpose: the
@@ -1483,6 +1502,7 @@ final class PetState {
             reportMissingAccessibility(for: sessionId)
             return
         }
+        let cancelToken = replyCancelToken[sessionId, default: 0]
         guard let text = dequeueReply(forSession: sessionId) else {
             noteAttempt("skipped: nothing queued", for: sessionId)
             return
@@ -1503,7 +1523,7 @@ final class PetState {
             case .failure(let error):
                 // Back in the queue: the next hook this session fires can
                 // still carry it.
-                self.requeueReply(text, forSession: sessionId)
+                self.requeueReply(text, forSession: sessionId, unlessCancelledSince: cancelToken)
                 self.setReplyStatus(.stuck, forSession: sessionId)
                 self.noteAttempt("VS Code \(label) failed: \(error)", for: sessionId)
             }
@@ -1534,6 +1554,7 @@ final class PetState {
             setReplyStatus(.stuck, forSession: sessionId)
             return
         }
+        let cancelToken = replyCancelToken[sessionId, default: 0]
         guard let text = dequeueReply(forSession: sessionId) else {
             noteAttempt("skipped: nothing queued", for: sessionId)
             return
@@ -1547,7 +1568,7 @@ final class PetState {
             }.value
             if case .failure(let error) = result {
                 self.noteAttempt("VS Code terminal \(name) failed: \(error)", for: sessionId)
-                self.requeueReply(text, forSession: sessionId)
+                self.requeueReply(text, forSession: sessionId, unlessCancelledSince: cancelToken)
                 self.setReplyStatus(.stuck, forSession: sessionId)
                 return
             }
@@ -1559,7 +1580,7 @@ final class PetState {
             } else {
                 self.noteAttempt("VS Code terminal \(name): keys sent, no hook followed",
                                  for: sessionId)
-                self.requeueReply(text, forSession: sessionId)
+                self.requeueReply(text, forSession: sessionId, unlessCancelledSince: cancelToken)
                 self.setReplyStatus(.stuck, forSession: sessionId)
             }
         }
@@ -1645,6 +1666,38 @@ final class PetState {
         DesktopAX.requestTrust()
     }
 
+    /// Watches for the Accessibility switch being flipped, so what is waiting
+    /// can go out. nil when nothing is watching.
+    @ObservationIgnored private var accessibilityWatch: Task<Void, Never>?
+
+    /// Sends the user to the Accessibility switch and picks the delivery back
+    /// up once they flip it.
+    ///
+    /// Without the second half, granting the permission fixed nothing you could
+    /// see: an idle session fires no hooks, so the message that prompted the
+    /// request would sit in the queue until something else happened to that
+    /// conversation — which, for an idle one, may be never.
+    func grantAccessibilityThenRetry() {
+        Self.openAccessibilitySettings()
+        guard accessibilityWatch == nil else { return }
+        accessibilityWatch = Task { [weak self] in
+            // Two minutes of two-second checks: long enough to find the switch
+            // in System Settings, short enough not to poll forever.
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                guard DesktopAX.isTrusted else { continue }
+                self.accessibilityWatch = nil
+                for (sid, queue) in self.replyQueue where !queue.isEmpty {
+                    self.noteAttempt("Accessibility granted — retrying", for: sid)
+                    self.scheduleIdleDelivery(forSession: sid)
+                }
+                return
+            }
+            self?.accessibilityWatch = nil
+        }
+    }
+
     /// Opens System Settings at the Accessibility list (the card's status line
     /// is a button once the permission is what's missing).
     static func openAccessibilitySettings() {
@@ -1682,6 +1735,24 @@ final class PetState {
         sessionMeta[key]?.surface ?? .unknown
     }
 
+    /// Throws away everything still queued for a session.
+    ///
+    /// Without this a failed delivery was a trap: the text goes back in the
+    /// queue, the card says "stuck", and the natural reaction — type it again,
+    /// or go say it in the terminal — meant Claude eventually received the same
+    /// instruction twice, oldest first. There has to be a way to take it back.
+    func cancelQueuedReplies(forSession sessionId: String) {
+        // Bumped even when the queue looks empty: a delivery in flight is
+        // holding its message *outside* the queue and would otherwise put it
+        // back the moment it failed, resurrecting the very message that was
+        // just discarded.
+        replyCancelToken[sessionId, default: 0] += 1
+        guard let pending = replyQueue.removeValue(forKey: sessionId), !pending.isEmpty else { return }
+        replyStatuses.removeValue(forKey: sessionId)
+        replyStatusClearTasks.removeValue(forKey: sessionId)?.cancel()
+        logReply("cancelled \(pending.count) queued message(s)", for: sessionId)
+    }
+
     /// Pops the next queued message for a session (used by the `PostToolUse`
     /// route). Returns nil — never blocks — when the queue is empty.
     func takeQueuedReply(forSession sessionId: String?) -> String? {
@@ -1701,6 +1772,22 @@ final class PetState {
         replyQueue[sessionId, default: []].insert(text, at: 0)
     }
 
+    /// Puts a message back only if it wasn't discarded while the delivery was
+    /// running. `token` is what `replyCancelToken` said when the message left
+    /// the queue.
+    private func requeueReply(_ text: String, forSession sessionId: String, unlessCancelledSince token: Int) {
+        guard replyCancelToken[sessionId, default: 0] == token else {
+            logReply("delivery failed, but the message had been discarded — dropping it",
+                     for: sessionId)
+            return
+        }
+        requeueReply(text, forSession: sessionId)
+    }
+
+    /// Bumped every time the user discards a session's queue; see
+    /// `requeueReply(_:forSession:unlessCancelledSince:)`.
+    private var replyCancelToken: [String: Int] = [:]
+
     private func dequeueReply(forSession sessionId: String) -> String? {
         guard var pending = replyQueue[sessionId], !pending.isEmpty else { return nil }
         let next = pending.removeFirst()
@@ -1718,6 +1805,14 @@ final class PetState {
     private func setReplyStatus(_ status: ReplyStatus, forSession sessionId: String) {
         replyStatuses[sessionId] = status
         replyStatusClearTasks[sessionId]?.cancel()
+        // Only an *outcome* fades. "Stuck" and "needs permission" describe the
+        // message's current state — clearing them on a timer left a card that
+        // looked like nothing had ever been typed while the message sat in the
+        // queue. They go when the queue does.
+        guard status != .stuck, status != .needsAccess else {
+            replyStatusClearTasks.removeValue(forKey: sessionId)
+            return
+        }
         replyStatusClearTasks[sessionId] = Task { [weak self] in
             try? await Task.sleep(for: .seconds(Self.replyStatusTTL))
             guard !Task.isCancelled else { return }
@@ -1732,7 +1827,12 @@ final class PetState {
         replyStatuses.removeValue(forKey: sessionId)
         replyStatusClearTasks.removeValue(forKey: sessionId)?.cancel()
         guard !keepQueue else { return }
-        replyQueue.removeValue(forKey: sessionId)
+        // Say so: the card's waiting chip is about to disappear, and "the
+        // conversation ended before your message went out" is the only honest
+        // explanation for that.
+        if let dropped = replyQueue.removeValue(forKey: sessionId), !dropped.isEmpty {
+            logReply("session ended with \(dropped.count) message(s) undelivered", for: sessionId)
+        }
         if let id = heldStops.removeValue(forKey: sessionId) {
             resolver?.resolveReply(id: id, text: nil)
         }

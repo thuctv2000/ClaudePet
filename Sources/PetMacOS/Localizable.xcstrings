@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%d messages waiting to be delivered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d messages waiting to be delivered"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d tin đang chờ gửi"
+          }
+        }
+      }
+    },
     "%d permission requests are waiting on the pet": {
       "localizations": {
         "en": {
@@ -61,6 +77,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "+%d cũ hơn ˄"
+          }
+        }
+      }
+    },
+    "1 message waiting to be delivered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 message waiting to be delivered"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 tin đang chờ gửi"
           }
         }
       }
@@ -1243,6 +1275,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bản dev — tự cập nhật chỉ hoạt động ở bản cài trong /Applications."
+          }
+        }
+      }
+    },
+    "Discard them": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discard them"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bỏ các tin này"
           }
         }
       }
@@ -3137,6 +3185,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Đang chờ bạn"
+          }
+        }
+      }
+    },
+    "Waiting to be delivered": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to be delivered"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang chờ gửi"
           }
         }
       }

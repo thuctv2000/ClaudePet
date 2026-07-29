@@ -756,7 +756,7 @@ struct SettingsWindowView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if !granted {
-                    Button(tr("Grant access…")) { PetState.openAccessibilitySettings() }
+                    Button(tr("Grant access…")) { state.grantAccessibilityThenRetry() }
                         .controlSize(.small)
                         .padding(.top, 2)
                 }
