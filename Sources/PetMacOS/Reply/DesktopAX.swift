@@ -551,13 +551,11 @@ enum DesktopAX {
         // user's other windows — measured, not assumed: with the raise removed
         // the window still climbed a place in the on-screen order on every
         // send, and `panel.reveal()` is what is left doing it.
-        let alreadyOpen = conversation.map { activeTab(in: ax, titled: $0) } ?? false
         let quietNote: String
-        switch quietSend(text, url: alreadyOpen ? nil : url, ax: ax,
-                         pid: app.processIdentifier,
+        switch quietSend(text, url: url, ax: ax, pid: app.processIdentifier,
                          workspace: workspace, conversation: conversation) {
         case .success(let note):
-            return .success(alreadyOpen ? note : "revealed, " + note)
+            return .success(note)
         case .failure(let error):
             // Carried into the final note. Without it a quiet attempt that gave
             // up was invisible: the log said the message arrived the loud way
@@ -574,12 +572,14 @@ enum DesktopAX {
         guard waitUntilFrontmost(app, upTo: 3.0) else { return .failure(.appNotFrontmost) }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
+        let focusBeforeReveal = attribute(ax, kAXFocusedUIElementAttribute as String)
         NSWorkspace.shared.open(url, configuration: configuration)
 
         // Revealing a panel is quick; building one for a session being resumed
         // is not, and the webview only focuses its box once that is done.
         var target = focusedPrompt(in: ax, upTo: 6.0, workspace: workspace,
-                                   conversation: conversation)
+                                   conversation: conversation,
+                                   focusBefore: focusBeforeReveal)
         if target == nil {
             // Focus unreadable even with VS Code in front — Electron does that.
             // If the window in front holds exactly one message box there is
@@ -625,25 +625,47 @@ enum DesktopAX {
         _ text: String, url: URL?, ax: AXUIElement, pid: pid_t,
         workspace: String?, conversation: String?
     ) -> Result<String, SendError> {
-        var tabHints: [String] = []
-        if let url {
+        // Noted before the reveal, so that focus LANDING somewhere afterwards
+        // can be told apart from focus having been parked there all along. The
+        // first is the extension answering the pet's `?session=` URI and names
+        // the right panel; the second is just where the user was typing.
+        // The panel is looked for BEFORE the URI is opened, and the URI is
+        // skipped entirely when it is found.
+        //
+        // Opening it is not free and not always a reveal: sent to a window that
+        // cannot resolve the session — a window with no folder open, which is
+        // where a dragged-out panel ends up — the extension starts a NEW
+        // conversation, replaces the panel that was showing this session, and
+        // focuses the new one. Measured twice: the reply landed in a
+        // conversation the reveal had just invented, and the panel that could
+        // have been named was gone from the tree by the time it was scanned.
+        _ = allPrompts(in: ax)   // wakes the Electron tree the reads below need
+        var labelled = everyLabelledPrompt(in: ax)
+        var prompt = identifyPrompt(among: labelled, conversation: conversation,
+                                    workspace: workspace, tabHints: [],
+                                    focusBefore: nil, in: ax, upTo: 0)
+        var revealed = false
+
+        if prompt == nil, let url {
+            let focusBefore = attribute(ax, kAXFocusedUIElementAttribute as String)
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = false
             NSWorkspace.shared.open(url, configuration: configuration)
             Thread.sleep(forTimeInterval: 1.2)
-            if let revealed = activeTabName(in: ax, forWorkspace: workspace) {
-                tabHints.append(revealed)
-            }
+            revealed = true
+            let tabHints = [activeTabName(in: ax, forWorkspace: workspace)].compactMap { $0 }
+            _ = allPrompts(in: ax)
+            labelled = everyLabelledPrompt(in: ax)
+            prompt = identifyPrompt(among: labelled, conversation: conversation,
+                                    workspace: workspace, tabHints: tabHints,
+                                    focusBefore: focusBefore, in: ax, upTo: 2.5)
         }
 
-        _ = allPrompts(in: ax)   // wakes the Electron tree; the scoped read below needs it built
-        let candidates = prompts(in: ax, workspace: workspace, conversation: conversation,
-                                 tabHints: tabHints)
-        guard candidates.count == 1 else {
+        guard let prompt else {
             return .failure(.promptNotFocused(
-                "\(candidates.count) message boxes for this session, quiet"))
+                "none of \(labelled.count) message boxes is provably this session, quiet"))
         }
-        let prompt = candidates[0]
+        let opener = revealed ? "revealed, " : ""
 
         // Focus is put in the box FIRST, and checked.
         //
@@ -666,10 +688,23 @@ enum DesktopAX {
         // replied to — the check afterwards caught it, but only after the text
         // was already sitting in someone else's box. So the app is asked who
         // holds focus, and the answer has to BE this box.
+        //
+        // Asking is not always enough: a panel that is already the active tab
+        // gets no reveal, and the webview then ignores the request while the
+        // caret sits in the split beside it. So the box is clicked the way a
+        // person would — addressed to the process, which neither activates the
+        // app nor raises the window, so it stays quiet. Without this every such
+        // reply escalated and pulled VS Code in front of the user.
         AXUIElementSetAttributeValue(prompt, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         Thread.sleep(forTimeInterval: 0.4)
-        guard let held = attribute(ax, kAXFocusedUIElementAttribute as String),
-              CFEqual(held, prompt) else { return .failure(.boxWouldNotFocus) }
+        // Only while VS Code is already the app in front: clicking a window the
+        // user cannot see is how an app gets pulled forward uninvited, and a
+        // background delivery has the escalation to fall back on anyway.
+        if !promptHoldsFocus(prompt, in: ax),
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == pid {
+            _ = clickIntoPrompt(prompt, pid: pid)
+        }
+        guard promptHoldsFocus(prompt, in: ax) else { return .failure(.boxWouldNotFocus) }
 
         // Scoped to the box's own window. Buttons are identified by label and
         // frame, and a second VS Code window busy with its own work (a Gradle
@@ -699,10 +734,12 @@ enum DesktopAX {
         // rather than by name.
         if let send = newlyEnabledButton(in: windows, comparedTo: before) {
             AXUIElementPerformAction(send, kAXPressAction as CFString)
-            if emptied(prompt, of: text, within: 1.5) { return .success("quiet, send button") }
+            if emptied(prompt, of: text, within: 1.5) {
+                return .success(opener + "quiet, send button")
+            }
         }
         postKeys("", to: pid, source: nil, submit: true)
-        if emptied(prompt, of: text, within: 1.5) { return .success("quiet, return key") }
+        if emptied(prompt, of: text, within: 1.5) { return .success(opener + "quiet, return key") }
 
         clearPrompt(prompt, pid: pid)
         return .failure(.notSubmitted)
@@ -888,27 +925,6 @@ enum DesktopAX {
         up.postToPid(pid)
     }
 
-    /// Whether a VS Code window is currently showing the conversation named
-    /// `title` as its active tab.
-    ///
-    /// A window's title is "<active tab> — <folder>", and the extension names
-    /// each panel after its conversation. So a match means the panel the
-    /// message is for is the one already on screen — there is nothing to
-    /// reveal, and the reveal is the part the user sees.
-    ///
-    /// This is a weaker identity than the session id the URI carries: two
-    /// conversations could share a name. It is only trusted alongside the
-    /// caller's other guard, that the whole app has exactly one message box —
-    /// so the panel matched here is also the only one that could receive the
-    /// text.
-    private static func activeTab(in ax: AXUIElement, titled title: String) -> Bool {
-        guard !title.isEmpty else { return false }
-        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
-        return windows.contains { window in
-            guard let name = string(window, kAXTitleAttribute as String) else { return false }
-            return name == title || name.hasPrefix(title + " — ") || name.hasPrefix(title + " - ")
-        }
-    }
 
     /// Empties a message box the pet filled but could not send, so a failed
     /// quiet attempt leaves no trace for the user to delete by hand.
@@ -1069,6 +1085,109 @@ enum DesktopAX {
         return found
     }
 
+    /// Every message box in the app, each with the label of the panel holding
+    /// it. Not scoped to a window: a Claude panel can be dragged into a window
+    /// with no folder open, where the session's workspace names no window at
+    /// all, so the search has to start from everything and narrow by proof.
+    private static func everyLabelledPrompt(
+        in ax: AXUIElement
+    ) -> [(label: String?, prompt: AXUIElement)] {
+        let windows = (attribute(ax, kAXWindowsAttribute as String) as? [AXUIElement]) ?? []
+        var found: [(label: String?, prompt: AXUIElement)] = []
+        for window in windows { collectPanelPrompts(window, label: nil, into: &found, depth: 0) }
+        return found.filter { rect(of: $0.prompt) != nil }
+    }
+
+    /// Picks the one box that provably belongs to this session, or nothing.
+    ///
+    /// In order:
+    ///
+    /// 1. **The only box in the app** — nothing to confuse it with.
+    /// 2. **The only box in the session's own workspace window.**
+    /// 3. Inside that window: **a panel labelled with this conversation**
+    ///    (VS Code titles a panel's tab after its conversation), then **focus
+    ///    that MOVED onto a box after the `?session=` URI** — the extension
+    ///    answering the pet — then the window's active tab.
+    ///
+    /// Everything past the first rule needs the session's workspace window to
+    /// exist, and when it does not the answer is *nothing*. A panel dragged
+    /// into a window with no folder open leaves no way to name the session
+    /// there: the URI cannot resume it (the extension starts a new conversation
+    /// instead, and focuses that), and the label cannot be trusted either
+    /// because two conversations opened with the same first message carry the
+    /// same tab title. Both were measured, and both put a reply into the wrong
+    /// conversation. Refusing sends the message back to the queue with a
+    /// reason, which is recoverable; a reply in someone else's conversation is
+    /// not.
+    private static func identifyPrompt(
+        among labelled: [(label: String?, prompt: AXUIElement)],
+        conversation: String?, workspace: String?, tabHints: [String],
+        focusBefore: CFTypeRef?, in ax: AXUIElement, upTo seconds: TimeInterval
+    ) -> AXUIElement? {
+        // One box in the whole app cannot be anything else.
+        if labelled.count == 1 { return labelled[0].prompt }
+
+        // Everything below leans on the session's own window existing. When it
+        // does not — a panel dragged into a window with no folder open — there
+        // is nothing left that names this session: the URI cannot resume it
+        // there (the extension starts a new conversation instead), and the
+        // panel's label cannot be trusted either, because two conversations
+        // that opened with the same first message carry the same label. Both
+        // were measured, and both delivered a reply into the wrong
+        // conversation. Refusing is the only honest answer.
+        guard let workspace, let host = window(in: ax, forWorkspace: workspace) else { return nil }
+        let inHost = labelled.filter {
+            window(of: $0.prompt).map { CFEqual($0, host) } ?? false
+        }
+        if inHost.count == 1 { return inHost[0].prompt }
+
+        if let conversation, !conversation.isEmpty {
+            let named = inHost.filter { $0.label == conversation }
+            if named.count == 1 { return named[0].prompt }
+        }
+        if let landed = promptFocusLandedOn(inHost.map(\.prompt), since: focusBefore,
+                                            in: ax, upTo: seconds) {
+            return landed
+        }
+        for hint in tabHints where !hint.isEmpty {
+            let onTop = inHost.filter { $0.label == hint }
+            if onTop.count == 1 { return onTop[0].prompt }
+        }
+        return nil
+    }
+
+    /// Whether the app says this exact box owns the keyboard.
+    ///
+    /// The box's own `AXFocused` is not the same question and answers true too
+    /// readily — a box in a background window says yes while the keys are still
+    /// going somewhere else.
+    private static func promptHoldsFocus(_ prompt: AXUIElement, in ax: AXUIElement) -> Bool {
+        guard let held = attribute(ax, kAXFocusedUIElementAttribute as String) else { return false }
+        return CFEqual(held, prompt)
+    }
+
+    /// Waits for focus to MOVE onto one of `candidates`, and says which.
+    ///
+    /// The movement is the point: focus that was already parked on a candidate
+    /// before the pet did anything says nothing about which conversation the
+    /// pet asked for, while focus arriving after the `?session=` URI is the
+    /// extension answering it.
+    private static func promptFocusLandedOn(
+        _ candidates: [AXUIElement], since before: CFTypeRef?,
+        in ax: AXUIElement, upTo seconds: TimeInterval
+    ) -> AXUIElement? {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if let now = attribute(ax, kAXFocusedUIElementAttribute as String),
+               before == nil || !CFEqual(now, before!),
+               let hit = candidates.first(where: { CFEqual(now, $0) }) {
+                return hit
+            }
+            Thread.sleep(forTimeInterval: 0.3)
+        } while Date() < deadline
+        return nil
+    }
+
     /// The tab the window is showing, read off its title (`<tab> — <folder>`).
     ///
     /// Only meaningful compared against itself: the caller reads it before and
@@ -1135,52 +1254,41 @@ enum DesktopAX {
     /// box is live, and refusing when focus is elsewhere is what keeps a reply
     /// out of a source file or an unrelated conversation.
     ///
-    /// When focus cannot be read at all, the tree is walked instead — but only
-    /// one answer is accepted: exactly one message box in **this session's own
-    /// window**, the one holding its workspace. The URI has already revealed
-    /// the session's panel there, so a single box is unambiguous; panels in
-    /// other windows are precisely the ones that must not be typed into.
-    /// Guessing between two boxes in the same window is the one mistake worth
-    /// failing to avoid.
+    /// Three answers are accepted, in this order, and nothing else:
     ///
-    /// The rule used to count boxes across the whole app, which quietly broke
-    /// every delivery on a machine that keeps a second Claude panel open
-    /// somewhere.
+    /// 1. focus MOVED onto a message box since just before the URI was opened —
+    ///    the extension answering the pet, and true wherever the panel lives;
+    /// 2. exactly one box in the session's own workspace window, when such a
+    ///    window exists — a panel can be dragged into a window with no folder
+    ///    open, and then the workspace names the wrong window entirely;
+    /// 3. exactly one box in the whole app, where there is nothing to confuse.
     ///
-    /// A focused box is only accepted when it is one of this session's own
-    /// candidates. "Something with the right description has focus" was the
-    /// rule, and it sent the reply into whichever Claude panel the user
-    /// happened to be typing in — the pet's own reveal is what should decide
-    /// the target, never where the user's cursor already was.
+    /// The rule used to be "something with the right description has focus",
+    /// which sent the reply into whichever Claude panel the user happened to be
+    /// typing in. Before that it counted boxes across the whole app and refused
+    /// whenever a second panel existed anywhere. Both are the same mistake from
+    /// opposite ends: letting the user's cursor, or the window order, stand in
+    /// for the one thing that actually identifies a session.
     private static func focusedPrompt(
         in ax: AXUIElement, upTo seconds: TimeInterval,
-        workspace: String?, conversation: String?
+        workspace: String?, conversation: String?, focusBefore: CFTypeRef?
     ) -> AXUIElement? {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
             Thread.sleep(forTimeInterval: 0.4)
-            let hints = [activeTabName(in: ax, forWorkspace: workspace)].compactMap { $0 }
             // The tree is built on every pass, not once the deadline has
             // expired. Revealing a panel that is ALREADY the active tab changes
             // no session, and the webview only focuses its box when the session
             // changes — so in that case focus never moves and waiting the full
             // window just to find the same single box is dead time.
-            _ = allPrompts(in: ax)   // build the tree, then narrow to this session's window
-            let candidates = labelledPrompts(
-                in: ax, workspace: workspace, conversation: conversation, tabHints: hints)
-            // Focus only settles it when the box it points at is one this
-            // session could own AND there is no doubt about which one that is:
-            // it is the only candidate left after the narrowing above. Two
-            // unnamed panels split side by side in one window are otherwise
-            // indistinguishable, and "the one the user left the cursor in" is a
-            // guess — the same guess that used to drop replies into whichever
-            // conversation was being typed in.
-            if candidates.count == 1,
-               let reference = attribute(ax, kAXFocusedUIElementAttribute as String),
-               CFEqual(reference, candidates[0].prompt) {
-                return candidates[0].prompt
+            _ = allPrompts(in: ax)
+            let hints = [activeTabName(in: ax, forWorkspace: workspace)].compactMap { $0 }
+            if let found = identifyPrompt(
+                among: everyLabelledPrompt(in: ax), conversation: conversation,
+                workspace: workspace, tabHints: hints, focusBefore: focusBefore,
+                in: ax, upTo: 0) {
+                return found
             }
-            if candidates.count == 1 { return candidates[0].prompt }
         } while Date() < deadline
         return nil
     }
