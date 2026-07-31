@@ -202,12 +202,16 @@ final class PetAppDelegate: NSObject, NSApplicationDelegate {
                 panel.makeKeyAndOrderFront(nil)
                 panel.reevaluateSoon()
             } else {
-                panel.orderFrontRegardless()
+                // Never re-show a pet the user has hidden. This branch runs
+                // when a dialog is dismissed; ordering the panel front here used
+                // to resurrect a hidden pet after any permission/question cycle.
+                if self.isVisible { panel.orderFrontRegardless() }
                 // Hand active status back to whatever the user was using.
                 NSApp.deactivate()
                 panel.reevaluateSoon()
             }
         }
+        petState.isPetHidden = { [weak self] in !(self?.isVisible ?? true) }
         petState.onDebugHitmap = { [weak self] path in
             guard let panel = self?.panel else { return "no pet window" }
             return panel.dumpHitmap(to: path)

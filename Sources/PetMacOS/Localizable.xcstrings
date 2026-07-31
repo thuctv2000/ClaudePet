@@ -689,6 +689,22 @@
         }
       }
     },
+    "Claude hit a usage limit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude hit a usage limit"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude đã chạm giới hạn sử dụng"
+          }
+        }
+      }
+    },
     "Claude needs attention": {
       "localizations": {
         "en": {
@@ -701,6 +717,22 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude cần chú ý"
+          }
+        }
+      }
+    },
+    "Claude stopped on an error": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude stopped on an error"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude dừng vì gặp lỗi"
           }
         }
       }

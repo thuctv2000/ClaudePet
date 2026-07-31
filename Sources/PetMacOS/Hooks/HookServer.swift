@@ -118,6 +118,8 @@ final class HookServer: AskResolver, @unchecked Sendable {
             handleDebugSendReply(request, on: connection)
         case "/debug/markViewed":
             handleDebugMarkViewed(request, on: connection)
+        case "/debug/dismiss":
+            handleDebugDismiss(request, on: connection)
         case let path where path.hasPrefix("/debug/axdump"):
             handleDebugAXDump(request, on: connection)
         case "/debug/surface":
@@ -330,6 +332,21 @@ final class HookServer: AskResolver, @unchecked Sendable {
         let petState = self.petState
         Task { @MainActor in
             petState.markConversationViewed(sessionId: sessionId, at: Date())
+            self.respond(connection)
+        }
+    }
+
+    /// Test-only: dismisses a session's card the same way the card's header ✕
+    /// does. There is no other way to trigger `dismissSession` from outside, and
+    /// the regression it guards — a dismissed card leaving its mood driving the
+    /// pet's face — is only observable through `/debug/state`'s `mood`.
+    /// Body: `{"sessionId":"…"}`.
+    private func handleDebugDismiss(_ request: HTTPRequest, on connection: NWConnection) {
+        let object = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
+        let sessionId = object?["sessionId"] as? String ?? ""
+        let petState = self.petState
+        Task { @MainActor in
+            petState.dismissSession(key: sessionId)
             self.respond(connection)
         }
     }

@@ -68,6 +68,14 @@ struct HookEvent: Decodable {
     let agentId: String?
     let agentType: String?
     let lastAssistantMessage: String?
+    /// `StopFailure`/`SessionEnd` carry a reason. Its exact shape isn't pinned
+    /// in the docs (string on `SessionEnd`, possibly structured on failure), so
+    /// it is decoded as a permissive `JSONValue` — a wrong guess about the type
+    /// would otherwise fail the whole event and drop it. See `failureSummary`.
+    let reason: JSONValue?
+    /// `StopFailure`'s error descriptor (type may be `rate_limit`, `overloaded`,
+    /// `server_error`, …). Same permissive decoding as `reason`.
+    let errorInfo: JSONValue?
 
     enum CodingKeys: String, CodingKey {
         case hookEventName = "hook_event_name"
@@ -82,13 +90,16 @@ struct HookEvent: Decodable {
         case agentId = "agent_id"
         case agentType = "agent_type"
         case lastAssistantMessage = "last_assistant_message"
+        case reason
+        case errorInfo = "error"
     }
 
     /// Placeholder used when a request body fails to decode.
     static let empty = HookEvent(
         hookEventName: nil, sessionId: nil, transcriptPath: nil, cwd: nil,
         toolName: nil, toolInput: nil, toolResponse: nil, message: nil, prompt: nil,
-        agentId: nil, agentType: nil, lastAssistantMessage: nil)
+        agentId: nil, agentType: nil, lastAssistantMessage: nil,
+        reason: nil, errorInfo: nil)
 
     /// Last path component of `cwd` — the project folder the session runs in.
     var projectName: String? {
@@ -148,6 +159,26 @@ struct HookEvent: Decodable {
     /// to name the session's project — see `PetState.rememberSessionMeta`.
     var isToolEvent: Bool {
         hookEventName == "PreToolUse" || hookEventName == "PostToolUse"
+            || hookEventName == "PostToolUseFailure"
+    }
+
+    /// Best-effort human string describing why a `StopFailure` happened, pulled
+    /// from whichever of `error` / `reason` / `message` the build populated.
+    var failureSummary: String? {
+        for candidate in [errorInfo, reason] {
+            if let text = candidate?.display, !text.isEmpty { return text }
+        }
+        if let message, !message.isEmpty { return message }
+        return nil
+    }
+
+    /// True when a `StopFailure` looks like a usage/rate limit or overload
+    /// (Claude Code's `rate_limit` / `overloaded` error types), so the pet can
+    /// say so rather than showing a generic error.
+    var isRateLimited: Bool {
+        let haystack = ((failureSummary ?? "") + " " + (message ?? "")).lowercased()
+        return haystack.contains("rate") || haystack.contains("limit")
+            || haystack.contains("overload")
     }
 
     /// True when a Pre/PostToolUse event is for a tool running *inside* a

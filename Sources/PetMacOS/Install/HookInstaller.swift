@@ -43,6 +43,12 @@ enum HookInstaller {
             // hands the text to Claude at the next tool boundary. The server
             // never waits on this route, so the cost is one loopback hop.
             ("PostToolUse", "deliver", "*", 60),
+            // A tool that fails gets its own event in newer Claude Code builds.
+            // It is the reliable failure signal: `is_error` on a plain
+            // PostToolUse is NOT set for the common case (a Bash command exiting
+            // non-zero), so the pet's "error" mood almost never fired off it.
+            // Fire-and-forget — it only flips the mood, it collects no reply.
+            ("PostToolUseFailure", "event", "*", nil),
             ("Notification", "event", nil, nil),
             // Stop does the same at the end of a turn, and additionally holds
             // the hook open when the turn ended on a question — that hold is
@@ -50,6 +56,11 @@ enum HookInstaller {
             // The timeout is the outer bound of that hold (server default 120s,
             // script's curl 150s); exceeding it just ends the turn normally.
             ("Stop", "stop", nil, 180),
+            // The turn ended in failure instead of a clean finish (rate limit,
+            // overload, server error…). No reply to collect and nothing to hold
+            // open — just surface the error mood/notice. Distinct from `Stop`,
+            // which never fires when the turn failed.
+            ("StopFailure", "event", nil, nil),
             // SubagentStart is new in Claude Code v2.1.177+ (carries agent_id/
             // agent_type for a subagent that's about to run) and lets PetState
             // retire the *right* SubagentStop card instead of oldest-first

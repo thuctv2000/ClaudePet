@@ -217,6 +217,13 @@ final class PetState {
     /// permission dialog), `false` when it is dismissed.
     @ObservationIgnored var onInteractiveNeeded: ((Bool) -> Void)?
 
+    /// Returns true when the user has hidden the pet window. Set by the app
+    /// delegate. When hidden, a permission/question is handed straight back to
+    /// the terminal instead of forcing the window on screen — "hide" means
+    /// leave me alone, even for another session's dialog (see `presentAsk` /
+    /// `presentQuestion`). Defaults to "not hidden" for tests.
+    @ObservationIgnored var isPetHidden: () -> Bool = { false }
+
     /// Called with `true` when the panel should accept mouse clicks *without*
     /// stealing focus (so the user can close a notice), `false` to go back to
     /// click-through.
@@ -250,6 +257,12 @@ final class PetState {
         /// set, so a stale timer can never fire after a newer event already
         /// moved this session on.
         var decayTask: Task<Void, Never>?
+        /// While set and in the future, a `.working` request is deferred until
+        /// this instant so a just-set `.thinking` stays visible for at least
+        /// `thinkingDwellSeconds` — otherwise the near-immediate `PreToolUse`
+        /// stomps it within a frame and "thinking" is never seen. Cleared on
+        /// any non-thinking mood.
+        var thinkingFloorUntil: Date? = nil
     }
 
     /// sessionId -> that session's own activity. Events with no `session_id`
@@ -425,6 +438,11 @@ final class PetState {
         /// meant the conversations most in need of it were the ones you could
         /// not type into.
         var canReply: Bool { !id.isEmpty }
+        /// The session is actively mid-turn. A completed notice is a *finished*
+        /// turn's result, so the card must not fall back to showing one while
+        /// busy — otherwise a tool outlasting the running card's TTL leaves last
+        /// turn's answer on screen under a "working" face.
+        var isBusy: Bool { mood == .working || mood == .thinking }
     }
 
     /// What happened to a message sent from a session card.
@@ -487,7 +505,7 @@ final class PetState {
             let newestItemDate = (running + completed + subs + bgs).map(\.startedAt).max()
             let lastEventAt = live?.lastEventAt ?? newestItemDate ?? .distantPast
             // Dismissed and quiet since: stay hidden until a newer event.
-            if let dismissedAt = dismissedSessions[key], lastEventAt <= dismissedAt { continue }
+            if isDismissed(key, lastEventAt: lastEventAt) { continue }
             result.append(SessionSummary(
                 id: key == Self.noSessionKey ? "" : key,
                 name: displayName(forKey: key),
@@ -543,6 +561,12 @@ final class PetState {
     private static let defaultTalkingDecaySeconds: TimeInterval = 20
     /// Default decay for `.error` (see `errorDecaySeconds`).
     private static let defaultErrorDecaySeconds: TimeInterval = 6
+    /// Default minimum time `.thinking` stays before `.working` may replace it
+    /// (see `thinkingDwellSeconds`).
+    private static let defaultThinkingDwellSeconds: TimeInterval = 1.5
+    /// Default time a session lingers in `.sleep` after `SessionEnd` before it
+    /// is dropped (see `sleepLingerSeconds`).
+    private static let defaultSleepLingerSeconds: TimeInterval = 8
     /// Default session expiry (see `sessionTTLSeconds`).
     private static let defaultSessionTTLMinutes: Double = 30
 
@@ -559,6 +583,18 @@ final class PetState {
     /// Same override mechanism as `talkingDecaySeconds`.
     var errorDecaySeconds: TimeInterval {
         Self.configOverride(key: "errorDecaySeconds") ?? Self.defaultErrorDecaySeconds
+    }
+
+    /// Minimum lifetime of `.thinking` before `.working` may take over. Same
+    /// override mechanism as `talkingDecaySeconds`.
+    var thinkingDwellSeconds: TimeInterval {
+        Self.configOverride(key: "thinkingDwellSeconds") ?? Self.defaultThinkingDwellSeconds
+    }
+
+    /// How long a session stays in `.sleep` after `SessionEnd` before it is
+    /// dropped from `sessions`. Same override mechanism.
+    var sleepLingerSeconds: TimeInterval {
+        Self.configOverride(key: "sleepLingerSeconds") ?? Self.defaultSleepLingerSeconds
     }
 
     /// How long a session may go without an event before it's dropped from
@@ -595,10 +631,32 @@ final class PetState {
     private func setMood(_ newMood: Mood, for sessionId: String?) {
         let key = sessionId ?? Self.noSessionKey
         var activity = sessions[key] ?? SessionActivity(mood: .idle, lastEventAt: Date(), decayTask: nil)
+
+        // Thinking dwell: `PreToolUse` follows `UserPromptSubmit` almost
+        // instantly, so without a floor the pet flashes from `.thinking` to
+        // `.working` within a frame and "thinking" is effectively never seen.
+        // Defer only the working-over-thinking transition; any other mood
+        // (asking/error) still applies immediately below.
+        if newMood == .working, activity.mood == .thinking,
+           let floor = activity.thinkingFloorUntil, Date() < floor {
+            activity.decayTask?.cancel()
+            activity.lastEventAt = Date()
+            let remaining = max(0, floor.timeIntervalSinceNow)
+            activity.decayTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(remaining))
+                guard !Task.isCancelled, self != nil else { return }
+                self?.setMood(.working, for: sessionId)
+            }
+            sessions[key] = activity
+            return
+        }
+
         activity.decayTask?.cancel()
         activity.decayTask = nil
         activity.mood = newMood
         activity.lastEventAt = Date()
+        activity.thinkingFloorUntil = (newMood == .thinking)
+            ? Date().addingTimeInterval(thinkingDwellSeconds) : nil
         // New activity revives a dismissed card.
         dismissedSessions.removeValue(forKey: key)
         switch newMood {
@@ -608,12 +666,32 @@ final class PetState {
             activity.decayTask = scheduleSessionDecay(key: key, after: errorDecaySeconds) { [weak self] in
                 (self?.hasActiveWork ?? false) ? .working : .idle
             }
+        case .sleep:
+            // A session that ended lingers in `.sleep` briefly so the mood is
+            // actually visible, then removes itself entirely. Previously
+            // `SessionEnd` set `.sleep` and dropped the session in the same
+            // synchronous block, so the aggregate never once saw it.
+            activity.decayTask = scheduleSessionRemoval(key: key, after: sleepLingerSeconds)
         default:
             break
         }
         sessions[key] = activity
         recomputeAggregateMood()
         ensureSessionExpirySweep()
+    }
+
+    /// Drops a session (and its display metadata) after `seconds`, recomputing
+    /// the aggregate mood. Used to let `.sleep` linger before the session that
+    /// ended disappears — see `setMood`'s `.sleep` case.
+    private func scheduleSessionRemoval(key: String, after seconds: TimeInterval) -> Task<Void, Never> {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled, let self else { return }
+            guard self.sessions[key]?.mood == .sleep else { return }
+            self.sessions.removeValue(forKey: key)
+            self.pruneMetaIfUnused(sessionId: key == Self.noSessionKey ? nil : key)
+            self.recomputeAggregateMood()
+        }
     }
 
     private func scheduleSessionDecay(
@@ -630,12 +708,23 @@ final class PetState {
         }
     }
 
+    /// True when the user swept this session's card away and no newer event has
+    /// arrived since. The single rule shared by the card list
+    /// (`orderedSessionSummaries`) and the mood aggregate below, so a dismissed
+    /// session contributes neither a card nor a mood — closing a card used to
+    /// hide it yet leave its mood driving the pet's face until it decayed.
+    private func isDismissed(_ key: String, lastEventAt: Date) -> Bool {
+        guard let dismissedAt = dismissedSessions[key] else { return false }
+        return lastEventAt <= dismissedAt
+    }
+
     /// Recomputes the pet's single displayed `mood` as the highest-priority
-    /// mood among all live sessions (asking > error > working > thinking >
-    /// talking > sleep > idle), or `.idle` when no session is tracked.
+    /// mood among all live, non-dismissed sessions (asking > error > working >
+    /// thinking > talking > sleep > idle), or `.idle` when none is tracked.
     private func recomputeAggregateMood() {
         var best: Mood?
-        for activity in sessions.values {
+        for (key, activity) in sessions {
+            if isDismissed(key, lastEventAt: activity.lastEventAt) { continue }
             guard let currentBestRank = best.flatMap({ Self.moodPriority.firstIndex(of: $0) }) else {
                 best = activity.mood
                 continue
@@ -1078,6 +1167,11 @@ final class PetState {
         backgroundTasks.removeAll(where: matches)
         updatePassthrough()
         persistInFlightSubagents()
+        // The session is now dismissed, so `recomputeAggregateMood` skips it:
+        // the pet's face drops this session's mood immediately instead of
+        // keeping it until decay/expiry. A newer event revives both (setMood
+        // clears the dismissal).
+        recomputeAggregateMood()
     }
 
     /// Minimum time a completed card stays on screen before a focus event is
@@ -1932,6 +2026,13 @@ final class PetState {
         let sid = event.sessionId
         switch event.hookEventName ?? "" {
         case "UserPromptSubmit":
+            // A new turn supersedes the previous turn's result. Drop this
+            // session's old completed notice so that when a tool later runs
+            // longer than the running card's TTL, the card can't fall back to
+            // rendering last turn's answer (see `messageLine`).
+            let key = sid ?? Self.noSessionKey
+            completedNotices.removeAll { ($0.sessionId ?? Self.noSessionKey) == key }
+            updatePassthrough()
             setMood(.thinking, for: sid)
             pushRunning(TaskItem(title: tr("Thinking…"), kind: .thinking, context: context, sessionId: sid))
         case "PreToolUse":
@@ -1980,10 +2081,33 @@ final class PetState {
                     sessionId: sid
                 )
             }
+        case "PostToolUseFailure":
+            // The reliable "a tool failed" signal (newer Claude Code builds).
+            // Unlike `PostToolUse`+`is_error`, this fires for the common case of
+            // a Bash command exiting non-zero. Just flip to the transient error
+            // mood; the card stack lives out its own TTL as with `PostToolUse`.
+            setMood(.error, for: sid)
         case "Notification":
             setMood(.asking, for: sid)
             pushRunning(TaskItem(title: event.message ?? tr("Claude needs attention"),
                                  kind: .notification, context: context, sessionId: sid))
+        case "StopFailure":
+            // The turn ended in failure (rate limit, overload, server error…),
+            // not a clean finish — `Stop` does not fire in this case. Clear this
+            // session's running cards like a normal stop, show the error mood,
+            // and leave a notice so the user sees why it stopped.
+            clearRunning(sessionId: sid)
+            setMood(.error, for: sid)
+            let title = event.isRateLimited
+                ? tr("Claude hit a usage limit") : tr("Claude stopped on an error")
+            pushCompleted(TaskItem(
+                title: title,
+                detail: event.failureSummary,
+                kind: .failed,
+                dedupeKey: "stopfail-\(sid ?? "s")",
+                context: context,
+                sessionId: sid
+            ))
         case "Stop":
             // Subagents/background tasks may still be working (globally,
             // across every session -- see `hasActiveWork`'s doc comment);
@@ -2042,15 +2166,16 @@ final class PetState {
             // wiped just because an unrelated session ended. Each subagent
             // card is only removed by its own SubagentStop, a manual dismiss,
             // or expiring after a restart (see recoverInFlightSubagents).
+            // `.sleep` lingers for `sleepLingerSeconds` and then removes the
+            // session itself (see `setMood`/`scheduleSessionRemoval`) — so the
+            // sleep mood is actually shown, instead of being wiped in the same
+            // block that set it. Metadata is pruned by that same removal.
             setMood(.sleep, for: sid)
-            if let sid { sessions.removeValue(forKey: sid) } else { sessions.removeValue(forKey: Self.noSessionKey) }
-            recomputeAggregateMood()
             clearRunning(sessionId: sid)
             // Nothing can deliver a queued message to a conversation that has
             // ended, and a still-held Stop must be released or its hook sits
             // there until the server's timeout.
             if let sid { clearReplyState(forSession: sid, keepQueue: false) }
-            pruneMetaIfUnused(sessionId: sid)
         default:
             if let message = event.message {
                 pushRunning(TaskItem(title: message, kind: .session, context: context, sessionId: sid))
@@ -2139,6 +2264,15 @@ final class PetState {
     func presentAsk(id: String, event: HookEvent) {
         logEvent(event, route: "ask")
         rememberSessionMeta(for: event)
+        // Hide means leave me alone: don't pop the hidden window back up (nor
+        // flip the mood/menu-bar to orange) for a permission from any session.
+        // A non-allow/deny body makes pet-hook.sh exit 0, so Claude Code asks
+        // in the terminal as usual — the same fail-open path as when the app is
+        // off. See the "Hide pet" note in CLAUDE.md.
+        if isPetHidden() {
+            resolver?.resolveAsk(id: id, decision: PetDecision(decision: "defer"))
+            return
+        }
         setMood(.asking, for: event.sessionId)
         let ask = PendingAsk(
             id: id,
@@ -2246,6 +2380,12 @@ final class PetState {
         let questions = event.askQuestions
         guard !questions.isEmpty else {
             // Nothing parseable to ask; let the terminal handle it.
+            resolver?.resolveQuestion(id: id, answers: nil)
+            return
+        }
+        // Hidden pet → leave me alone: hand the question to the terminal (empty
+        // body) rather than forcing the window up. Same rationale as presentAsk.
+        if isPetHidden() {
             resolver?.resolveQuestion(id: id, answers: nil)
             return
         }

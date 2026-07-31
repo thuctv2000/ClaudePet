@@ -326,7 +326,7 @@ private struct SessionCardView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-        } else if let done = summary.latestCompleted {
+        } else if let done = summary.latestCompleted, !summary.isBusy {
             // The result is Claude's own reply: real markdown, up to 4000
             // characters of it (see `PetState.completedDetailLimit`). Collapsed,
             // the card shows one clean sentence — `PlainText.firstLine` off the

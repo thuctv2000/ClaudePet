@@ -134,6 +134,13 @@ post_event() {
         --data-binary "$1" >/dev/null 2>&1
 }
 
+# post_debug <route> <json> -> POST to a test-only /debug/<route>.
+post_debug() {
+    curl -s -m 5 -X POST "$BASE/$1" \
+        -H "X-Pet-Token: $TOKEN" -H "Content-Type: application/json" \
+        --data-binary "$2" >/dev/null 2>&1
+}
+
 # wait_for_mood <mood> <max-seconds> -> polls /debug/state until the mood
 # matches or the deadline passes. Events are applied asynchronously after the
 # POST returns, so fixed sleeps race with slow machines; polling doesn't.
@@ -798,6 +805,12 @@ with open(path) as f:
     cfg = json.load(f)
 cfg["talkingDecaySeconds"] = 3
 cfg["errorDecaySeconds"] = 3
+# `.sleep` now lingers before its session is dropped (so the mood is actually
+# visible); shorten it here so SessionEnd cleanup stays snappy for the suite.
+cfg["sleepLingerSeconds"] = 2
+# Minimum time `.thinking` holds before `.working` may replace it. Kept small
+# but non-zero so the dwell is exercised without slowing the suite.
+cfg["thinkingDwellSeconds"] = 1
 with open(path, "w") as f:
     json.dump(cfg, f)
 PYEOF
@@ -914,6 +927,150 @@ else:
     print("PASS")
 ' "$STATE"
 post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$CANCEL_SID\",\"cwd\":\"/tmp/e2ecancel\"}"
+
+# --- 9c. SessionEnd -> mood "sleep" is actually VISIBLE, then the session is
+# dropped after sleepLingerSeconds. Regression: SessionEnd used to set .sleep
+# and remove the session in the same synchronous block, so the aggregate never
+# once observed it. ---
+SLEEP_SID="sleeptest000000000000000000000011"
+post_event "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"$SLEEP_SID\",\"cwd\":\"/tmp/e2esleep\"}"
+sleep 0.2
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SLEEP_SID\",\"cwd\":\"/tmp/e2esleep\"}"
+wait_for_session_mood "$SLEEP_SID" "sleep" 2 || true
+STATE=$(get_state)
+assert "9c. SessionEnd makes the session mood observable as \"sleep\"" '
+mood = session_mood("'"$SLEEP_SID"'")
+if mood != "sleep":
+    print("FAIL: expected session mood \"sleep\" after SessionEnd, got %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+
+sleep 2.5  # past the overridden 2s sleepLingerSeconds
+STATE=$(get_state)
+assert "9d. After sleepLingerSeconds the ended session is dropped entirely" '
+mood = session_mood("'"$SLEEP_SID"'")
+if mood is not None:
+    print("FAIL: expected session gone after sleep linger, still present with mood %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+
+# --- 9e. PostToolUseFailure -> mood "error" (the reliable tool-failure signal;
+# unlike PostToolUse+is_error it fires for a Bash command exiting non-zero). ---
+PTF_SID="ptftest0000000000000000000000012"
+post_event "{\"hook_event_name\":\"PostToolUseFailure\",\"tool_name\":\"Bash\",\"session_id\":\"$PTF_SID\",\"cwd\":\"/tmp/e2eptf\",\"tool_input\":{\"command\":\"false\"}}"
+wait_for_session_mood "$PTF_SID" "error" 2 || true
+STATE=$(get_state)
+assert "9e. PostToolUseFailure sets mood \"error\"" '
+mood = session_mood("'"$PTF_SID"'")
+if mood != "error":
+    print("FAIL: expected session mood \"error\" after PostToolUseFailure, got %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$PTF_SID\",\"cwd\":\"/tmp/e2eptf\"}"
+
+# --- 9f. StopFailure -> mood "error" AND a failed notice; a rate-limit failure
+# is titled as a usage limit. ---
+SF_SID="sftest00000000000000000000000013"
+post_event "{\"hook_event_name\":\"StopFailure\",\"session_id\":\"$SF_SID\",\"cwd\":\"/tmp/e2esf\",\"error\":\"rate_limit\"}"
+wait_for_session_mood "$SF_SID" "error" 2 || true
+STATE=$(get_state)
+assert "9f. StopFailure sets mood \"error\" and pushes a failed notice" '
+mood = session_mood("'"$SF_SID"'")
+comp = s["completedNotices"]
+mine = [c for c in comp if c.get("sessionId") == "'"$SF_SID"'"]
+if mood != "error":
+    print("FAIL: expected session mood \"error\" after StopFailure, got %r" % mood)
+elif not mine:
+    print("FAIL: StopFailure produced no completion notice for this session")
+elif mine[0].get("kind") != "failed":
+    print("FAIL: StopFailure notice kind is %r, expected \"failed\"" % mine[0].get("kind"))
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$SF_SID\",\"cwd\":\"/tmp/e2esf\"}"
+
+# --- 9g. Thinking dwell: an immediate PreToolUse after UserPromptSubmit must
+# NOT stomp "thinking" instantly; it holds for thinkingDwellSeconds, then the
+# deferred "working" lands. ---
+DW_SID="dwelltest00000000000000000000014"
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$DW_SID\",\"cwd\":\"/tmp/e2edwell\",\"prompt\":\"e2e dwell\"}"
+post_event "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"session_id\":\"$DW_SID\",\"cwd\":\"/tmp/e2edwell\",\"tool_input\":{\"command\":\"echo hi\"}}"
+sleep 0.3   # well inside the 1s dwell
+STATE=$(get_state)
+assert "9g. PreToolUse right after UserPromptSubmit keeps \"thinking\" during the dwell" '
+mood = session_mood("'"$DW_SID"'")
+if mood != "thinking":
+    print("FAIL: expected \"thinking\" held during dwell, got %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+sleep 1.2   # past the overridden 1s thinkingDwellSeconds -> deferred working lands
+STATE=$(get_state)
+assert "9h. After the dwell the deferred \"working\" transition lands" '
+mood = session_mood("'"$DW_SID"'")
+if mood != "working":
+    print("FAIL: expected \"working\" after dwell, got %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$DW_SID\",\"cwd\":\"/tmp/e2edwell\"}"
+
+# --- 9i. A new turn (UserPromptSubmit) drops the previous turn's completed
+# notice, so a long tool can't fall back to rendering last turn's answer. ---
+UPS_SID="upstest00000000000000000000000015"
+post_event "{\"hook_event_name\":\"Stop\",\"session_id\":\"$UPS_SID\",\"cwd\":\"/tmp/e2eups\",\"last_assistant_message\":\"e2e previous answer\"}"
+sleep 0.4
+STATE=$(get_state)
+assert "9i-pre. Stop leaves a completed notice for the session" '
+comp = [c for c in s["completedNotices"] if c.get("sessionId") == "'"$UPS_SID"'"]
+print("PASS" if comp else "FAIL: expected a completed notice after Stop, got none")
+' "$STATE"
+
+post_event "{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"$UPS_SID\",\"cwd\":\"/tmp/e2eups\",\"prompt\":\"e2e next turn\"}"
+sleep 0.4
+STATE=$(get_state)
+assert "9i. UserPromptSubmit clears the previous turn completed notice" '
+comp = [c for c in s["completedNotices"] if c.get("sessionId") == "'"$UPS_SID"'"]
+mood = session_mood("'"$UPS_SID"'")
+if comp:
+    print("FAIL: previous completed notice survived a new turn: %s" % [c.get("title") for c in comp])
+elif mood != "thinking":
+    print("FAIL: expected mood \"thinking\" on the new turn, got %r" % mood)
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$UPS_SID\",\"cwd\":\"/tmp/e2eups\"}"
+
+# --- 9j. Dismissing a session's card drops its mood from the aggregate at once
+# (it used to keep driving the pet face until decay/expiry). Verified by
+# recomputing the expected aggregate from the SAME snapshot, excluding the
+# dismissed session — robust to unrelated concurrent sessions. ---
+DIS_SID="distest00000000000000000000000016"
+post_event "{\"hook_event_name\":\"Notification\",\"session_id\":\"$DIS_SID\",\"cwd\":\"/tmp/e2edis\",\"message\":\"e2e needs attention\"}"
+wait_for_session_mood "$DIS_SID" "asking" 2 || true
+post_debug "debug/dismiss" "{\"sessionId\":\"$DIS_SID\"}"
+sleep 0.3
+STATE=$(get_state)
+assert "9j. Dismissed session no longer contributes to the aggregate mood" '
+PRIO = ["asking","error","working","thinking","talking","sleep","idle"]
+# Highest-priority mood among every OTHER session still tracked (the dismissed
+# one must be excluded by the app), computed from this very snapshot.
+others = [sess.get("mood") for sess in s.get("sessions", []) if sess.get("id") != "'"$DIS_SID"'"]
+ranked = [m for m in others if m in PRIO]
+expected = min(ranked, key=PRIO.index) if ranked else "idle"
+# The card must be gone too.
+in_order = "'"$DIS_SID"'" in s.get("sessionOrder", [])
+if in_order:
+    print("FAIL: dismissed session still present in sessionOrder (card not gone)")
+elif s["mood"] != expected:
+    print("FAIL: aggregate mood %r still reflects the dismissed session (expected %r)" % (s["mood"], expected))
+else:
+    print("PASS")
+' "$STATE"
+post_event "{\"hook_event_name\":\"SessionEnd\",\"session_id\":\"$DIS_SID\",\"cwd\":\"/tmp/e2edis\"}"
 
 # Restore the real config.json now (rather than only at exit) so TEST 6 below
 # measures the log the app actually wrote to under normal settings.
